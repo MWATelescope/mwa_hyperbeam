@@ -1,0 +1,32 @@
+[package]
+name = "mwa_hyperbeam"
+version = "0.1.0"
+authors = ["Marcin Sokolowski <marcin.sokolowski@curtin.edu.au",
+           "Christopher H. Jordan <christopherjordan87@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.release]
+lto = true
+codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size reduction optimizations
+
+# Make a rust library, as well as static and C-compatible dynamic libraries
+# available as "libhyperbeam.a" and "libhyperbeam.so".
+[lib]
+name = "hyperbeam"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+hdf5 = "0.6.*"
+lazy_static = "1.4.*"
+ndarray = "0.13.*"
+num = "0.3.*"
+thiserror = "1.0.*"
+
+[dev-dependencies]
+anyhow = "1.0.*"
+approx = "0.3.*"
+cbindgen = "*"
+criterion = "0.3.*"
+structopt = "0.3.*"
