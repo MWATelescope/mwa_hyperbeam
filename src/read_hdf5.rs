@@ -31,7 +31,7 @@ pub(crate) struct PolCoefficients {
 }
 
 #[derive(Clone, Default)]
-pub(crate) struct DipoleCoefficients {
+pub struct DipoleCoefficients {
     x: PolCoefficients,
     y: PolCoefficients,
 }
@@ -39,7 +39,7 @@ pub(crate) struct DipoleCoefficients {
 /// `Cache` is just a `RwLock` around a `HashMap`.
 struct Cache(RwLock<HashMap<CacheHash, DipoleCoefficients>>);
 
-struct Hyperbeam {
+pub struct Hyperbeam {
     /// The `hdf5::File` struct associated with the opened HDF5 file. It is
     /// behind a `Mutex` to prevent parallel usage of the file.
     hdf5_file: Mutex<hdf5::File>,
@@ -60,7 +60,7 @@ struct Hyperbeam {
 }
 
 impl Hyperbeam {
-    pub(crate) fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, HyperbeamError> {
+    pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, HyperbeamError> {
         // so that libhdf5 doesn't print errors to stdout
         let _e = hdf5::silence_errors();
 
@@ -131,7 +131,7 @@ impl Hyperbeam {
 
     /// Given a frequency [Hz], find the closest frequency that is defined in
     /// the HDF5 file.
-    pub(crate) fn find_closest_freq(&self, desired_freq: u32) -> u32 {
+    pub fn find_closest_freq(&self, desired_freq: u32) -> u32 {
         let mut best_freq_diff: Option<i64> = None;
         let mut best_index: Option<usize> = None;
         for (i, &freq) in self.freqs.iter().enumerate() {
@@ -168,16 +168,18 @@ impl Hyperbeam {
         Ok(data)
     }
 
-    // Calculation of modes Q1 and Q2 and coefficients N and M and some derived variables (MabsM_X,MabsM_Y,Nmax_X and
-    // Nmax_Y) to make it once for a given pointing and then re-use for many different (azim,za) angles:
-
-    // function calculating coefficients for X and Y and storing parameters frequency, delays and amplitudes
-    fn get_modes(
+    /// Get the dipole coefficients for the provided parameters. Note that
+    /// specified frequencies are "rounded" to frequencies that are defined the
+    /// HDF5 file. The results of this function are cached; if the input
+    /// parameters match previously supplied parameters, then the cache is
+    /// utilised.
+    pub fn get_modes(
         &mut self,
-        freq: u32,
+        desired_freq: u32,
         delays: &[u32; 16],
         amps: &[f64; 16],
     ) -> Result<DipoleCoefficients, HyperbeamError> {
+        let freq = self.find_closest_freq(desired_freq);
         // Are the input settings already cached? Hash them to check.
         let hash = CacheHash::new(freq, delays, amps);
         {
@@ -185,6 +187,10 @@ impl Hyperbeam {
             match cache.get(&hash) {
                 // If the cache for this hash exists, we can return a copy.
                 Some(c) => return Ok(c.clone()),
+                // Some(c) => {
+                //     eprintln!("Cache hit!");
+                //     return Ok(c.clone());
+                // }
                 None => (),
             }
         }
@@ -192,10 +198,10 @@ impl Hyperbeam {
         // cache. Lock the cache, populate it, then return the coefficients we
         // just calculated.
         let modes = {
-            eprintln!(
-                "Have to calc coeffs for freq: {}\ndelays: {:?}\namps: {:?}",
-                freq, delays, amps
-            );
+            // eprintln!(
+            //     "Have to calc coeffs for\n\tfreq: {}\n\tdelays: {:?}\n\tamps: {:?}",
+            //     freq, delays, amps
+            // );
             let mut cache = self.cache.0.write().unwrap();
             let modes = self.calc_modes(freq, delays, amps)?;
             cache.insert(hash, modes.clone());
@@ -204,10 +210,10 @@ impl Hyperbeam {
         Ok(modes)
     }
 
-    /// Given the input parameters, calculate the X and Y coefficients
-    /// ("modes"), and put them in the cache. This function should only be
-    /// called by `Self::get_modes`, to cache the outputs of this function.
-    fn calc_modes(
+    /// Given the input parameters, calculate and return the X and Y
+    /// coefficients ("modes"). As this function is relatively expensive, it
+    /// should only be called by `Self::get_modes` to cache the outputs.
+    pub fn calc_modes(
         &self,
         freq: u32,
         delays: &[u32],
@@ -218,8 +224,8 @@ impl Hyperbeam {
         Ok(DipoleCoefficients { x, y })
     }
 
-    /// Given the input parameters, calculate the coefficients for a single
-    /// polarisation (X or Y). This function should only be called by
+    /// Given the input parameters, calculate and return the coefficients for a
+    /// single polarisation (X or Y). This function should only be called by
     /// `Self::calc_modes`.
     fn calc_mode(
         &self,
@@ -230,8 +236,8 @@ impl Hyperbeam {
     ) -> Result<PolCoefficients, HyperbeamError> {
         let mut q1: Vec<Complex64> = vec![];
         let mut q2: Vec<Complex64> = vec![];
-        let mut q1_accum: Vec<Complex64> = vec![];
-        let mut q2_accum: Vec<Complex64> = vec![];
+        let mut q1_accum: Vec<Complex64> = vec![Complex64::new(0.0, 0.0); self.modes.shape()[1]];
+        let mut q2_accum: Vec<Complex64> = vec![Complex64::new(0.0, 0.0); self.modes.shape()[1]];
         let mut m_accum: Vec<f64> = vec![];
         let mut n_accum: Vec<f64> = vec![];
         // Biggest N coefficient.
@@ -245,6 +251,7 @@ impl Hyperbeam {
             };
             let n_dip_coeffs: usize = q_all.shape()[1];
 
+            // Complex excitation voltage.
             let v: Complex64 = {
                 let phase = *D2PI * freq as f64 * (-(delay as f64)) * *DELAY_STEP;
                 let (s_phase, c_phase) = phase.sin_cos();
@@ -287,12 +294,14 @@ impl Hyperbeam {
             if b_update_n_accum {
                 m_accum = ms1;
                 n_accum = ns1;
-            } else {
-                m_accum = vec![0.0; n_dip_coeffs];
-                n_accum = vec![0.0; n_dip_coeffs];
             };
 
-            // TODO: Size checks.
+            if s1_list.len() != s2_list.len() || s2_list.len() != n_dip_coeffs / 2 {
+                return Err(HyperbeamError::S1S2CountMismatch {
+                    expected: n_dip_coeffs / 2,
+                    got: s2_list.len(),
+                });
+            }
 
             for i in 0..n_dip_coeffs / 2 {
                 // Calculate Q1.
@@ -303,6 +312,7 @@ impl Hyperbeam {
                 let (s_arg, c_arg) = arg.sin_cos();
                 let q1_val = s10_coeff * Complex64::new(c_arg, s_arg);
                 q1.push(q1_val);
+                q1_accum[i] += q1_val * v;
 
                 // Calculate Q2.
                 let s2_idx = s2_list[i];
@@ -312,9 +322,7 @@ impl Hyperbeam {
                 let (s_arg, c_arg) = arg.sin_cos();
                 let q2_val = s20_coeff * Complex64::new(c_arg, s_arg);
                 q2.push(q2_val);
-
-                q1_accum.push(q1_val * v);
-                q2_accum.push(q2_val * v);
+                q2_accum[i] += q2_val * v;
             }
         }
 
@@ -384,6 +392,52 @@ mod tests {
         let result = beam.get_modes(51200000, &[0; 16], &[1.0; 16]);
         assert!(result.is_ok());
         let coeffs = result.unwrap();
-        dbg!(&coeffs.x.q1_accum[0..5]);
+
+        // Values taken from the C++ code.
+        let x_q1_expected = vec![
+            Complex64::new(-0.024744, 0.009424),
+            Complex64::new(0.000000, 0.000000),
+            Complex64::new(-0.024734, 0.009348),
+            Complex64::new(0.000000, -0.000000),
+            Complex64::new(0.005766, 0.015469),
+        ];
+        let x_q2_expected = vec![
+            Complex64::new(-0.026122, 0.009724),
+            Complex64::new(-0.000000, -0.000000),
+            Complex64::new(0.026116, -0.009643),
+            Complex64::new(0.000000, -0.000000),
+            Complex64::new(0.006586, 0.018925),
+        ];
+        let y_q1_expected = vec![
+            Complex64::new(-0.009398, -0.024807),
+            Complex64::new(0.000000, -0.000000),
+            Complex64::new(0.009473, 0.024817),
+            Complex64::new(0.000000, 0.000000),
+            Complex64::new(-0.015501, 0.005755),
+        ];
+        let y_q2_expected = vec![
+            Complex64::new(-0.009692, -0.026191),
+            Complex64::new(0.000000, 0.000000),
+            Complex64::new(-0.009773, -0.026196),
+            Complex64::new(0.000000, 0.000000),
+            Complex64::new(-0.018968, 0.006566),
+        ];
+
+        for (r, e) in coeffs.x.q1_accum.iter().zip(x_q1_expected) {
+            assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
+            assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
+        }
+        for (r, e) in coeffs.x.q2_accum.iter().zip(x_q2_expected) {
+            assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
+            assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
+        }
+        for (r, e) in coeffs.y.q1_accum.iter().zip(y_q1_expected) {
+            assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
+            assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
+        }
+        for (r, e) in coeffs.y.q2_accum.iter().zip(y_q2_expected) {
+            assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
+            assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
+        }
     }
 }

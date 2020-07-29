@@ -30,3 +30,7 @@ approx = "0.3.*"
 cbindgen = "*"
 criterion = "0.3.*"
 structopt = "0.3.*"
+
+[[bench]]
+name = "bench"
+harness = false
