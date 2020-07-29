@@ -7,6 +7,7 @@ Code to read the spherical harmonic coefficients from the supplied HDF5 file.
  */
 
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::{Mutex, RwLock};
 
 use ndarray::Array2;
@@ -37,7 +38,7 @@ pub struct DipoleCoefficients {
 }
 
 /// `Cache` is just a `RwLock` around a `HashMap`.
-struct Cache(RwLock<HashMap<CacheHash, DipoleCoefficients>>);
+struct Cache(RwLock<HashMap<CacheHash, Rc<DipoleCoefficients>>>);
 
 pub struct Hyperbeam {
     /// The `hdf5::File` struct associated with the opened HDF5 file. It is
@@ -178,7 +179,7 @@ impl Hyperbeam {
         desired_freq: u32,
         delays: &[u32; 16],
         amps: &[f64; 16],
-    ) -> Result<DipoleCoefficients, HyperbeamError> {
+    ) -> Result<Rc<DipoleCoefficients>, HyperbeamError> {
         let freq = self.find_closest_freq(desired_freq);
         // Are the input settings already cached? Hash them to check.
         let hash = CacheHash::new(freq, delays, amps);
@@ -186,7 +187,7 @@ impl Hyperbeam {
             let cache = &*self.cache.0.read().unwrap();
             match cache.get(&hash) {
                 // If the cache for this hash exists, we can return a copy.
-                Some(c) => return Ok(c.clone()),
+                Some(c) => return Ok(Rc::clone(&c)),
                 // Some(c) => {
                 //     eprintln!("Cache hit!");
                 //     return Ok(c.clone());
@@ -203,9 +204,9 @@ impl Hyperbeam {
             //     freq, delays, amps
             // );
             let mut cache = self.cache.0.write().unwrap();
-            let modes = self.calc_modes(freq, delays, amps)?;
-            cache.insert(hash, modes.clone());
-            modes
+            let modes = Rc::new(self.calc_modes(freq, delays, amps)?);
+            cache.insert(hash.clone(), modes);
+            Rc::clone(&cache.get(&hash).unwrap())
         };
         Ok(modes)
     }
