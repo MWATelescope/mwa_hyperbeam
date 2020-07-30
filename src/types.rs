@@ -9,7 +9,7 @@ Types that can be pulled away from the main `Hyperbeam` struct.
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub(crate) enum Sign {
     Positive,
     Negative,

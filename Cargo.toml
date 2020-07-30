@@ -12,9 +12,8 @@ lto = true
 codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size reduction optimizations
 
 # Make a rust library, as well as static and C-compatible dynamic libraries
-# available as "libhyperbeam.a" and "libhyperbeam.so".
+# available as "libmwa_hyperbeam.a" and "libmwa_hyperbeam.so".
 [lib]
-name = "hyperbeam"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]

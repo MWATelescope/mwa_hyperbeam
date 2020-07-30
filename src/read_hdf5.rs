@@ -12,12 +12,10 @@ use std::sync::{Mutex, RwLock};
 
 use ndarray::Array2;
 
-use crate::types::*;
 use crate::*;
 
 /// Coefficients for X and Y.
-// TODO: Make the docs better. Remove default derive.
-#[derive(Clone, Default)]
+// TODO: Make the docs better.
 pub(crate) struct PolCoefficients {
     q1_accum: Vec<Complex64>,
     q2_accum: Vec<Complex64>,
@@ -31,16 +29,23 @@ pub(crate) struct PolCoefficients {
     // cMN: Vec<f64>,
 }
 
-#[derive(Clone, Default)]
-pub struct DipoleCoefficients {
+pub(crate) struct DipoleCoefficients {
     x: PolCoefficients,
     y: PolCoefficients,
 }
 
-/// `Cache` is just a `RwLock` around a `HashMap`.
+/// `Cache` is mostly just a `RwLock` around a `HashMap`. This allows multiple
+/// concurrent readers with the ability to halt all reading when writing.
+///
+/// A `CacheHash` is used as the key. This is a wrapper around Rust's own
+/// hashing code so that we get something specific to FEE beam settings.
+///
+/// `Rc` allows us to access the data without copying it. Benchmarks suggest
+/// that this is important; if `Rc` isn't used, the compiler really does do
+/// memory copies instead of just handing out a pointer.
 struct Cache(RwLock<HashMap<CacheHash, Rc<DipoleCoefficients>>>);
 
-pub struct Hyperbeam {
+pub struct FEEBeam {
     /// The `hdf5::File` struct associated with the opened HDF5 file. It is
     /// behind a `Mutex` to prevent parallel usage of the file.
     hdf5_file: Mutex<hdf5::File>,
@@ -51,16 +56,11 @@ pub struct Hyperbeam {
     /// Row 1: M
     /// Row 2: N
     modes: Array2<f64>,
-    /// A cache of coefficients for X and Y.
-    ///
-    /// A `Hash` is used as the key.
-    ///
-    /// `RwLock` allows multiple reads to the same data, assuming the lock isn't
-    /// engaged. The data is locked when we are writing to it.
+    /// A cache of X and Y coefficients.
     cache: Cache,
 }
 
-impl Hyperbeam {
+impl FEEBeam {
     pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, HyperbeamError> {
         // so that libhdf5 doesn't print errors to stdout
         let _e = hdf5::silence_errors();
@@ -174,7 +174,7 @@ impl Hyperbeam {
     /// HDF5 file. The results of this function are cached; if the input
     /// parameters match previously supplied parameters, then the cache is
     /// utilised.
-    pub fn get_modes(
+    fn get_modes(
         &mut self,
         desired_freq: u32,
         delays: &[u32; 16],
@@ -214,7 +214,7 @@ impl Hyperbeam {
     /// Given the input parameters, calculate and return the X and Y
     /// coefficients ("modes"). As this function is relatively expensive, it
     /// should only be called by `Self::get_modes` to cache the outputs.
-    pub fn calc_modes(
+    fn calc_modes(
         &self,
         freq: u32,
         delays: &[u32],
@@ -355,8 +355,8 @@ mod tests {
     /// Helper function for tests. Assumes that the HDF5 file is in the
     /// project's root directory. Make a symlink if you already have the file
     /// elsewhere.
-    fn open_hdf5() -> Result<Hyperbeam, HyperbeamError> {
-        Hyperbeam::new("mwa_full_embedded_element_pattern.h5")
+    fn open_hdf5() -> Result<FEEBeam, HyperbeamError> {
+        FEEBeam::new("mwa_full_embedded_element_pattern.h5")
     }
 
     #[test]

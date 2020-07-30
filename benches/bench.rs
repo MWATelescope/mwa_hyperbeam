@@ -4,12 +4,12 @@
 
 use criterion::*;
 
-use hyperbeam::*;
+use mwa_hyperbeam::*;
 
 // This benchmark relies on `Hyperbeam::calc_modes` being made public. It should
 // normally be left as private.
 fn coefficients(c: &mut Criterion) {
-    let mut beam = Hyperbeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
 
     c.bench_function("calculating coefficients", |b| {
         let freq = 51200000;
