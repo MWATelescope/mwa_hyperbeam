@@ -9,7 +9,7 @@ Errors associated with all aspects of hyperbeam.
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum HyperbeamError {
+pub enum FEEBeamError {
     /// An error associated with the hdf5 crate.
     #[error("HDF5 error: {0}")]
     Hdf5Error(#[from] hdf5::Error),

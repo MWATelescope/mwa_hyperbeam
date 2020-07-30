@@ -6,7 +6,7 @@
 Test reading the hdf5 file containing the spherical harmonics.
  */
 
-use hyperbeam::*;
+use mwa_hyperbeam::*;
 use structopt::*;
 
 #[derive(StructOpt, Debug)]

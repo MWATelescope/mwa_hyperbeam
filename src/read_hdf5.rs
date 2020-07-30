@@ -6,6 +6,7 @@
 Code to read the spherical harmonic coefficients from the supplied HDF5 file.
  */
 
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Mutex, RwLock};
@@ -61,7 +62,7 @@ pub struct FEEBeam {
 }
 
 impl FEEBeam {
-    pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, HyperbeamError> {
+    pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, FEEBeamError> {
         // so that libhdf5 doesn't print errors to stdout
         let _e = hdf5::silence_errors();
 
@@ -77,9 +78,9 @@ impl FEEBeam {
                 let dipole_index = match dipole_index_str {
                     Some(s) => match s.parse() {
                         Ok(i) => i,
-                        Err(_) => return Err(HyperbeamError::Parse(s.to_string())),
+                        Err(_) => return Err(FEEBeamError::Parse(s.to_string())),
                     },
-                    None => return Err(HyperbeamError::MissingDipole),
+                    None => return Err(FEEBeamError::MissingDipole),
                 };
                 match biggest_dip_index {
                     None => biggest_dip_index = Some(dipole_index),
@@ -98,7 +99,7 @@ impl FEEBeam {
                 let freq_str = d.strip_prefix("X1_").unwrap();
                 let freq: u32 = match freq_str.parse() {
                     Ok(f) => f,
-                    Err(_) => return Err(HyperbeamError::Parse(freq_str.to_string())),
+                    Err(_) => return Err(FEEBeamError::Parse(freq_str.to_string())),
                 };
                 freqs.push(freq);
             }
@@ -106,13 +107,13 @@ impl FEEBeam {
 
         // Sanity checks.
         if biggest_dip_index.is_none() {
-            return Err(HyperbeamError::NoDipoles);
+            return Err(FEEBeamError::NoDipoles);
         }
         if freqs.is_empty() {
-            return Err(HyperbeamError::NoFreqs);
+            return Err(FEEBeamError::NoFreqs);
         }
         if biggest_dip_index.unwrap() != *NUM_DIPOLES {
-            return Err(HyperbeamError::DipoleCountMismatch {
+            return Err(FEEBeamError::DipoleCountMismatch {
                 expected: *NUM_DIPOLES,
                 got: biggest_dip_index.unwrap(),
             });
@@ -163,7 +164,7 @@ impl FEEBeam {
     /// Given a key, get a dataset from the HDF5 file.
     ///
     /// This function is expected to only receive keys like X16_51200000
-    fn get_dataset(&self, key: &str) -> Result<Array2<f64>, HyperbeamError> {
+    fn get_dataset(&self, key: &str) -> Result<Array2<f64>, FEEBeamError> {
         let h5 = self.hdf5_file.lock().unwrap();
         let data = h5.dataset(key)?.read_2d()?;
         Ok(data)
@@ -179,7 +180,7 @@ impl FEEBeam {
         desired_freq: u32,
         delays: &[u32; 16],
         amps: &[f64; 16],
-    ) -> Result<Rc<DipoleCoefficients>, HyperbeamError> {
+    ) -> Result<Rc<DipoleCoefficients>, FEEBeamError> {
         let freq = self.find_closest_freq(desired_freq);
         // Are the input settings already cached? Hash them to check.
         let hash = CacheHash::new(freq, delays, amps);
@@ -219,7 +220,7 @@ impl FEEBeam {
         freq: u32,
         delays: &[u32],
         amps: &[f64],
-    ) -> Result<DipoleCoefficients, HyperbeamError> {
+    ) -> Result<DipoleCoefficients, FEEBeamError> {
         let x = self.calc_mode(freq, delays, amps, Pol::X)?;
         let y = self.calc_mode(freq, delays, amps, Pol::Y)?;
         Ok(DipoleCoefficients { x, y })
@@ -234,7 +235,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         pol: Pol,
-    ) -> Result<PolCoefficients, HyperbeamError> {
+    ) -> Result<PolCoefficients, FEEBeamError> {
         let mut q1: Vec<Complex64> = vec![];
         let mut q2: Vec<Complex64> = vec![];
         let mut q1_accum: Vec<Complex64> = vec![Complex64::new(0.0, 0.0); self.modes.shape()[1]];
@@ -298,7 +299,7 @@ impl FEEBeam {
             };
 
             if s1_list.len() != s2_list.len() || s2_list.len() != n_dip_coeffs / 2 {
-                return Err(HyperbeamError::S1S2CountMismatch {
+                return Err(FEEBeamError::S1S2CountMismatch {
                     expected: n_dip_coeffs / 2,
                     got: s2_list.len(),
                 });
@@ -345,6 +346,46 @@ impl FEEBeam {
             n_max,
         })
     }
+
+    // fn calc_sigmas(phi: f64, theta: f64, coeffs: &DipoleCoefficients) -> Jones {
+    //     // The n_max is the same in both pols.
+    //     // TODO: Remove.
+    //     assert_eq!(coeffs.x.n_max, coeffs.y.n_max);
+    //     let n_max = coeffs.x.n_max;
+    //     let c_theta = theta.cos();
+    // }
+}
+
+fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
+    let size = n_max * n_max + 2 * n_max;
+    let mut p1sin_out = vec![0.0; size];
+    let mut p1_out = vec![0.0; size];
+
+    let (s_theta, c_theta) = theta.sin_cos();
+    let delta_u = 1e-6;
+
+    let mut p = vec![0.0; n_max + 1];
+    let mut pm1 = vec![0.0; n_max + 1];
+    let mut pm_sin = vec![0.0; n_max + 1];
+    let mut pu_mdelu = vec![0.0; n_max + 1];
+    let mut pm_sin_merged = vec![0.0; 2 * n_max + 1];
+    let mut pm1_merged = vec![0.0; 2 * n_max + 1];
+
+    // Create a look-up table for the legendre polynomials
+    // Such that legendre_table[ m * nmax + (n-1) ] = legendre(n, m, u)
+    let mut legendre_table = vec![0.0; n_max * (n_max + 1)];
+    for m in 0..n_max + 1 {
+        // let mut leg0 = legendre_polynomial()
+        // for n in 2..n_max + 1 {
+        //     match m.cmp(&n) {
+        //         Ordering::Less =>
+        //     }
+        //     if (m < n) {
+        //     }
+        // }
+    }
+
+    (vec![], vec![])
 }
 
 #[cfg(test)]
@@ -355,7 +396,7 @@ mod tests {
     /// Helper function for tests. Assumes that the HDF5 file is in the
     /// project's root directory. Make a symlink if you already have the file
     /// elsewhere.
-    fn open_hdf5() -> Result<FEEBeam, HyperbeamError> {
+    fn open_hdf5() -> Result<FEEBeam, FEEBeamError> {
         FEEBeam::new("mwa_full_embedded_element_pattern.h5")
     }
 
@@ -422,6 +463,67 @@ mod tests {
             Complex64::new(-0.009773, -0.026196),
             Complex64::new(0.000000, 0.000000),
             Complex64::new(-0.018968, 0.006566),
+        ];
+
+        for (r, e) in coeffs.x.q1_accum.iter().zip(x_q1_expected) {
+            assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
+            assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
+        }
+        for (r, e) in coeffs.x.q2_accum.iter().zip(x_q2_expected) {
+            assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
+            assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
+        }
+        for (r, e) in coeffs.y.q1_accum.iter().zip(y_q1_expected) {
+            assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
+            assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
+        }
+        for (r, e) in coeffs.y.q2_accum.iter().zip(y_q2_expected) {
+            assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
+            assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    fn test_get_modes2() {
+        let mut beam = open_hdf5().unwrap();
+        let result = beam.get_modes(
+            51200000,
+            &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
+            &[
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
+            ],
+        );
+        assert!(result.is_ok());
+        let coeffs = result.unwrap();
+
+        // Values taken from the C++ code.
+        let x_q1_expected = vec![
+            Complex64::new(-0.020504, 0.013376),
+            Complex64::new(-0.001349, 0.000842),
+            Complex64::new(-0.020561, 0.013291),
+            Complex64::new(0.001013, 0.001776),
+            Complex64::new(0.008222, 0.012569),
+        ];
+        let x_q2_expected = vec![
+            Complex64::new(-0.021903, 0.013940),
+            Complex64::new(0.001295, -0.000767),
+            Complex64::new(0.021802, -0.014047),
+            Complex64::new(0.001070, 0.002039),
+            Complex64::new(0.009688, 0.016040),
+        ];
+        let y_q1_expected = vec![
+            Complex64::new(-0.013471, -0.020753),
+            Complex64::new(0.001130, 0.002400),
+            Complex64::new(0.013576, 0.020683),
+            Complex64::new(-0.001751, 0.001023),
+            Complex64::new(-0.013183, 0.008283),
+        ];
+        let y_q2_expected = vec![
+            Complex64::new(-0.014001, -0.021763),
+            Complex64::new(-0.000562, -0.000699),
+            Complex64::new(-0.013927, -0.021840),
+            Complex64::new(-0.002247, 0.001152),
+            Complex64::new(-0.015716, 0.009685),
         ];
 
         for (r, e) in coeffs.x.q1_accum.iter().zip(x_q1_expected) {
