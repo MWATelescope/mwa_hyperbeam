@@ -3,20 +3,19 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 /*!
-Finite embedded element (FEE) primary beam code for the Murchison Widefield
-Array.
+Primary beam code for the Murchison Widefield Array.
  */
 
 mod constants;
 pub mod errors;
-pub mod read_hdf5;
+pub mod fee;
+pub(crate) mod legendre;
 pub(crate) mod types;
 
 use constants::*;
 pub use errors::*;
-pub use read_hdf5::*;
-use types::*;
+pub use fee::*;
+pub(crate) use types::*;
 
+// Re-exports.
 use num::complex::Complex64;
-
-pub(crate) type Jones = [Complex64; 4];

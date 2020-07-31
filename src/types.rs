@@ -9,6 +9,10 @@ Types that can be pulled away from the main `Hyperbeam` struct.
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use num::complex::Complex64;
+
+pub(crate) type Jones = [Complex64; 4];
+
 #[derive(Debug)]
 pub(crate) enum Sign {
     Positive,

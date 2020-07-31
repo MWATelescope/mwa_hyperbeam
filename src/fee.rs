@@ -13,6 +13,7 @@ use std::sync::{Mutex, RwLock};
 
 use ndarray::Array2;
 
+use crate::legendre::*;
 use crate::*;
 
 /// Coefficients for X and Y.
@@ -346,68 +347,42 @@ impl FEEBeam {
             n_max,
         })
     }
-
-    // fn calc_sigmas(phi: f64, theta: f64, coeffs: &DipoleCoefficients) -> Jones {
-    //     // The n_max is the same in both pols.
-    //     // TODO: Remove.
-    //     assert_eq!(coeffs.x.n_max, coeffs.y.n_max);
-    //     let n_max = coeffs.x.n_max;
-    //     let c_theta = theta.cos();
-    // }
 }
 
-fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
-    let size = n_max * n_max + 2 * n_max;
-    let mut p1sin_out = vec![0.0; size];
-    let mut p1_out = vec![0.0; size];
+// fn calc_sigmas(phi: f64, theta: f64, coeffs: &DipoleCoefficients) -> Jones {
+//     // The n_max is the same in both pols.
+//     // TODO: Remove.
+//     debug_assert_eq!(coeffs.x.n_max, coeffs.y.n_max);
+//     let n_max = coeffs.x.n_max;
+//     let u = theta.cos();
 
-    let (s_theta, c_theta) = theta.sin_cos();
-    let delta_u = 1e-6;
+//     // TODO: Is this the only place that n_max is actually used? If so, make the
+//     // struct type a usize.
+//     let (p1sin_arr, p1_arr) = p1sin(coeffs.x.n_max as usize, theta);
 
-    let mut p = vec![0.0; n_max + 1];
-    let mut pm1 = vec![0.0; n_max + 1];
-    let mut pm_sin = vec![0.0; n_max + 1];
-    let mut pu_mdelu = vec![0.0; n_max + 1];
-    let mut pm_sin_merged = vec![0.0; 2 * n_max + 1];
-    let mut pm1_merged = vec![0.0; 2 * n_max + 1];
+//     // TODO: Check that the sizes of N_accum and M_accum agree. This check
+//     // should actually be in the PolCoefficients generation.
 
-    // Create a look-up table for the legendre polynomials
-    // Such that legendre_table[ m * nmax + (n-1) ] = legendre(n, m, u)
-    let mut legendre_table = vec![0.0; n_max * (n_max + 1)];
-    for m in 0..n_max + 1 {
-        // let mut leg0 = legendre_polynomial()
-        // for n in 2..n_max + 1 {
-        //     match m.cmp(&n) {
-        //         Ordering::Less =>
-        //     }
-        //     if (m < n) {
-        //     }
-        // }
-    }
-
-    (vec![], vec![])
-}
+//     let sigma_p = Complex64::new(0.0, 0.0);
+//     let sigma_t = Complex64::new(0.0, 0.0);
+//     for i in 0..coeffs.x.n_accum.len() {
+//     }
+// }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use approx::*;
 
-    /// Helper function for tests. Assumes that the HDF5 file is in the
-    /// project's root directory. Make a symlink if you already have the file
-    /// elsewhere.
-    fn open_hdf5() -> Result<FEEBeam, FEEBeamError> {
-        FEEBeam::new("mwa_full_embedded_element_pattern.h5")
-    }
-
     #[test]
     fn new() {
-        assert!(open_hdf5().is_ok());
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5");
+        assert!(beam.is_ok());
     }
 
     #[test]
     fn test_find_nearest_freq() {
-        let beam = open_hdf5().unwrap();
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Dancing around an available freq.
         assert_eq!(beam.find_closest_freq(51199999), 51200000);
         assert_eq!(beam.find_closest_freq(51200000), 51200000);
@@ -424,13 +399,13 @@ mod tests {
     #[test]
     /// Check that we can open the dataset "X16_51200000".
     fn test_get_dataset() {
-        let beam = open_hdf5().unwrap();
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         assert!(beam.get_dataset("X16_51200000").is_ok());
     }
 
     #[test]
     fn test_get_modes() {
-        let mut beam = open_hdf5().unwrap();
+        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let result = beam.get_modes(51200000, &[0; 16], &[1.0; 16]);
         assert!(result.is_ok());
         let coeffs = result.unwrap();
@@ -485,7 +460,7 @@ mod tests {
 
     #[test]
     fn test_get_modes2() {
-        let mut beam = open_hdf5().unwrap();
+        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let result = beam.get_modes(
             51200000,
             &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],

@@ -207,6 +207,15 @@ void Beam2016Implementation::CalcSigmas(double phi, double theta, const Coeffici
 
     vector<double> P1sin_arr, P1_arr;
 
+    P1sin(5, 0.0, P1sin_arr, P1_arr);
+    printf("nmax: 5\ntheta: 0\n");
+    for (int i = 0; i < nmax * nmax + 2 * nmax; i++) {
+        printf("P1sin_arr[%d]: %f\n", i, P1sin_arr[i]);
+    }
+    for (int i = 0; i < nmax * nmax + 2 * nmax; i++) {
+        printf("P1_arr[%d]: %f\n", i, P1_arr[i]);
+    }
+    printf("\n\n");
     P1sin(nmax, theta, P1sin_arr, P1_arr);
 
     if (coefs.N_accum.size() != coefs.M_accum.size()) {
@@ -433,6 +442,7 @@ double Beam2016Implementation::CalcModes(int freq_hz, size_t n_ant, const double
 // OUTPUT : returns list of Legendre polynomial values calculated up to order nmax :
 int Beam2016Implementation::P1sin(int nmax, double theta, vector<double> &p1sin_out, vector<double> &p1_out) {
     int size = nmax * nmax + 2 * nmax;
+    printf("size: %d\n", size);
     p1sin_out.resize(size);
     p1_out.resize(size);
 
@@ -468,6 +478,12 @@ int Beam2016Implementation::P1sin(int nmax, double theta, vector<double> &p1sin_
             leg1 = *legendre_iter;
             ++legendre_iter;
         }
+    }
+    printf("legendre table\n");
+    for (int i = 0; i < nmax * (nmax + 1); i++) {
+    // for (int i = 0; i < 50; i++) {
+        printf("%2d: %f %f %f %f\n", i, legendre_table[4 * i], legendre_table[4 * i + 1], legendre_table[4 * i + 2],
+               legendre_table[4 * i + 3]);
     }
 
     for (int n = 1; n <= nmax; n++) {
