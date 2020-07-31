@@ -35,7 +35,8 @@ pub(crate) fn legendre_values(n: usize, m: usize, x: &[f64]) -> Vec<f64> {
         let mut fact = 1.0;
         for _ in 0..m {
             for i in 0..mm {
-                v[i + m * mm] = -v[i + m * mm] * fact * (1.0 - x[i] * x[i]);
+                let y = 1.0 - x[i]*x[i];
+                v[i + m * mm] = -v[i + m * mm] * fact * y.sqrt();
             }
             fact += 2.0;
         }
@@ -77,18 +78,15 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
     let mut m_incr = 0;
     for m in 0..=n_max {
         let pm_vals = legendre_values(n_max, m, &pm_in);
-        for i in m..n_max {
+        for i in m..=n_max {
             if !(i == 0 && m == 0) {
                 all_vals[(i - m) + m_incr] = pm_vals[i];
             }
         }
         m_incr += n_max - m + 1;
     }
-    for p in &all_vals {
-        println!("{}", p);
-    }
 
-    for n in 1..n_max {
+    for n in 1..=n_max {
         let mut p = vec![0.0; n + 1];
         let mut pm1 = vec![0.0; n + 1];
         let mut pm_sin = vec![0.0; n + 1];
@@ -106,6 +104,7 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
             }
             pm_sin[order] = 0.0;
             m_incr += n_max - order;
+            println!("n={}  p[{}]={}", n, order, p[order]);
         }
 
         if u == 1.0 {
@@ -259,22 +258,24 @@ mod tests {
             println!("p1sin_out: {}: {}", i, p);
             match i {
                 0 | 2 => assert_abs_diff_eq!(p, -1.000000, epsilon = 1e-6),
-                1 => assert_abs_diff_eq!(p, -2.999999, epsilon = 1e-6),
-                3 | 5 | 7 => assert_abs_diff_eq!(p, 2.121320, epsilon = 1e-6),
+                1 => assert_abs_diff_eq!(p, 1.000000, epsilon = 1e-6),
+                3 | 7 => assert_abs_diff_eq!(p, 2.121320, epsilon = 1e-6),
                 4 | 6 => assert_abs_diff_eq!(p, -2.121320, epsilon = 1e-6),
+                5 => assert_abs_diff_eq!(p, 0.353553, epsilon = 1e-6),
                 8 | 14 => assert_abs_diff_eq!(p, -7.500000, epsilon = 1e-6),
-                9 | 13 => assert_abs_diff_eq!(p, -7.500000, epsilon = 1e-6),
+                9 | 13 => assert_abs_diff_eq!(p, 7.500000, epsilon = 1e-6),
                 _ => (),
             }
         }
         for (i, &p) in p1_out.iter().enumerate() {
             println!("p1_out: {}: {}", i, p);
             match i {
-                // 1 => assert_abs_diff_eq!(p, -0.707107, epsilon = 1e-6),
-                4 => assert_abs_diff_eq!(p, 1.500000, epsilon = 1e-6),
+                1 => assert_abs_diff_eq!(p, -0.707107, epsilon = 1e-6),
+                4 | 6 => assert_abs_diff_eq!(p, 1.500000, epsilon = 1e-6),
                 5 => assert_abs_diff_eq!(p, -1.500000, epsilon = 1e-6),
                 9 | 13 => assert_abs_diff_eq!(p, -5.303301, epsilon = 1e-6),
                 10 | 12 => assert_abs_diff_eq!(p, 5.303301, epsilon = 1e-6),
+                11 => assert_abs_diff_eq!(p, -1.590990, epsilon = 1e-6),
                 0..=13 => assert_abs_diff_eq!(p, 0.000000, epsilon = 1e-6),
                 _ => (),
             }
