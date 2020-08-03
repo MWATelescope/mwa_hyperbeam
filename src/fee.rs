@@ -188,10 +188,6 @@ impl FEEBeam {
             match cache.get(&hash) {
                 // If the cache for this hash exists, we can return a copy.
                 Some(c) => return Ok(Arc::clone(&c)),
-                // Some(c) => {
-                //     eprintln!("Cache hit!");
-                //     return Ok(c.clone());
-                // }
                 None => (),
             }
         }
@@ -199,10 +195,6 @@ impl FEEBeam {
         // cache. Lock the cache, populate it, then return the coefficients we
         // just calculated.
         let modes = {
-            // eprintln!(
-            //     "Have to calc coeffs for\n\tfreq: {}\n\tdelays: {:?}\n\tamps: {:?}",
-            //     freq, delays, amps
-            // );
             let mut cache = self.cache.0.write().unwrap();
             let modes = Arc::new(self.calc_modes(freq, delays, amps)?);
             cache.insert(hash.clone(), modes);
