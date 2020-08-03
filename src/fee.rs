@@ -451,14 +451,17 @@ fn calc_jones_direct(
 mod tests {
     use super::*;
     use approx::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn new() {
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5");
         assert!(beam.is_ok());
     }
 
     #[test]
+    #[serial]
     fn test_find_nearest_freq() {
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Dancing around an available freq.
@@ -475,6 +478,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     /// Check that we can open the dataset "X16_51200000".
     fn test_get_dataset() {
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
@@ -482,6 +486,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_modes() {
         let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let result = beam.get_modes(51200000, &[0; 16], &[1.0; 16]);
@@ -554,6 +559,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_modes2() {
         let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let result = beam.get_modes(
@@ -631,6 +637,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_calc_jones() {
         let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let result = beam.calc_jones(
@@ -658,6 +665,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_calc_jones2() {
         let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let result = beam.calc_jones(
