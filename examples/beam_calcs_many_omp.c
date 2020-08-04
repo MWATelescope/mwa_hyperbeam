@@ -3,8 +3,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 // Build and run with something like:
-// gcc -O3 -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./beam_calcs_many.c -o beam_calcs_many
-// LD_LIBRARY_PATH=../target/release ./beam_calcs_many ../mwa_full_embedded_element_pattern.h5
+// gcc -O3 -fopenmp -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./beam_calcs_many_omp.c -o beam_calcs_many_omp
+// LD_LIBRARY_PATH=../target/release ./beam_calcs_many_omp ../mwa_full_embedded_element_pattern.h5
 
 #include <math.h>
 #include <stdio.h>
@@ -22,7 +22,7 @@ int main(int argc, char *argv[]) {
     FEEBeam *beam = new_fee_beam(argv[1]);
 
     // Set up the pointings to test.
-    int num_pointings = 10000;
+    int num_pointings = 2000000;
     double *az = malloc(num_pointings * sizeof(double));
     double *za = malloc(num_pointings * sizeof(double));
     for (int i = 0; i < num_pointings; i++) {
@@ -36,9 +36,13 @@ int main(int argc, char *argv[]) {
     int freq_hz = 51200000;
     int zenith_norm = 0;
 
-    // Calculate the Jones matrices for all pointings. Rust will do this in
-    // parallel.
-    double **jones = calc_jones_array(beam, num_pointings, az, za, freq_hz, delays, amps, zenith_norm);
+    // Calculate the Jones matrices for all pointings.
+    double **jones = malloc(num_pointings * 8 * sizeof(double));
+    #pragma omp parallel for
+    for (int i = 0; i < num_pointings; i++) {
+        double *j = calc_jones(beam, az[i], za[i], freq_hz, delays, amps, zenith_norm);
+        jones[i] = j;
+    }
     printf("The first Jones matrix:\n");
     printf("[[%.8f %.8fi,", jones[0][0], jones[0][1]);
     printf("  %.8f %.8fi]\n", jones[0][2], jones[0][3]);
