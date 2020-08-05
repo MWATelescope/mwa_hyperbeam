@@ -11,8 +11,6 @@ directory for usage.
 
 use std::ffi::CStr;
 
-use libc::c_char;
-
 use crate::*;
 
 /// Create a new MWA FEE beam.
@@ -27,7 +25,7 @@ use crate::*;
 /// calling `free_fee_beam`.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn new_fee_beam(hdf5_file: *const c_char) -> *mut FEEBeam {
+pub unsafe extern "C" fn new_fee_beam(hdf5_file: *const std::os::raw::c_char) -> *mut FEEBeam {
     let m = CStr::from_ptr(hdf5_file).to_str().unwrap().to_string();
     let beam = FEEBeam::new(&m).unwrap();
     Box::into_raw(Box::new(beam))

@@ -19,7 +19,6 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [dependencies]
 hdf5 = "0.6.*"
 lazy_static = "1.4.*"
-libc = "0.2.*"
 ndarray = "0.13.*"
 num = "0.3.*"
 rayon = "1.3.*"
