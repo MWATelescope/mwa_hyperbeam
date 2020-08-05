@@ -7,7 +7,10 @@ use std::env;
 fn main() {
     let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
 
-    // Generate a C header for hyperbeam and write it to the include directory.
+    // Generate a C header for hyperbeam and write it to the include
+    // directory. This routine only need to be done if the ffi module has
+    // changed.
+    println!("cargo:rerun-if-changed=src/ffi.rs");
     cbindgen::Builder::new()
         .with_crate(crate_dir)
         .with_language(cbindgen::Language::C)
