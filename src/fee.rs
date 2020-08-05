@@ -377,11 +377,12 @@ impl FEEBeam {
         debug_assert_eq!(amps.len(), 16);
 
         let coeffs = self.get_modes(freq_hz, delays, amps)?;
-        let out = az_rad
+        let mut out = Vec::with_capacity(az_rad.len());
+        az_rad
             .par_iter()
             .zip(za_rad.par_iter())
             .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm_to_zenith))
-            .collect();
+            .collect_into_vec(&mut out);
         Ok(out)
     }
 }
