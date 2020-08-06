@@ -349,23 +349,24 @@ impl FEEBeam {
         })
     }
 
-    fn get_norm_jones(&mut self, desired_freq: u32, coeffs: &DipoleCoefficients) -> Arc<Jones> {
+    fn get_norm_jones(&mut self, desired_freq: u32) -> Result<Arc<Jones>, FEEBeamError> {
         let freq = self.find_closest_freq(desired_freq);
         {
             let cache = &*self.norm_cache.0.read().unwrap();
             match cache.get(&freq) {
                 // If the cache for this hash exists, we can return a copy.
-                Some(c) => return Arc::clone(&c),
+                Some(c) => return Ok(Arc::clone(&c)),
                 None => (),
             }
         }
         // If we hit this part of the code, the normalisation Jones matrix was
         // not in the cache. Lock the cache, populate it, then return the
         // matrix we just calculated.
+        let coeffs = self.get_modes(freq, &[0; 16], &[1.0; 16])?;
         let mut cache = self.norm_cache.0.write().unwrap();
-        let jones = Arc::new(calc_zenith_norm_jones(coeffs));
+        let jones = Arc::new(calc_zenith_norm_jones(&coeffs));
         cache.insert(freq, jones);
-        Arc::clone(&cache.get(&freq).unwrap())
+        Ok(Arc::clone(&cache.get(&freq).unwrap()))
     }
 
     /// Calculate the Jones matrix for a pointing.
@@ -387,7 +388,7 @@ impl FEEBeam {
         // If we're normalising the beam, get the normalisation Jones matrix
         // here.
         let norm = if norm_to_zenith {
-            Some(*self.get_norm_jones(freq_hz, &coeffs))
+            Some(*self.get_norm_jones(freq_hz)?)
         } else {
             None
         };
@@ -415,7 +416,7 @@ impl FEEBeam {
         // If we're normalising the beam, get the normalisation Jones matrix
         // here.
         let norm = if norm_to_zenith {
-            Some(*self.get_norm_jones(freq_hz, &coeffs))
+            Some(*self.get_norm_jones(freq_hz)?)
         } else {
             None
         };
@@ -763,6 +764,34 @@ mod tests {
             Complex64::new(0.891024, 0.2211),
             Complex64::new(0.887146, 0.216103),
             Complex64::new(-0.0896141, -0.021803),
+        ];
+        for (&r, e) in jones.iter().zip(&expected) {
+            assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
+            assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_calc_jones_norm2() {
+        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let result = beam.calc_jones(
+            0.1_f64,
+            0.1_f64,
+            150000000,
+            &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
+            &[
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
+            ],
+            true,
+        );
+        assert!(result.is_ok());
+        let jones = result.unwrap();
+        let expected = [
+            Complex64::new(0.0704266, -0.0251082),
+            Complex64::new(0.705241, -0.254518),
+            Complex64::new(0.697787, -0.257219),
+            Complex64::new(-0.0711516, 0.0264293),
         ];
         for (&r, e) in jones.iter().zip(&expected) {
             assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
