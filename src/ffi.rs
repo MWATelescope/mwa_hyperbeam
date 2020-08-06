@@ -71,7 +71,7 @@ pub unsafe extern "C" fn calc_jones(
     let norm_bool = match norm_to_zenith {
         0 => false,
         1 => true,
-        _ => todo!(),
+        _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
     };
 
     // Using the passed-in beam, get the beam response (Jones matrix).
@@ -113,7 +113,7 @@ pub unsafe extern "C" fn calc_jones_array(
     let norm_bool = match norm_to_zenith {
         0 => false,
         1 => true,
-        _ => todo!(),
+        _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
     };
 
     let jones = beam

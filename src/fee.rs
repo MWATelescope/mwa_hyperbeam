@@ -34,8 +34,9 @@ pub(crate) struct DipoleCoefficients {
     y: PolCoefficients,
 }
 
-/// `Cache` is mostly just a `RwLock` around a `HashMap`. This allows multiple
-/// concurrent readers with the ability to halt all reading when writing.
+/// `CoeffCache` is mostly just a `RwLock` around a `HashMap`. This allows
+/// multiple concurrent readers with the ability to halt all reading when
+/// writing.
 ///
 /// A `CacheHash` is used as the key. This is a wrapper around Rust's own
 /// hashing code so that we get something specific to FEE beam settings.
@@ -43,7 +44,12 @@ pub(crate) struct DipoleCoefficients {
 /// `Rc` allows us to access the data without copying it. Benchmarks suggest
 /// that this is important; if `Rc` isn't used, the compiler really does do
 /// memory copies instead of just handing out a pointer.
-struct Cache(RwLock<HashMap<CacheHash, Arc<DipoleCoefficients>>>);
+struct CoeffCache(RwLock<HashMap<CacheHash, Arc<DipoleCoefficients>>>);
+
+/// `NormCache` is very similar to `CoeffCache`. It stores Jones matrices used
+/// to normalise beam responses at various frequencies (i.e. frequency is the
+/// key of the `HashMap`).
+struct NormCache(RwLock<HashMap<u32, Arc<Jones>>>);
 
 pub struct FEEBeam {
     /// The `hdf5::File` struct associated with the opened HDF5 file. It is
@@ -57,7 +63,9 @@ pub struct FEEBeam {
     /// Row 2: N
     modes: Array2<f64>,
     /// A cache of X and Y coefficients.
-    cache: Cache,
+    coeff_cache: CoeffCache,
+    /// A cache of normalisation Jones matrices.
+    norm_cache: NormCache,
 }
 
 impl FEEBeam {
@@ -126,7 +134,8 @@ impl FEEBeam {
             hdf5_file: Mutex::new(h5),
             freqs,
             modes,
-            cache: Cache(RwLock::new(HashMap::new())),
+            coeff_cache: CoeffCache(RwLock::new(HashMap::new())),
+            norm_cache: NormCache(RwLock::new(HashMap::new())),
         })
     }
 
@@ -184,7 +193,7 @@ impl FEEBeam {
         // Are the input settings already cached? Hash them to check.
         let hash = CacheHash::new(freq, delays, amps);
         {
-            let cache = &*self.cache.0.read().unwrap();
+            let cache = &*self.coeff_cache.0.read().unwrap();
             match cache.get(&hash) {
                 // If the cache for this hash exists, we can return a copy.
                 Some(c) => return Ok(Arc::clone(&c)),
@@ -195,7 +204,7 @@ impl FEEBeam {
         // cache. Lock the cache, populate it, then return the coefficients we
         // just calculated.
         let modes = {
-            let mut cache = self.cache.0.write().unwrap();
+            let mut cache = self.coeff_cache.0.write().unwrap();
             let modes = Arc::new(self.calc_modes(freq, delays, amps)?);
             cache.insert(hash.clone(), modes);
             Arc::clone(&cache.get(&hash).unwrap())
@@ -340,6 +349,25 @@ impl FEEBeam {
         })
     }
 
+    fn get_norm_jones(&mut self, desired_freq: u32, coeffs: &DipoleCoefficients) -> Arc<Jones> {
+        let freq = self.find_closest_freq(desired_freq);
+        {
+            let cache = &*self.norm_cache.0.read().unwrap();
+            match cache.get(&freq) {
+                // If the cache for this hash exists, we can return a copy.
+                Some(c) => return Arc::clone(&c),
+                None => (),
+            }
+        }
+        // If we hit this part of the code, the normalisation Jones matrix was
+        // not in the cache. Lock the cache, populate it, then return the
+        // matrix we just calculated.
+        let mut cache = self.norm_cache.0.write().unwrap();
+        let jones = Arc::new(calc_zenith_norm_jones(coeffs));
+        cache.insert(freq, jones);
+        Arc::clone(&cache.get(&freq).unwrap())
+    }
+
     /// Calculate the Jones matrix for a pointing.
     ///
     /// `delays` and `amps` *must* have 16 elements.
@@ -356,7 +384,14 @@ impl FEEBeam {
         debug_assert_eq!(amps.len(), 16);
 
         let coeffs = self.get_modes(freq_hz, delays, amps)?;
-        let jones = calc_jones_direct(az_rad, za_rad, &coeffs, norm_to_zenith);
+        // If we're normalising the beam, get the normalisation Jones matrix
+        // here.
+        let norm = if norm_to_zenith {
+            Some(*self.get_norm_jones(freq_hz, &coeffs))
+        } else {
+            None
+        };
+        let jones = calc_jones_direct(az_rad, za_rad, &coeffs, norm);
         Ok(jones)
     }
 
@@ -377,11 +412,19 @@ impl FEEBeam {
         debug_assert_eq!(amps.len(), 16);
 
         let coeffs = self.get_modes(freq_hz, delays, amps)?;
+        // If we're normalising the beam, get the normalisation Jones matrix
+        // here.
+        let norm = if norm_to_zenith {
+            Some(*self.get_norm_jones(freq_hz, &coeffs))
+        } else {
+            None
+        };
+
         let mut out = Vec::with_capacity(az_rad.len());
         az_rad
             .par_iter()
             .zip(za_rad.par_iter())
-            .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm_to_zenith))
+            .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm))
             .collect_into_vec(&mut out);
         Ok(out)
     }
@@ -435,17 +478,33 @@ fn calc_jones_direct(
     az_rad: f64,
     za_rad: f64,
     coeffs: &DipoleCoefficients,
-    norm_to_zenith: bool,
+    norm_matrix: Option<Jones>,
 ) -> Jones {
     // Convert azimuth to FEKO phi (East through North).
     let phi_rad = *DPIBY2 - az_rad;
-    let (j00, j01) = calc_sigmas(phi_rad, za_rad, &coeffs.x);
-    let (j10, j11) = calc_sigmas(phi_rad, za_rad, &coeffs.y);
-    let jones = [j00, j01, j10, j11];
-    if norm_to_zenith {
-        todo!();
+    let (mut j00, mut j01) = calc_sigmas(phi_rad, za_rad, &coeffs.x);
+    let (mut j10, mut j11) = calc_sigmas(phi_rad, za_rad, &coeffs.y);
+    if let Some(norm) = norm_matrix {
+        j00 = j00 / norm[0];
+        j01 = j01 / norm[1];
+        j10 = j10 / norm[2];
+        j11 = j11 / norm[3];
     }
-    jones
+    [j00, j01, j10, j11]
+}
+
+fn calc_zenith_norm_jones(coeffs: &DipoleCoefficients) -> Jones {
+    // Azimuth angles at which Jones components are maximum.
+    let max_phi = [0.0, -*DPIBY2, *DPIBY2, 0.0];
+    let (j00, _) = calc_sigmas(max_phi[0], 0.0, &coeffs.x);
+    let (_, j01) = calc_sigmas(max_phi[1], 0.0, &coeffs.x);
+    let (j10, _) = calc_sigmas(max_phi[2], 0.0, &coeffs.y);
+    let (_, j11) = calc_sigmas(max_phi[3], 0.0, &coeffs.y);
+    // C++ uses abs(c) here, where abs is the magnitude of the complex number
+    // vector. Confusingly, it looks like the returned Jones matrix is all real,
+    // but it should be complex. This is more explicit in Rust.
+    let abs = |c: Complex64| Complex64::new(c.norm(), 0.0);
+    [abs(j00), abs(j01), abs(j10), abs(j11)]
 }
 
 #[cfg(test)]
@@ -658,7 +717,6 @@ mod tests {
             Complex64::new(0.036362, 0.103868),
             Complex64::new(-0.036836, -0.105791),
         ];
-        dbg!(&jones);
         for (&r, e) in jones.iter().zip(&expected) {
             assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
             assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
@@ -687,7 +745,25 @@ mod tests {
             Complex64::new(0.024792, 0.040577),
             Complex64::new(-0.069501, -0.113706),
         ];
-        dbg!(&jones);
+        for (&r, e) in jones.iter().zip(&expected) {
+            assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
+            assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_calc_jones_norm() {
+        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let result = beam.calc_jones(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true);
+        assert!(result.is_ok());
+        let jones = result.unwrap();
+        let expected = [
+            Complex64::new(0.0887949, 0.0220569),
+            Complex64::new(0.891024, 0.2211),
+            Complex64::new(0.887146, 0.216103),
+            Complex64::new(-0.0896141, -0.021803),
+        ];
         for (&r, e) in jones.iter().zip(&expected) {
             assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
             assert_abs_diff_eq!(r.im, e.im, epsilon = 1e-6);
