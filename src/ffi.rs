@@ -137,6 +137,67 @@ pub unsafe extern "C" fn calc_jones_array(
     ptr as *mut f64
 }
 
+// Yeah, I wish I could just give the caller the number of frequencies and the
+// array in one go, but I'm not sure it's possible.
+
+/// Get the number of available frequencies inside the HDF5 file.
+///
+/// # Arguments
+///
+/// `fee_beam` - the pointer to the `FEEBeam` struct.
+///
+/// # Returns
+///
+/// * The number of frequencies in the array.
+///
+#[no_mangle]
+pub unsafe extern "C" fn get_num_fee_beam_freqs(fee_beam: *mut FEEBeam) -> u32 {
+    let beam = &mut *fee_beam;
+    beam.freqs.len() as u32
+}
+
+/// Get the available frequencies inside the HDF5 file.
+///
+/// # Arguments
+///
+/// `fee_beam` - the pointer to the `FEEBeam` struct.
+///
+/// # Returns
+///
+/// * An ascending-sorted array with the available frequencies. Use
+/// `get_num_fee_beam_freqs` to get the size of the array.
+///
+#[no_mangle]
+pub unsafe extern "C" fn get_fee_beam_freqs(fee_beam: *mut FEEBeam) -> *mut u32 {
+    let beam = &mut *fee_beam;
+    let mut freqs = beam.freqs.clone();
+
+    // Ensure that the vector doesn't have extra memory allocated.
+    freqs.shrink_to_fit();
+    // Get the pointer variable and tell Rust not to deallocate the associated
+    // vector.
+    let ptr = freqs.as_mut_ptr();
+    std::mem::forget(freqs);
+    ptr
+}
+
+/// Given a frequency in Hz, get the closest available frequency inside the HDF5
+/// file.
+///
+/// # Arguments
+///
+/// `fee_beam` - the pointer to the `FEEBeam` struct.
+///
+/// # Returns
+///
+/// * The closest frequency to the specified frequency in Hz.
+///
+#[no_mangle]
+pub unsafe extern "C" fn closest_freq(fee_beam: *mut FEEBeam, freq: u32) -> u32 {
+    let beam = &mut *fee_beam;
+    beam.find_closest_freq(freq)
+}
+
 /// Free the memory associated with an MWA FEE beam.
 ///
 /// # Arguments
