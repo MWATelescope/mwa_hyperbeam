@@ -38,19 +38,16 @@ int main(int argc, char *argv[]) {
 
     // Calculate the Jones matrices for all pointings. Rust will do this in
     // parallel.
-    double **jones = calc_jones_array(beam, num_pointings, az, za, freq_hz, delays, amps, zenith_norm);
+    double *jones = calc_jones_array(beam, num_pointings, az, za, freq_hz, delays, amps, zenith_norm);
     printf("The first Jones matrix:\n");
-    printf("[[%.8f %.8fi,", jones[0][0], jones[0][1]);
-    printf("  %.8f %.8fi]\n", jones[0][2], jones[0][3]);
-    printf(" [%.8f %.8fi,", jones[0][4], jones[0][5]);
-    printf("  %.8f %.8fi]]\n", jones[0][6], jones[0][7]);
+    printf("[[%.8f %.8fi,", jones[0], jones[1]);
+    printf("  %.8f %.8fi]\n", jones[2], jones[3]);
+    printf(" [%.8f %.8fi,", jones[4], jones[5]);
+    printf("  %.8f %.8fi]]\n", jones[6], jones[7]);
 
     // Freeing memory.
     free(az);
     free(za);
-    for (int i = 0; i < num_pointings; i++) {
-        free(jones[i]);
-    }
     free(jones);
 
     // Free the beam - we must use a special function to do this.

@@ -87,8 +87,11 @@ pub unsafe extern "C" fn calc_jones(
     Box::into_raw(Box::new(jones)) as *mut f64
 }
 
-/// Get the beam response Jones matrix for several pointings. Rust will
-/// calculate the Jones matrices in parallel.
+/// Get the beam response Jones matrix for several pointings. The Jones matrix
+/// elements for each pointing are put into a single array. As there are 8
+/// floats per Jones matrix, there are 8 * `num_pointings` floats in the array.
+///
+/// Rust will calculate the Jones matrices in parallel.
 ///
 /// See the documentation for `calc_jones` for more info.
 #[no_mangle]
@@ -101,7 +104,7 @@ pub unsafe extern "C" fn calc_jones_array(
     delays: *const u32,
     amps: *const f64,
     norm_to_zenith: u8,
-) -> *mut *mut f64 {
+) -> *mut f64 {
     let beam = &mut *fee_beam;
     let az = std::slice::from_raw_parts(az_rad, num_pointings as usize);
     let za = std::slice::from_raw_parts(za_rad, num_pointings as usize);
@@ -116,19 +119,22 @@ pub unsafe extern "C" fn calc_jones_array(
     let jones = beam
         .calc_jones_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
         .unwrap();
-    // Put all the slices onto the heap.
-    let mut jones_heap: Vec<*mut f64> = jones
-        .into_iter()
-        .map(|j| Box::into_raw(Box::new(j)) as *mut f64)
-        .collect();
+    // Put all the Jones matrix elements into a flatten array on the heap.
+    let mut jones_flattened = Vec::with_capacity(4 * jones.len());
+    for j in jones.into_iter() {
+        jones_flattened.push(j[0]);
+        jones_flattened.push(j[1]);
+        jones_flattened.push(j[2]);
+        jones_flattened.push(j[3]);
+    }
     // Ensure that the vector doesn't have extra memory allocated.
-    jones_heap.shrink_to_fit();
+    jones_flattened.shrink_to_fit();
     // `jones_heap` is a vector. Rust will automatically deallocate it at the
     // end of this function. To stop that, get the pointer to the memory, then
     // tell Rust to forget about the vector.
-    let ptr = jones_heap.as_mut_ptr();
-    std::mem::forget(jones_heap);
-    ptr
+    let ptr = jones_flattened.as_mut_ptr();
+    std::mem::forget(jones_flattened);
+    ptr as *mut f64
 }
 
 /// Free the memory associated with an MWA FEE beam.
