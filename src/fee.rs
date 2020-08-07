@@ -79,9 +79,9 @@ impl FEEBeam {
         let mut biggest_dip_index: Option<u8> = None;
         // Iterate over all of the h5 dataset names.
         for d in h5.member_names()? {
-            if d.starts_with("X") {
+            if d.starts_with('X') {
                 // This is the part between 'X' and '_';
-                let dipole_index_str = d.strip_prefix("X").unwrap().split("_").next();
+                let dipole_index_str = d.strip_prefix('X').unwrap().split('_').next();
                 let dipole_index = match dipole_index_str {
                     Some(s) => match s.parse() {
                         Ok(i) => i,
@@ -194,10 +194,9 @@ impl FEEBeam {
         let hash = CacheHash::new(freq, delays, amps);
         {
             let cache = &*self.coeff_cache.0.read().unwrap();
-            match cache.get(&hash) {
-                // If the cache for this hash exists, we can return a copy.
-                Some(c) => return Ok(Arc::clone(&c)),
-                None => (),
+            // If the cache for this hash exists, we can return a copy.
+            if let Some(c) = cache.get(&hash) {
+                return Ok(Arc::clone(&c));
             }
         }
         // If we hit this part of the code, the coefficients were not in the
@@ -353,10 +352,9 @@ impl FEEBeam {
         let freq = self.find_closest_freq(desired_freq);
         {
             let cache = &*self.norm_cache.0.read().unwrap();
-            match cache.get(&freq) {
-                // If the cache for this hash exists, we can return a copy.
-                Some(c) => return Ok(Arc::clone(&c)),
-                None => (),
+            // If the cache for this hash exists, we can return a copy.
+            if let Some(c) = cache.get(&freq) {
+                return Ok(Arc::clone(&c));
             }
         }
         // If we hit this part of the code, the normalisation Jones matrix was
@@ -466,8 +464,8 @@ fn calc_sigmas(phi: f64, theta: f64, coeffs: &PolCoefficients) -> (Complex64, Co
         let e_theta_mn = j_power_n * ((p1sin * (mf.abs() * q2 * u - mf * q1)) + q2 * p1);
         let j_power_np1 = J_POWER_TABLE[((*n + 1) % 4) as usize];
         let e_phi_mn = j_power_np1 * ((p1sin * (mf * q2 - mf.abs() * q1 * u)) - q1 * p1);
-        sigma_p = sigma_p + phi_comp * e_phi_mn;
-        sigma_t = sigma_t + phi_comp * e_theta_mn;
+        sigma_p += phi_comp * e_phi_mn;
+        sigma_t += phi_comp * e_theta_mn;
     }
 
     // The C++ code currently doesn't distinguish between the polarisations.
@@ -486,10 +484,10 @@ fn calc_jones_direct(
     let (mut j00, mut j01) = calc_sigmas(phi_rad, za_rad, &coeffs.x);
     let (mut j10, mut j11) = calc_sigmas(phi_rad, za_rad, &coeffs.y);
     if let Some(norm) = norm_matrix {
-        j00 = j00 / norm[0];
-        j01 = j01 / norm[1];
-        j10 = j10 / norm[2];
-        j11 = j11 / norm[3];
+        j00 /= norm[0];
+        j01 /= norm[1];
+        j10 /= norm[2];
+        j11 /= norm[3];
     }
     [j00, j01, j10, j11]
 }

@@ -42,7 +42,7 @@ pub(crate) fn legendre_values(n: usize, m: usize, x: &[f64]) -> Vec<f64> {
     }
 
     // J = M + 1 is the second nonzero function.
-    if m + 1 <= n {
+    if m < n {
         for i in 0..mm {
             v[i + (m + 1) * mm] = x[i] * (2 * m + 1) as f64 * v[i + m * mm];
         }
@@ -105,6 +105,9 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
             m_incr += n_max - order;
         }
 
+        // Floating point comparisons are pretty awful, but this is what the C++
+        // code does, so...
+        #[allow(clippy::float_cmp)]
         if u == 1.0 {
             pm_in[0] = u - delta_u;
             let pm_vals = legendre_values(n, 0, &pm_in);
@@ -128,32 +131,6 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
             p1_out[i] = pm1[j];
         }
     }
-
-    // The C++ version of this code takes two vector pointers in for `p1sin_out`
-    // and `p1_out`. But, the same code never allocates memory against those
-    // pointers. So, we just make the vectors here.
-
-    // let mut p = vec![0.0; n_max + 1];
-    // let mut pm1 = vec![0.0; n_max + 1];
-    // let mut pm_sin = vec![0.0; n_max + 1];
-    // // pm_in[0] = u;
-    // // let mut pu_mdelu = vec![0.0; n_max + 1];
-    // // let mut pm_sin_merged = vec![0.0; 2 * n_max + 1];
-    // // let mut pm1_merged = vec![0.0; 2 * n_max + 1];
-
-    // // Create a look-up table for the legendre polynomials
-    // // Such that legendre_table[ m * nmax + (n-1) ] = legendre(n, m, u)
-    // let mut legendre_table = vec![0.0; n_max * (n_max + 1)];
-    // for m in 0..n_max + 1 {
-    //     // let mut leg0 = legendre_polynomial()
-    //     // for n in 2..n_max + 1 {
-    //     //     match m.cmp(&n) {
-    //     //         Ordering::Less =>
-    //     //     }
-    //     //     if (m < n) {
-    //     //     }
-    //     // }
-    // }
 
     (p1sin_out, p1_out)
 }

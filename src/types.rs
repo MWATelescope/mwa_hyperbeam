@@ -49,7 +49,7 @@ impl CacheHash {
         // We can't hash f64 values, so convert the amps to ints. Multiply by a
         // big number to get away from integer rounding.
         let amps_ints: Vec<u32> = amps.iter().map(|a| (a * 1e6) as u32).collect();
-        &amps_ints.hash(&mut hasher);
+        amps_ints.hash(&mut hasher);
         Self(hasher.finish())
     }
 }
