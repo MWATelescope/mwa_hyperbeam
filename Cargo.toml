@@ -17,7 +17,7 @@ codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size redu
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
-hdf5 = "0.6.*"
+hdf5 = "0.7.*"
 lazy_static = "1.4.*"
 ndarray = "0.13.*"
 num = "0.3.*"
