@@ -52,6 +52,7 @@ struct CoeffCache(RwLock<HashMap<CacheHash, Arc<DipoleCoefficients>>>);
 /// key of the `HashMap`).
 struct NormCache(RwLock<HashMap<u32, Arc<Jones>>>);
 
+/// The main struct to be used for calculating FEE pointings.
 pub struct FEEBeam {
     /// The `hdf5::File` struct associated with the opened HDF5 file. It is
     /// behind a `Mutex` to prevent parallel usage of the file.

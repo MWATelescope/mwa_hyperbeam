@@ -15,32 +15,32 @@ use structopt::*;
 #[derive(StructOpt, Debug)]
 struct Opts {
     /// Path to the HDF5 file.
-    #[structopt(parse(from_os_str))]
-    hdf5_file: std::path::PathBuf,
+    #[structopt(short, long, parse(from_os_str))]
+    hdf5_file: Option<std::path::PathBuf>,
 
     /// The number of pointings to run.
     #[structopt()]
-    num_pointings: u32,
+    num_pointings: usize,
 }
 
 fn main() -> Result<(), anyhow::Error> {
     let opts = Opts::from_args();
-    let mut beam = FEEBeam::new(opts.hdf5_file).unwrap();
+    // If we were given a file, use it. Otherwise, fall back on MWA_BEAM_FILE.
+    let mut beam = match opts.hdf5_file {
+        Some(f) => FEEBeam::new(f)?,
+        None => FEEBeam::new_from_env()?,
+    };
 
     // Set up the pointings to test.
-    let mut az = vec![];
-    let mut za = vec![];
+    let mut az = Vec::with_capacity(opts.num_pointings);
+    let mut za = Vec::with_capacity(opts.num_pointings);
     for i in 0..opts.num_pointings {
-        let coord_deg = 5.0 + i as f64 * 80.0 / opts.num_pointings as f64;
-        let coord_rad = coord_deg.to_radians();
-        az.push(coord_rad);
-        za.push(coord_rad);
+        az.push(0.9 * std::f64::consts::PI * i as f64 / opts.num_pointings as f64);
+        za.push(0.1 + 0.9 * std::f64::consts::PI / 2.0 * i as f64 / opts.num_pointings as f64);
     }
     let freq_hz = 51200000;
-    let delays = vec![3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0];
-    let amps = vec![
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
-    ];
+    let delays = vec![0; 16];
+    let amps = vec![1.0; 16];
     let zenith_norm = false;
 
     // Call hyperbeam.

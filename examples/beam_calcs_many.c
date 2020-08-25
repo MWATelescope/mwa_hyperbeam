@@ -22,22 +22,20 @@ int main(int argc, char *argv[]) {
     FEEBeam *beam = new_fee_beam(argv[1]);
 
     // Set up the pointings to test.
-    int num_pointings = 10000;
+    int num_pointings = 5000000;
     double *az = malloc(num_pointings * sizeof(double));
     double *za = malloc(num_pointings * sizeof(double));
     for (int i = 0; i < num_pointings; i++) {
-        double coord_deg = 5.0 + (double)i * 80.0 / (double)num_pointings;
-        double coord_rad = coord_deg * M_PI / 180.0;
-        az[i] = coord_rad;
-        za[i] = coord_rad;
+        az[i] = 45.0  * M_PI / 180.0;
+        za[i] = 10.0  * M_PI / 180.0;
     }
-    unsigned delays[16] = {3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0};
-    double amps[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1};
+    unsigned delays[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    double amps[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
     int freq_hz = 51200000;
     int zenith_norm = 0;
 
-    // Calculate the Jones matrices for all pointings. Rust will do this in
-    // parallel.
+    /* Calculate the Jones matrices for all pointings. Rust will do this in */
+    /* parallel. */
     double *jones = calc_jones_array(beam, num_pointings, az, za, freq_hz, delays, amps, zenith_norm);
     printf("The first Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", jones[0], jones[1]);

@@ -14,6 +14,9 @@ mod ffi;
 pub(crate) mod legendre;
 pub(crate) mod types;
 
+#[cfg(feature = "python")]
+mod python;
+
 use constants::*;
 pub use errors::*;
 pub use fee::*;
