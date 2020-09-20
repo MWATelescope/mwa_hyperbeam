@@ -22,7 +22,7 @@ Code for Legendre polynomials.
 // also licensed under the LGPL. A copy of the LGPL license can be found at
 // https://www.gnu.org/licenses/lgpl-3.0.en.html
 // TODO: Benchmark. Does this need to go faster?
-pub(crate) fn legendre_values(n: usize, m: usize, x: &[f64]) -> Vec<f64> {
+fn _legendre_values(n: usize, m: usize, x: &[f64]) -> Vec<f64> {
     let mm = x.len();
     let mut v = vec![0.0; mm * (n + 1)];
 
@@ -61,6 +61,41 @@ pub(crate) fn legendre_values(n: usize, m: usize, x: &[f64]) -> Vec<f64> {
     v
 }
 
+/// The same as `legendre_values`, but only takes a single `x`.
+// This code is a re-write of the C code here:
+// https://people.sc.fsu.edu/~jburkardt/c_src/legendre_polynomial/legendre_polynomial.html
+// The C code distributed under the GNU LGPL license, and thus this function is
+// also licensed under the LGPL. A copy of the LGPL license can be found at
+// https://www.gnu.org/licenses/lgpl-3.0.en.html
+pub(crate) fn legendre_single(n: usize, m: usize, x: f64) -> Vec<f64> {
+    let mut v = vec![0.0; n + 1];
+
+    // J = M is the first non-zero function.
+    if m <= n {
+        v[m] = 1.0;
+
+        let mut fact = 1.0;
+        for _ in 0..m {
+            v[m] = -v[m] * fact * (1.0 - x * x).sqrt();
+            fact += 2.0;
+        }
+    }
+
+    // J = M + 1 is the second nonzero function.
+    if m < n {
+        v[m + 1] = x * (2 * m + 1) as f64 * v[m];
+    }
+
+    for j in (m + 2)..=n {
+        let ji = j as isize;
+        let mi = m as isize;
+        v[j] = ((2 * j - 1) as f64 * x * v[j - 1] + (-ji - mi + 1) as f64 * v[j - 2])
+            / (ji - mi) as f64;
+    }
+
+    v
+}
+
 /// Returns list of Legendre polynomial values calculated up to order n_max.
 // This function is a re-write of P1SIN within the RTS file mwa_tile.c.
 pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
@@ -73,10 +108,10 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
     let (s_theta, u) = theta.sin_cos();
     let delta_u = 1e-6;
 
-    let mut pm_in = [u];
+    let mut pm_in = u;
     let mut m_incr = 0;
     for m in 0..=n_max {
-        let pm_vals = legendre_values(n_max, m, &pm_in);
+        let pm_vals = legendre_single(n_max, m, pm_in);
         for i in m..=n_max {
             if !(i == 0 && m == 0) {
                 all_vals[(i - m) + m_incr] = pm_vals[i];
@@ -89,7 +124,6 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
         let mut p = vec![0.0; n + 1];
         let mut pm1 = vec![0.0; n + 1];
         let mut pm_sin = vec![0.0; n + 1];
-        pm_in[0] = u;
 
         m_incr = 0;
         for order in 0..=n {
@@ -109,12 +143,12 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
         // code does, so...
         #[allow(clippy::float_cmp)]
         if u == 1.0 {
-            pm_in[0] = u - delta_u;
-            let pm_vals = legendre_values(n, 0, &pm_in);
+            pm_in = u - delta_u;
+            let pm_vals = legendre_single(n, 0, pm_in);
             pm_sin[1] = -(p[0] - pm_vals[n]) / delta_u;
         } else if u == -1.0 {
-            pm_in[0] = u - delta_u;
-            let pm_vals = legendre_values(n, 0, &pm_in);
+            pm_in = u - delta_u;
+            let pm_vals = legendre_single(n, 0, pm_in);
             pm_sin[1] = -(pm_vals[n] - p[0]) / delta_u;
         } else {
             for order in 0..=n {
@@ -143,7 +177,7 @@ mod tests {
     #[test]
     fn legendre_values_n5m0() {
         let x = vec![-1.0, -0.5, 0.0, 0.5, 1.0];
-        let result = legendre_values(5, 0, &x);
+        let result = _legendre_values(5, 0, &x);
         let expected = vec![
             1.000000, 1.000000, 1.000000, 1.000000, 1.000000, -1.000000, -0.500000, 0.000000,
             0.500000, 1.000000, 1.000000, -0.125000, -0.500000, -0.125000, 1.000000, -1.000000,
@@ -159,7 +193,7 @@ mod tests {
     #[test]
     fn legendre_values_n5m1() {
         let x = vec![-1.0, -0.5, 0.0, 0.5, 1.0];
-        let result = legendre_values(5, 1, &x);
+        let result = _legendre_values(5, 1, &x);
         let expected = vec![
             0.000000, 0.000000, 0.000000, 0.000000, 0.000000, -0.000000, -0.866025, -1.000000,
             -0.866025, -0.000000, 0.000000, 1.299038, -0.000000, -1.299038, -0.000000, 0.000000,

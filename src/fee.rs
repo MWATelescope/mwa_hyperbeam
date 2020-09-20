@@ -352,7 +352,7 @@ impl FEEBeam {
         let freq = self.find_closest_freq(desired_freq);
         {
             let cache = &*self.norm_cache.0.read().unwrap();
-            // If the cache for this hash exists, we can return a copy.
+            // If the cache for this freq exists, we can return a copy.
             if let Some(c) = cache.get(&freq) {
                 return Ok(Arc::clone(&c));
             }

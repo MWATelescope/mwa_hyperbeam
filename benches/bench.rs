@@ -26,7 +26,6 @@ fn fee(c: &mut Criterion) {
         // Prime the cache.
         let _result = beam.get_modes(freq, &delays, &gains).unwrap();
         b.iter(|| {
-            // By calling calc_modes, we skip the cache.
             let _result = beam
                 .calc_jones(az, za, freq, &delays, &gains, norm_to_zenith)
                 .unwrap();
@@ -48,7 +47,6 @@ fn fee(c: &mut Criterion) {
         // Prime the cache.
         let _result = beam.get_modes(freq, &delays, &gains).unwrap();
         b.iter(|| {
-            // By calling calc_modes, we skip the cache.
             let _result = beam
                 .calc_jones_array(&az, &za, freq, &delays, &gains, norm_to_zenith)
                 .unwrap();
