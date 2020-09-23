@@ -48,7 +48,17 @@ fn main() -> Result<(), anyhow::Error> {
         .calc_jones_array(&az, &za, freq_hz, &delays, &amps, zenith_norm)
         .unwrap();
     println!("The first Jones matrix:");
-    println!("{:#?}", jones[0]);
+    for j in jones.outer_iter() {
+        // This works, but the formatting for this isn't very pretty.
+        // println!("{}", j);
+
+        // For demonstrations' sake, this gives easier-to-read output.
+        println!(
+            "[[{:+.8}, {:+.8}]\n [{:+.8}, {:+.8}]]",
+            j[0], j[1], j[2], j[3]
+        );
+        break;
+    }
 
     Ok(())
 }

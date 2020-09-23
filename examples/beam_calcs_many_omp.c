@@ -44,10 +44,10 @@ int main(int argc, char *argv[]) {
         jones[i] = j;
     }
     printf("The first Jones matrix:\n");
-    printf("[[%.8f %.8fi,", jones[0][0], jones[0][1]);
-    printf("  %.8f %.8fi]\n", jones[0][2], jones[0][3]);
-    printf(" [%.8f %.8fi,", jones[0][4], jones[0][5]);
-    printf("  %.8f %.8fi]]\n", jones[0][6], jones[0][7]);
+    printf("[[%+.8f%+.8fi,", jones[0][0], jones[0][1]);
+    printf(" %+.8f%+.8fi]\n", jones[0][2], jones[0][3]);
+    printf(" [%+.8f%+.8fi,", jones[0][4], jones[0][5]);
+    printf(" %+.8f%+.8fi]]\n", jones[0][6], jones[0][7]);
 
     // Freeing memory.
     free(az);

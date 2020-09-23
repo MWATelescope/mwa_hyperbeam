@@ -32,10 +32,10 @@ int main(int argc, char *argv[]) {
     // Calculate the Jones matrix for this pointing.
     double *jones = calc_jones(beam, az, za, freq_hz, delays, amps, zenith_norm);
     printf("The returned Jones matrix:\n");
-    printf("[[%.8f %.8fi,", jones[0], jones[1]);
-    printf("  %.8f %.8fi]\n", jones[2], jones[3]);
-    printf(" [%.8f %.8fi,", jones[4], jones[5]);
-    printf("  %.8f %.8fi]]\n", jones[6], jones[7]);
+    printf("[[%+.8f%+.8fi,", jones[0], jones[1]);
+    printf(" %+.8f%+.8fi]\n", jones[2], jones[3]);
+    printf(" [%+.8f%+.8fi,", jones[4], jones[5]);
+    printf(" %+.8f%+.8fi]]\n", jones[6], jones[7]);
 
     // Free the Jones matrix.
     free(jones);

@@ -116,24 +116,11 @@ pub unsafe extern "C" fn calc_jones_array(
         _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
     };
 
-    let jones = beam
+    let mut jones = beam
         .calc_jones_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
         .unwrap();
-    // Put all the Jones matrix elements into a flatten array on the heap.
-    let mut jones_flattened = Vec::with_capacity(4 * jones.len());
-    for j in jones.into_iter() {
-        jones_flattened.push(j[0]);
-        jones_flattened.push(j[1]);
-        jones_flattened.push(j[2]);
-        jones_flattened.push(j[3]);
-    }
-    // Ensure that the vector doesn't have extra memory allocated.
-    jones_flattened.shrink_to_fit();
-    // `jones_heap` is a vector. Rust will automatically deallocate it at the
-    // end of this function. To stop that, get the pointer to the memory, then
-    // tell Rust to forget about the vector.
-    let ptr = jones_flattened.as_mut_ptr();
-    std::mem::forget(jones_flattened);
+    let ptr = jones.as_mut_ptr();
+    std::mem::forget(jones);
     ptr as *mut f64
 }
 
@@ -207,4 +194,73 @@ pub unsafe extern "C" fn closest_freq(fee_beam: *mut FEEBeam, freq: u32) -> u32 
 #[no_mangle]
 pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
     Box::from_raw(fee_beam);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use approx::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn test_calc_jones_via_ffi() {
+        let file = std::ffi::CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let jones = unsafe {
+            let beam = new_fee_beam(file.into_raw());
+            let jones_ptr = calc_jones(
+                beam,
+                45.0_f64.to_radians(),
+                10.0_f64.to_radians(),
+                51200000,
+                [0; 16].as_ptr(),
+                [1.0; 16].as_ptr(),
+                0,
+            );
+            Vec::from_raw_parts(jones_ptr, 8, 8)
+        };
+
+        let expected = [
+            0.036179, 0.103586, 0.036651, 0.105508, 0.036362, 0.103868, -0.036836, -0.105791,
+        ];
+        for (&j, e) in jones.iter().zip(&expected) {
+            assert_abs_diff_eq!(j, e, epsilon = 1e-6);
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_calc_jones_array_via_ffi() {
+        let num_pointings = 10000;
+        let file = std::ffi::CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let jones = unsafe {
+            let beam = new_fee_beam(file.into_raw());
+            let az = vec![45.0_f64.to_radians(); num_pointings];
+            let za = vec![10.0_f64.to_radians(); num_pointings];
+            let jones_ptr = calc_jones_array(
+                beam,
+                num_pointings as _,
+                az.as_ptr(),
+                za.as_ptr(),
+                51200000,
+                [0; 16].as_ptr(),
+                [1.0; 16].as_ptr(),
+                0,
+            );
+            Vec::from_raw_parts(jones_ptr, 8 * num_pointings, 8 * num_pointings)
+        };
+
+        let expected = [
+            0.036179, 0.103586, 0.036651, 0.105508, 0.036362, 0.103868, -0.036836, -0.105791,
+        ];
+        for (&j, e) in jones.iter().zip(&expected) {
+            assert_abs_diff_eq!(j, e, epsilon = 1e-6);
+        }
+        for (&j, e) in jones[num_pointings - 8..num_pointings]
+            .iter()
+            .zip(&expected)
+        {
+            assert_abs_diff_eq!(j, e, epsilon = 1e-6);
+        }
+    }
 }

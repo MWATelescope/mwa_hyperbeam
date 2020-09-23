@@ -402,7 +402,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-    ) -> Result<Vec<Jones>, FEEBeamError> {
+    ) -> Result<Array2<Complex64>, FEEBeamError> {
         debug_assert_eq!(delays.len(), 16);
         debug_assert_eq!(amps.len(), 16);
 
@@ -421,7 +421,7 @@ impl FEEBeam {
             .zip(za_rad.par_iter())
             .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm))
             .collect_into_vec(&mut out);
-        Ok(out)
+        Ok(Array2::from(out))
     }
 }
 

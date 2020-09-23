@@ -40,10 +40,10 @@ int main(int argc, char *argv[]) {
     // parallel.
     double *jones = calc_jones_array(beam, num_pointings, az, za, freq_hz, delays, amps, zenith_norm);
     printf("The first Jones matrix:\n");
-    printf("[[%.8f %.8fi,", jones[0], jones[1]);
-    printf("  %.8f %.8fi]\n", jones[2], jones[3]);
-    printf(" [%.8f %.8fi,", jones[4], jones[5]);
-    printf("  %.8f %.8fi]]\n", jones[6], jones[7]);
+    printf("[[%+.8f%+.8fi,", jones[0], jones[1]);
+    printf(" %+.8f%+.8fi]\n", jones[2], jones[3]);
+    printf(" [%+.8f%+.8fi,", jones[4], jones[5]);
+    printf(" %+.8f%+.8fi]]\n", jones[6], jones[7]);
 
     // Freeing memory.
     free(az);
