@@ -330,11 +330,7 @@ impl FEEBeam {
 
         let mut m_signs = Vec::with_capacity(m_accum.len());
         for m in &m_accum {
-            let sign = if *m > 0 && (*m as i32) % 2 != 0 {
-                -1
-            } else {
-                1
-            };
+            let sign = if *m > 0 && *m % 2 != 0 { -1 } else { 1 };
             m_signs.push(sign)
         }
 
