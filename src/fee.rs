@@ -69,6 +69,7 @@ pub struct FEEBeam {
 }
 
 impl FEEBeam {
+    /// Given the path to the FEE beam file, create a new `FEEBeam` struct.
     pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, FEEBeamError> {
         // so that libhdf5 doesn't print errors to stdout
         let _e = hdf5::silence_errors();
@@ -137,6 +138,15 @@ impl FEEBeam {
             coeff_cache: CoeffCache(RwLock::new(HashMap::new())),
             norm_cache: NormCache(RwLock::new(HashMap::new())),
         })
+    }
+
+    /// Create a new `FEEBeam` struct from the MWA_BEAM_FILE environment
+    /// variable.
+    pub fn new_from_env() -> Result<Self, FEEBeamError> {
+        match std::env::var("MWA_BEAM_FILE") {
+            Ok(f) => Self::new(f),
+            Err(e) => Err(FEEBeamError::MwaBeamFileVarError(e)),
+        }
     }
 
     /// Given a frequency [Hz], find the closest frequency that is defined in
@@ -512,6 +522,14 @@ mod tests {
     #[serial]
     fn new() {
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5");
+        assert!(beam.is_ok());
+    }
+
+    #[test]
+    #[serial]
+    fn new_from_env() {
+        std::env::set_var("MWA_BEAM_FILE", "mwa_full_embedded_element_pattern.h5");
+        let beam = FEEBeam::new_from_env();
         assert!(beam.is_ok());
     }
 

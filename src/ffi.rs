@@ -31,6 +31,20 @@ pub unsafe extern "C" fn new_fee_beam(hdf5_file: *const std::os::raw::c_char) ->
     Box::into_raw(Box::new(beam))
 }
 
+/// Create a new MWA FEE beam. Requires the HDF5 beam file path to be specified
+/// by the environment variable MWA_BEAM_FILE.
+///
+/// # Returns
+///
+/// * A pointer to a Rust-owned `FEEBeam` struct. This struct must be freed by
+/// calling `free_fee_beam`.
+///
+#[no_mangle]
+pub unsafe extern "C" fn new_fee_beam_from_env() -> *mut FEEBeam {
+    let beam = FEEBeam::new_from_env().unwrap();
+    Box::into_raw(Box::new(beam))
+}
+
 /// Get the beam response Jones matrix for the given pointing.
 ///
 /// Note the return type (*double); we can't pass complex numbers across the FFI

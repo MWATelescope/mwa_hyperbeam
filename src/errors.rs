@@ -33,4 +33,8 @@ pub enum FEEBeamError {
     /// An error associated with parsing a string into another type.
     #[error("Couldn't parse '{0}' to a number")]
     Parse(String),
+
+    /// An error associated with the MWA_BEAM_FILE environment variable.
+    #[error("Problem with the MWA_BEAM_FILE variable: {0}")]
+    MwaBeamFileVarError(#[from] std::env::VarError),
 }
