@@ -6,8 +6,6 @@
 Pre-calculated factorials from boost.
  */
 
-use lazy_static::lazy_static;
-
 /* The following C++ program gives the values:
 
 #include <stdio.h>
@@ -22,8 +20,7 @@ int main(int argc, char *argv[]) {
 }
  */
 
-lazy_static! {
-pub(crate) static ref FACTORIAL: Vec<f64> = vec![
+pub(crate) const FACTORIAL: [f64; 100] = [
     1.0,
     1.0,
     2.0,
@@ -125,4 +122,3 @@ pub(crate) static ref FACTORIAL: Vec<f64> = vec![
     9426890448883247983672977790485681756198226684713209121387214933124319123185085463587807482339200625588413886652312783536451984170299964728156983874551808.0,
     933262154439441532520836312969247551723442539131008266742244198127778943717420325831801796076713498268781712437125578348809015437262107613541171778746843136.0,
 ];
-}

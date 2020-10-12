@@ -9,9 +9,7 @@ Generic types.
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use num::complex::Complex64;
-
-pub(crate) type Jones = [Complex64; 4];
+pub(crate) type Jones = [crate::c64; 4];
 
 #[derive(Debug)]
 pub(crate) enum Pol {

@@ -20,4 +20,4 @@ pub use fee::*;
 pub(crate) use types::*;
 
 // Re-exports.
-use num::complex::Complex64;
+use num::complex::Complex64 as c64;

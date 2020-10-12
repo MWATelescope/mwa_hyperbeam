@@ -7,6 +7,7 @@ Code to read the spherical harmonic coefficients from the supplied HDF5 file.
  */
 
 use std::collections::HashMap;
+use std::f64::consts::{FRAC_PI_2, TAU};
 use std::sync::{Arc, Mutex, RwLock};
 
 use ndarray::Array2;
@@ -19,8 +20,8 @@ use crate::*;
 /// Coefficients for X and Y.
 // TODO: Improve docs.
 pub(crate) struct PolCoefficients {
-    q1_accum: Vec<Complex64>,
-    q2_accum: Vec<Complex64>,
+    q1_accum: Vec<c64>,
+    q2_accum: Vec<c64>,
     m_accum: Vec<i8>,
     n_accum: Vec<i8>,
     /// The sign of M coefficients (i.e. -1 or 1).
@@ -120,9 +121,9 @@ impl FEEBeam {
         if freqs.is_empty() {
             return Err(FEEBeamError::NoFreqs);
         }
-        if biggest_dip_index.unwrap() != *NUM_DIPOLES {
+        if biggest_dip_index.unwrap() != NUM_DIPOLES {
             return Err(FEEBeamError::DipoleCountMismatch {
-                expected: *NUM_DIPOLES,
+                expected: NUM_DIPOLES,
                 got: biggest_dip_index.unwrap(),
             });
         }
@@ -245,10 +246,10 @@ impl FEEBeam {
         amps: &[f64],
         pol: Pol,
     ) -> Result<PolCoefficients, FEEBeamError> {
-        let mut q1: Vec<Complex64> = vec![];
-        let mut q2: Vec<Complex64> = vec![];
-        let mut q1_accum: Vec<Complex64> = vec![Complex64::new(0.0, 0.0); self.modes.shape()[1]];
-        let mut q2_accum: Vec<Complex64> = vec![Complex64::new(0.0, 0.0); self.modes.shape()[1]];
+        let mut q1: Vec<c64> = vec![];
+        let mut q2: Vec<c64> = vec![];
+        let mut q1_accum: Vec<c64> = vec![c64::new(0.0, 0.0); self.modes.shape()[1]];
+        let mut q2_accum: Vec<c64> = vec![c64::new(0.0, 0.0); self.modes.shape()[1]];
         let mut m_accum = vec![];
         let mut n_accum = vec![];
         // Biggest N coefficient.
@@ -263,10 +264,10 @@ impl FEEBeam {
             let n_dip_coeffs: usize = q_all.shape()[1];
 
             // Complex excitation voltage.
-            let v: Complex64 = {
-                let phase = *D2PI * freq as f64 * (-(delay as f64)) * *DELAY_STEP;
+            let v: c64 = {
+                let phase = TAU * freq as f64 * (-(delay as f64)) * DELAY_STEP;
                 let (s_phase, c_phase) = phase.sin_cos();
-                let phase_factor = Complex64::new(c_phase, s_phase);
+                let phase_factor = c64::new(c_phase, s_phase);
                 amp * phase_factor
             };
 
@@ -322,7 +323,7 @@ impl FEEBeam {
                 let s11_coeff = q_all[[1, s1_idx]];
                 let arg = s11_coeff.to_radians();
                 let (s_arg, c_arg) = arg.sin_cos();
-                let q1_val = s10_coeff * Complex64::new(c_arg, s_arg);
+                let q1_val = s10_coeff * c64::new(c_arg, s_arg);
                 q1.push(q1_val);
                 q1_accum[i] += q1_val * v;
 
@@ -332,7 +333,7 @@ impl FEEBeam {
                 let s21_coeff = q_all[[1, s2_idx]];
                 let arg = s21_coeff.to_radians();
                 let (s_arg, c_arg) = arg.sin_cos();
-                let q2_val = s20_coeff * Complex64::new(c_arg, s_arg);
+                let q2_val = s20_coeff * c64::new(c_arg, s_arg);
                 q2.push(q2_val);
                 q2_accum[i] += q2_val * v;
             }
@@ -412,7 +413,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-    ) -> Result<Array2<Complex64>, FEEBeamError> {
+    ) -> Result<Array2<c64>, FEEBeamError> {
         debug_assert_eq!(delays.len(), 16);
         debug_assert_eq!(amps.len(), 16);
 
@@ -436,15 +437,15 @@ impl FEEBeam {
 }
 
 /// Calculate the Jones matrix for a pointing for a single dipole polarisation.
-fn calc_sigmas(phi: f64, theta: f64, coeffs: &PolCoefficients) -> (Complex64, Complex64) {
+fn calc_sigmas(phi: f64, theta: f64, coeffs: &PolCoefficients) -> (c64, c64) {
     let u = theta.cos();
     let (p1sin_arr, p1_arr) = p1sin(coeffs.n_max, theta);
 
     // TODO: Check that the sizes of N_accum and M_accum agree. This check
     // should actually be in the PolCoefficients generation.
 
-    let mut sigma_p = Complex64::new(0.0, 0.0);
-    let mut sigma_t = Complex64::new(0.0, 0.0);
+    let mut sigma_p = c64::new(0.0, 0.0);
+    let mut sigma_t = c64::new(0.0, 0.0);
     // Use an iterator for maximum performance.
     for ((((((m, n), sign), q1), q2), p1sin), p1) in coeffs
         .m_accum
@@ -464,7 +465,7 @@ fn calc_sigmas(phi: f64, theta: f64, coeffs: &PolCoefficients) -> (Complex64, Co
             / FACTORIAL[(n + m.abs()) as usize])
             .sqrt();
         let (s_m_phi, c_m_phi) = (mf * phi).sin_cos();
-        let ejm_phi = Complex64::new(c_m_phi, s_m_phi);
+        let ejm_phi = c64::new(c_m_phi, s_m_phi);
         let phi_comp = (ejm_phi * c_mn) / (nf * (nf + 1.0)).sqrt() * signf;
         let j_power_n = J_POWER_TABLE[(*n % 4) as usize];
         let e_theta_mn = j_power_n * ((p1sin * (mf.abs() * q2 * u - mf * q1)) + q2 * p1);
@@ -486,7 +487,7 @@ fn calc_jones_direct(
     norm_matrix: Option<Jones>,
 ) -> Jones {
     // Convert azimuth to FEKO phi (East through North).
-    let phi_rad = *DPIBY2 - az_rad;
+    let phi_rad = FRAC_PI_2 - az_rad;
     let (mut j00, mut j01) = calc_sigmas(phi_rad, za_rad, &coeffs.x);
     let (mut j10, mut j11) = calc_sigmas(phi_rad, za_rad, &coeffs.y);
     if let Some(norm) = norm_matrix {
@@ -500,7 +501,7 @@ fn calc_jones_direct(
 
 fn calc_zenith_norm_jones(coeffs: &DipoleCoefficients) -> Jones {
     // Azimuth angles at which Jones components are maximum.
-    let max_phi = [0.0, -*DPIBY2, *DPIBY2, 0.0];
+    let max_phi = [0.0, -FRAC_PI_2, FRAC_PI_2, 0.0];
     let (j00, _) = calc_sigmas(max_phi[0], 0.0, &coeffs.x);
     let (_, j01) = calc_sigmas(max_phi[1], 0.0, &coeffs.x);
     let (j10, _) = calc_sigmas(max_phi[2], 0.0, &coeffs.y);
@@ -508,7 +509,7 @@ fn calc_zenith_norm_jones(coeffs: &DipoleCoefficients) -> Jones {
     // C++ uses abs(c) here, where abs is the magnitude of the complex number
     // vector. Confusingly, it looks like the returned Jones matrix is all real,
     // but it should be complex. This is more explicit in Rust.
-    let abs = |c: Complex64| Complex64::new(c.norm(), 0.0);
+    let abs = |c: c64| c64::new(c.norm(), 0.0);
     [abs(j00), abs(j01), abs(j10), abs(j11)]
 }
 
@@ -573,32 +574,32 @@ mod tests {
         let x_n_expected = vec![1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3];
         let y_n_expected = vec![1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3];
         let x_q1_expected = vec![
-            Complex64::new(-0.024744, 0.009424),
-            Complex64::new(0.000000, 0.000000),
-            Complex64::new(-0.024734, 0.009348),
-            Complex64::new(0.000000, -0.000000),
-            Complex64::new(0.005766, 0.015469),
+            c64::new(-0.024744, 0.009424),
+            c64::new(0.000000, 0.000000),
+            c64::new(-0.024734, 0.009348),
+            c64::new(0.000000, -0.000000),
+            c64::new(0.005766, 0.015469),
         ];
         let x_q2_expected = vec![
-            Complex64::new(-0.026122, 0.009724),
-            Complex64::new(-0.000000, -0.000000),
-            Complex64::new(0.026116, -0.009643),
-            Complex64::new(0.000000, -0.000000),
-            Complex64::new(0.006586, 0.018925),
+            c64::new(-0.026122, 0.009724),
+            c64::new(-0.000000, -0.000000),
+            c64::new(0.026116, -0.009643),
+            c64::new(0.000000, -0.000000),
+            c64::new(0.006586, 0.018925),
         ];
         let y_q1_expected = vec![
-            Complex64::new(-0.009398, -0.024807),
-            Complex64::new(0.000000, -0.000000),
-            Complex64::new(0.009473, 0.024817),
-            Complex64::new(0.000000, 0.000000),
-            Complex64::new(-0.015501, 0.005755),
+            c64::new(-0.009398, -0.024807),
+            c64::new(0.000000, -0.000000),
+            c64::new(0.009473, 0.024817),
+            c64::new(0.000000, 0.000000),
+            c64::new(-0.015501, 0.005755),
         ];
         let y_q2_expected = vec![
-            Complex64::new(-0.009692, -0.026191),
-            Complex64::new(0.000000, 0.000000),
-            Complex64::new(-0.009773, -0.026196),
-            Complex64::new(0.000000, 0.000000),
-            Complex64::new(-0.018968, 0.006566),
+            c64::new(-0.009692, -0.026191),
+            c64::new(0.000000, 0.000000),
+            c64::new(-0.009773, -0.026196),
+            c64::new(0.000000, 0.000000),
+            c64::new(-0.018968, 0.006566),
         ];
 
         for (&r, e) in coeffs.x.m_accum.iter().zip(x_m_expected) {
@@ -651,32 +652,32 @@ mod tests {
         let x_n_expected = vec![1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3];
         let y_n_expected = vec![1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3];
         let x_q1_expected = vec![
-            Complex64::new(-0.020504, 0.013376),
-            Complex64::new(-0.001349, 0.000842),
-            Complex64::new(-0.020561, 0.013291),
-            Complex64::new(0.001013, 0.001776),
-            Complex64::new(0.008222, 0.012569),
+            c64::new(-0.020504, 0.013376),
+            c64::new(-0.001349, 0.000842),
+            c64::new(-0.020561, 0.013291),
+            c64::new(0.001013, 0.001776),
+            c64::new(0.008222, 0.012569),
         ];
         let x_q2_expected = vec![
-            Complex64::new(-0.021903, 0.013940),
-            Complex64::new(0.001295, -0.000767),
-            Complex64::new(0.021802, -0.014047),
-            Complex64::new(0.001070, 0.002039),
-            Complex64::new(0.009688, 0.016040),
+            c64::new(-0.021903, 0.013940),
+            c64::new(0.001295, -0.000767),
+            c64::new(0.021802, -0.014047),
+            c64::new(0.001070, 0.002039),
+            c64::new(0.009688, 0.016040),
         ];
         let y_q1_expected = vec![
-            Complex64::new(-0.013471, -0.020753),
-            Complex64::new(0.001130, 0.002400),
-            Complex64::new(0.013576, 0.020683),
-            Complex64::new(-0.001751, 0.001023),
-            Complex64::new(-0.013183, 0.008283),
+            c64::new(-0.013471, -0.020753),
+            c64::new(0.001130, 0.002400),
+            c64::new(0.013576, 0.020683),
+            c64::new(-0.001751, 0.001023),
+            c64::new(-0.013183, 0.008283),
         ];
         let y_q2_expected = vec![
-            Complex64::new(-0.014001, -0.021763),
-            Complex64::new(-0.000562, -0.000699),
-            Complex64::new(-0.013927, -0.021840),
-            Complex64::new(-0.002247, 0.001152),
-            Complex64::new(-0.015716, 0.009685),
+            c64::new(-0.014001, -0.021763),
+            c64::new(-0.000562, -0.000699),
+            c64::new(-0.013927, -0.021840),
+            c64::new(-0.002247, 0.001152),
+            c64::new(-0.015716, 0.009685),
         ];
 
         for (&r, e) in coeffs.x.m_accum.iter().zip(x_m_expected) {
@@ -725,10 +726,10 @@ mod tests {
         let jones = result.unwrap();
 
         let expected = [
-            Complex64::new(0.036179, 0.103586),
-            Complex64::new(0.036651, 0.105508),
-            Complex64::new(0.036362, 0.103868),
-            Complex64::new(-0.036836, -0.105791),
+            c64::new(0.036179, 0.103586),
+            c64::new(0.036651, 0.105508),
+            c64::new(0.036362, 0.103868),
+            c64::new(-0.036836, -0.105791),
         ];
         for (&r, e) in jones.iter().zip(&expected) {
             assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
@@ -753,10 +754,10 @@ mod tests {
         assert!(result.is_ok());
         let jones = result.unwrap();
         let expected = [
-            Complex64::new(0.068028, 0.111395),
-            Complex64::new(0.025212, 0.041493),
-            Complex64::new(0.024792, 0.040577),
-            Complex64::new(-0.069501, -0.113706),
+            c64::new(0.068028, 0.111395),
+            c64::new(0.025212, 0.041493),
+            c64::new(0.024792, 0.040577),
+            c64::new(-0.069501, -0.113706),
         ];
         for (&r, e) in jones.iter().zip(&expected) {
             assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
@@ -772,10 +773,10 @@ mod tests {
         assert!(result.is_ok());
         let jones = result.unwrap();
         let expected = [
-            Complex64::new(0.0887949, 0.0220569),
-            Complex64::new(0.891024, 0.2211),
-            Complex64::new(0.887146, 0.216103),
-            Complex64::new(-0.0896141, -0.021803),
+            c64::new(0.0887949, 0.0220569),
+            c64::new(0.891024, 0.2211),
+            c64::new(0.887146, 0.216103),
+            c64::new(-0.0896141, -0.021803),
         ];
         for (&r, e) in jones.iter().zip(&expected) {
             assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);
@@ -800,10 +801,10 @@ mod tests {
         assert!(result.is_ok());
         let jones = result.unwrap();
         let expected = [
-            Complex64::new(0.0704266, -0.0251082),
-            Complex64::new(0.705241, -0.254518),
-            Complex64::new(0.697787, -0.257219),
-            Complex64::new(-0.0711516, 0.0264293),
+            c64::new(0.0704266, -0.0251082),
+            c64::new(0.705241, -0.254518),
+            c64::new(0.697787, -0.257219),
+            c64::new(-0.0711516, 0.0264293),
         ];
         for (&r, e) in jones.iter().zip(&expected) {
             assert_abs_diff_eq!(r.re, e.re, epsilon = 1e-6);

@@ -6,26 +6,16 @@
 Useful constants.
  */
 
-pub use std::f64::consts::PI;
-
-use lazy_static::lazy_static;
-use num::complex::Complex64;
-
-lazy_static! {
-/// 2 * PI
-pub(crate) static ref D2PI: f64 = 2.0 * PI;
-/// PI / 2
-pub(crate) static ref DPIBY2: f64 = PI / 2.0;
+use crate::c64;
 
 /// Beamformer delay step [seconds]
-pub(crate) static ref DELAY_STEP: f64 = 435.0e-12;
+pub(crate) const DELAY_STEP: f64 = 435.0e-12;
 /// The number of dipoles per MWA tile.
-pub(crate) static ref NUM_DIPOLES: u8 = 16;
+pub(crate) const NUM_DIPOLES: u8 = 16;
 
-pub(crate) static ref J_POWER_TABLE: Vec<Complex64> = vec![
-    Complex64::new(1.0, 0.0),
-    Complex64::new(0.0, 1.0),
-    Complex64::new(-1.0, 0.0),
-    Complex64::new(0.0, -1.0),
+pub(crate) const J_POWER_TABLE: [c64; 4] = [
+    c64::new(1.0, 0.0),
+    c64::new(0.0, 1.0),
+    c64::new(-1.0, 0.0),
+    c64::new(0.0, -1.0),
 ];
-}
