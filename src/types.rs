@@ -32,7 +32,7 @@ impl std::fmt::Display for Pol {
 
 /// A special hash used to determine what's in our coefficients cache.
 #[derive(Hash, Debug, Clone, Eq, PartialEq)]
-pub(crate) struct CacheHash(u64);
+pub struct CacheHash(u64);
 
 impl CacheHash {
     /// Create a new `CacheHash`.

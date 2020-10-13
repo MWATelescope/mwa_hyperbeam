@@ -6,10 +6,10 @@
 Code to read the spherical harmonic coefficients from the supplied HDF5 file.
  */
 
-use std::collections::HashMap;
 use std::f64::consts::{FRAC_PI_2, TAU};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::Mutex;
 
+use dashmap::DashMap;
 use ndarray::Array2;
 use rayon::prelude::*;
 
@@ -19,7 +19,7 @@ use crate::*;
 
 /// Coefficients for X and Y.
 // TODO: Improve docs.
-pub(crate) struct PolCoefficients {
+struct PolCoefficients {
     q1_accum: Vec<c64>,
     q2_accum: Vec<c64>,
     m_accum: Vec<i8>,
@@ -30,27 +30,23 @@ pub(crate) struct PolCoefficients {
     n_max: usize,
 }
 
-pub(crate) struct DipoleCoefficients {
+struct DipoleCoefficients {
     x: PolCoefficients,
     y: PolCoefficients,
 }
 
-/// `CoeffCache` is mostly just a `RwLock` around a `HashMap`. This allows
-/// multiple concurrent readers with the ability to halt all reading when
-/// writing.
+/// `CoeffCache` is mostly just a `RwLock` around a `HashMap` (which is handled
+/// by `DashMap`). This allows multiple concurrent readers with the ability to
+/// halt all reading when writing.
 ///
 /// A `CacheHash` is used as the key. This is a wrapper around Rust's own
 /// hashing code so that we get something specific to FEE beam settings.
-///
-/// `Rc` allows us to access the data without copying it. Benchmarks suggest
-/// that this is important; if `Rc` isn't used, the compiler really does do
-/// memory copies instead of just handing out a pointer.
-struct CoeffCache(RwLock<HashMap<CacheHash, Arc<DipoleCoefficients>>>);
+struct CoeffCache(DashMap<CacheHash, DipoleCoefficients>);
 
 /// `NormCache` is very similar to `CoeffCache`. It stores Jones matrices used
 /// to normalise beam responses at various frequencies (i.e. frequency is the
 /// key of the `HashMap`).
-struct NormCache(RwLock<HashMap<u32, Arc<Jones>>>);
+struct NormCache(DashMap<u32, Jones>);
 
 /// The main struct to be used for calculating FEE pointings.
 pub struct FEEBeam {
@@ -137,8 +133,8 @@ impl FEEBeam {
             hdf5_file: Mutex::new(h5),
             freqs,
             modes,
-            coeff_cache: CoeffCache(RwLock::new(HashMap::new())),
-            norm_cache: NormCache(RwLock::new(HashMap::new())),
+            coeff_cache: CoeffCache(DashMap::new()),
+            norm_cache: NormCache(DashMap::new()),
         })
     }
 
@@ -151,13 +147,13 @@ impl FEEBeam {
         }
     }
 
-    /// Given a frequency [Hz], find the closest frequency that is defined in
+    /// Given a frequency in Hz, find the closest frequency that is defined in
     /// the HDF5 file.
-    pub fn find_closest_freq(&self, desired_freq: u32) -> u32 {
+    pub fn find_closest_freq(&self, desired_freq_hz: u32) -> u32 {
         let mut best_freq_diff: Option<i64> = None;
         let mut best_index: Option<usize> = None;
         for (i, &freq) in self.freqs.iter().enumerate() {
-            let this_diff = (desired_freq as i64 - freq as i64).abs();
+            let this_diff = (desired_freq_hz as i64 - freq as i64).abs();
             match best_freq_diff {
                 None => {
                     best_freq_diff = Some(this_diff);
@@ -168,9 +164,9 @@ impl FEEBeam {
                         best_freq_diff = Some(this_diff);
                         best_index = Some(i);
                     } else {
-                        // Because the frequencies are always ascendingly sorted, if
-                        // the frequency difference is getting worse, we can break
-                        // early.
+                        // Because the frequencies are always ascendingly
+                        // sorted, if the frequency difference is getting
+                        // bigger, we can break early.
                         break;
                     }
                 }
@@ -190,37 +186,39 @@ impl FEEBeam {
         Ok(data)
     }
 
-    /// Get the dipole coefficients for the provided parameters. Note that
-    /// specified frequencies are "rounded" to frequencies that are defined the
-    /// HDF5 file. The results of this function are cached; if the input
-    /// parameters match previously supplied parameters, then the cache is
-    /// utilised.
-    fn get_modes(
-        &mut self,
+    /// Check that `DipoleCoefficients` are cached for the input parameters. If
+    /// they aren't, populate the cache. The returned hash is used to access the
+    /// populated cache.
+    ///
+    /// This function is intended to be used every time the cache is to be
+    /// accessed. By ensuring that the right coefficients are available at the
+    /// end of this function, the caller can then directly access the cache. The
+    /// only way to make Rust return the coefficients would be by keeping the
+    /// whole cache locked, which ruins concurrent performance.
+    ///
+    /// Note that specified frequencies are "rounded" to frequencies that are
+    /// defined the HDF5 file.
+    fn populate_modes(
+        &self,
         desired_freq: u32,
         delays: &[u32],
         amps: &[f64],
-    ) -> Result<Arc<DipoleCoefficients>, FEEBeamError> {
+    ) -> Result<CacheHash, FEEBeamError> {
         let freq = self.find_closest_freq(desired_freq);
+
         // Are the input settings already cached? Hash them to check.
         let hash = CacheHash::new(freq, delays, amps);
-        {
-            let cache = &*self.coeff_cache.0.read().unwrap();
-            // If the cache for this hash exists, we can return a copy.
-            if let Some(c) = cache.get(&hash) {
-                return Ok(Arc::clone(&c));
-            }
+
+        // If the cache for this hash exists, we can return the hash.
+        if self.coeff_cache.0.contains_key(&hash) {
+            return Ok(hash);
         }
+
         // If we hit this part of the code, the coefficients were not in the
-        // cache. Lock the cache, populate it, then return the coefficients we
-        // just calculated.
-        let modes = {
-            let mut cache = self.coeff_cache.0.write().unwrap();
-            let modes = Arc::new(self.calc_modes(freq, delays, amps)?);
-            cache.insert(hash.clone(), modes);
-            Arc::clone(&cache.get(&hash).unwrap())
-        };
-        Ok(modes)
+        // cache.
+        let modes = self.calc_modes(freq, delays, amps)?;
+        self.coeff_cache.0.insert(hash.clone(), modes);
+        Ok(hash)
     }
 
     /// Given the input parameters, calculate and return the X and Y
@@ -356,30 +354,29 @@ impl FEEBeam {
         })
     }
 
-    fn get_norm_jones(&mut self, desired_freq: u32) -> Result<Arc<Jones>, FEEBeamError> {
+    fn populate_norm_jones(&self, desired_freq: u32) -> Result<u32, FEEBeamError> {
         let freq = self.find_closest_freq(desired_freq);
-        {
-            let cache = &*self.norm_cache.0.read().unwrap();
-            // If the cache for this freq exists, we can return a copy.
-            if let Some(c) = cache.get(&freq) {
-                return Ok(Arc::clone(&c));
-            }
+
+        // If the cache for this freq exists, we can return it.
+        if self.norm_cache.0.contains_key(&freq) {
+            return Ok(freq);
         }
+
         // If we hit this part of the code, the normalisation Jones matrix was
-        // not in the cache. Lock the cache, populate it, then return the
-        // matrix we just calculated.
-        let coeffs = self.get_modes(freq, &[0; 16], &[1.0; 16])?;
-        let mut cache = self.norm_cache.0.write().unwrap();
-        let jones = Arc::new(calc_zenith_norm_jones(&coeffs));
-        cache.insert(freq, jones);
-        Ok(Arc::clone(&cache.get(&freq).unwrap()))
+        // not in the cache.
+        let hash = self.populate_modes(freq, &[0; 16], &[1.0; 16])?;
+        let coeffs = self.coeff_cache.0.get(&hash).unwrap();
+        let jones = calc_zenith_norm_jones(&coeffs);
+        self.norm_cache.0.insert(freq, jones);
+
+        Ok(freq)
     }
 
     /// Calculate the Jones matrix for a pointing.
     ///
     /// `delays` and `amps` *must* have 16 elements.
     pub fn calc_jones(
-        &mut self,
+        &self,
         az_rad: f64,
         za_rad: f64,
         freq_hz: u32,
@@ -390,15 +387,20 @@ impl FEEBeam {
         debug_assert_eq!(delays.len(), 16);
         debug_assert_eq!(amps.len(), 16);
 
-        let coeffs = self.get_modes(freq_hz, delays, amps)?;
-        // If we're normalising the beam, get the normalisation Jones matrix
-        // here.
-        let norm = if norm_to_zenith {
-            Some(*self.get_norm_jones(freq_hz)?)
+        // Ensure the dipole coefficients for the provided parameters exist.
+        let hash = self.populate_modes(freq_hz, delays, amps)?;
+
+        // If we're normalising the beam, get the normalisation frequency here.
+        let norm_freq = if norm_to_zenith {
+            Some(self.populate_norm_jones(freq_hz)?)
         } else {
             None
         };
-        let jones = calc_jones_direct(az_rad, za_rad, &coeffs, norm);
+
+        let coeffs = self.coeff_cache.0.get(&hash).unwrap();
+        let norm_jones = norm_freq.and_then(|f| self.norm_cache.0.get(&f));
+
+        let jones = calc_jones_direct(az_rad, za_rad, &coeffs, norm_jones.as_deref());
         Ok(jones)
     }
 
@@ -418,20 +420,25 @@ impl FEEBeam {
         debug_assert_eq!(delays.len(), 16);
         debug_assert_eq!(amps.len(), 16);
 
-        let coeffs = self.get_modes(freq_hz, delays, amps)?;
+        // Ensure the dipole coefficients for the provided parameters exist.
+        let hash = self.populate_modes(freq_hz, delays, amps)?;
+
         // If we're normalising the beam, get the normalisation Jones matrix
         // here.
-        let norm = if norm_to_zenith {
-            Some(*self.get_norm_jones(freq_hz)?)
+        let norm_freq = if norm_to_zenith {
+            Some(self.populate_norm_jones(freq_hz)?)
         } else {
             None
         };
+
+        let coeffs = self.coeff_cache.0.get(&hash).unwrap();
+        let norm = norm_freq.and_then(|f| self.norm_cache.0.get(&f));
 
         let mut out = Vec::with_capacity(az_rad.len());
         az_rad
             .par_iter()
             .zip(za_rad.par_iter())
-            .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm))
+            .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm.as_deref()))
             .collect_into_vec(&mut out);
         Ok(Array2::from(out))
     }
@@ -485,7 +492,7 @@ fn calc_jones_direct(
     az_rad: f64,
     za_rad: f64,
     coeffs: &DipoleCoefficients,
-    norm_matrix: Option<Jones>,
+    norm_matrix: Option<&Jones>,
 ) -> Jones {
     // Convert azimuth to FEKO phi (East through North).
     let phi_rad = FRAC_PI_2 - az_rad;
@@ -563,10 +570,12 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_modes() {
-        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let result = beam.get_modes(51200000, &[0; 16], &[1.0; 16]);
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let result = beam.populate_modes(51200000, &[0; 16], &[1.0; 16]);
         assert!(result.is_ok());
-        let coeffs = result.unwrap();
+        let hash = result.unwrap();
+        let coeffs = beam.coeff_cache.0.get(&hash).unwrap();
+
         // Values taken from the C++ code.
         // m_accum and n_accum are floats in the C++ code, but these appear to
         // always be small integers. I've converted the C++ output to ints here.
@@ -636,8 +645,8 @@ mod tests {
     #[test]
     #[serial]
     fn test_get_modes2() {
-        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let result = beam.get_modes(
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let result = beam.populate_modes(
             51200000,
             &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
             &[
@@ -645,7 +654,8 @@ mod tests {
             ],
         );
         assert!(result.is_ok());
-        let coeffs = result.unwrap();
+        let hash = result.unwrap();
+        let coeffs = beam.coeff_cache.0.get(&hash).unwrap();
 
         // Values taken from the C++ code.
         let x_m_expected = vec![-1, 0, 1, -2, -1, 0, 1, 2, -3, -2, -1, 0, 1, 2, 3];
@@ -714,7 +724,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_calc_jones() {
-        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let result = beam.calc_jones(
             45.0_f64.to_radians(),
             10.0_f64.to_radians(),
@@ -741,7 +751,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_calc_jones2() {
-        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let result = beam.calc_jones(
             70.0_f64.to_radians(),
             10.0_f64.to_radians(),
@@ -769,7 +779,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_calc_jones_norm() {
-        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let result = beam.calc_jones(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true);
         assert!(result.is_ok());
         let jones = result.unwrap();
@@ -788,7 +798,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_calc_jones_norm2() {
-        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let result = beam.calc_jones(
             0.1_f64,
             0.1_f64,

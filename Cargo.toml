@@ -1,6 +1,6 @@
 [package]
 name = "mwa_hyperbeam"
-version = "0.2.0"
+version = "0.2.1"
 authors = ["Marcin Sokolowski <marcin.sokolowski@curtin.edu.au",
            "Christopher H. Jordan <christopherjordan87@gmail.com>"]
 edition = "2018"
@@ -21,10 +21,11 @@ codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size redu
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
+dashmap = "3.11.*"
 hdf5 = "0.7.*"
 ndarray = "0.13.*"
 num = "0.3.*"
-rayon = "1.4.*"
+rayon = "1.*"
 thiserror = "1.0.*"
 
 pyo3 = { version = "0.12.*", features = ["extension-module"], optional = true }
@@ -32,7 +33,7 @@ numpy = { version = "0.12.*", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0.*"
-approx = "0.3.*"
+approx = "0.4.*"
 criterion = "0.3.*"
 serial_test = "0.5.*"
 structopt = "0.3.*"
