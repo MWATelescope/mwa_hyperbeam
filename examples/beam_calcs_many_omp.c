@@ -34,13 +34,13 @@ int main(int argc, char *argv[]) {
     unsigned delays[16] = {3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0};
     double amps[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1};
     int freq_hz = 51200000;
-    int zenith_norm = 0;
+    int norm_to_zenith = 0;
 
     // Calculate the Jones matrices for all pointings.
     double **jones = malloc(num_pointings * 8 * sizeof(double));
     #pragma omp parallel for
     for (int i = 0; i < num_pointings; i++) {
-        double *j = calc_jones(beam, az[i], za[i], freq_hz, delays, amps, zenith_norm);
+        double *j = calc_jones(beam, az[i], za[i], freq_hz, delays, amps, norm_to_zenith);
         jones[i] = j;
     }
     printf("The first Jones matrix:\n");

@@ -23,12 +23,12 @@ za = np.linspace(0.1, 0.9 * np.pi / 2, n)
 freq = 167000000
 delays = [0] * 16
 amps = [1.0] * 16
-beam_norm = True
+norm_to_zenith = True
 
 # Pass the values to hyperbeam and get a numpy array back. Each element is a
 # 4-element Jones matrix.
 start_time = time.time()
-jones = beam.calc_jones_array(az, za, freq, delays, amps, beam_norm)
+jones = beam.calc_jones_array(az, za, freq, delays, amps, norm_to_zenith)
 duration = time.time() - start_time
 print("Time to calculate {} pointings: {:.3}s".format(n, duration))
 print("First Jones matrix:")

@@ -10,6 +10,15 @@ beam". This code should be used over all others. If there are soundness issues,
 please raise them here so everyone can benefit.
 
 ## Usage
+`hyperbeam` requires the MWA FEE HDF5 file. This can be obtained with:
+
+  `wget http://cerberus.mwa128t.org/mwa_full_embedded_element_pattern.h5`
+
+When making a new beam object, `hyperbeam` needs to know where this HDF5 file
+is. The easiest thing to do is set the environment variable MWA_BEAM_FILE:
+
+  `export MWA_BEAM_FILE=/path/to/mwa_full_embedded_element_pattern.h5`
+
 `hyperbeam` can be used by any programming language providing FFI via C. In
 other words, most languages. See Rust and C examples in the `examples`
 directory.
@@ -64,6 +73,12 @@ roughly 10x faster.
 - Cargo and a Rust compiler. `rustup` is recommended:
 
   `https://www.rust-lang.org/tools/install`
+
+  The Rust compiler must be at least version 1.47.0:
+  ```bash
+  $ rustc -V
+  rustc 1.47.0 (18bf6b4f0 2020-10-07)
+  ```
 
 - [hdf5](https://www.hdfgroup.org/hdf5)
   - Ubuntu: `libhdf5-dev`

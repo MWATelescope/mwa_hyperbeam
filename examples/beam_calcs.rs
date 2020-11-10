@@ -41,11 +41,11 @@ fn main() -> Result<(), anyhow::Error> {
     let freq_hz = 51200000;
     let delays = vec![0; 16];
     let amps = vec![1.0; 16];
-    let zenith_norm = false;
+    let norm_to_zenith = false;
 
     // Call hyperbeam.
     let jones = beam
-        .calc_jones_array(&az, &za, freq_hz, &delays, &amps, zenith_norm)
+        .calc_jones_array(&az, &za, freq_hz, &delays, &amps, norm_to_zenith)
         .unwrap();
     println!("The first Jones matrix:");
     for j in jones.outer_iter() {

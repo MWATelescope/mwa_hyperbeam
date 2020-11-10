@@ -27,10 +27,10 @@ int main(int argc, char *argv[]) {
     unsigned delays[16] = {3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0};
     double amps[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1};
     int freq_hz = 51200000;
-    int zenith_norm = 0;
+    int norm_to_zenith = 0;
 
     // Calculate the Jones matrix for this pointing.
-    double *jones = calc_jones(beam, az, za, freq_hz, delays, amps, zenith_norm);
+    double *jones = calc_jones(beam, az, za, freq_hz, delays, amps, norm_to_zenith);
     printf("The returned Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", jones[0], jones[1]);
     printf(" %+.8f%+.8fi]\n", jones[2], jones[3]);
