@@ -7,20 +7,11 @@ Primary beam code for the Murchison Widefield Array.
  */
 
 mod constants;
-pub mod errors;
-pub(crate) mod factorial;
+mod factorial;
 pub mod fee;
 mod ffi;
-pub(crate) mod legendre;
-pub(crate) mod types;
+mod legendre;
+mod types;
 
 #[cfg(feature = "python")]
 mod python;
-
-use constants::*;
-pub use errors::*;
-pub use fee::*;
-pub(crate) use types::*;
-
-// Re-exports.
-use num::complex::Complex64 as c64;

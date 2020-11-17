@@ -28,6 +28,9 @@ norm_to_zenith = True
 # Pass the values to hyperbeam and get a numpy array back. Each element is a
 # 4-element Jones matrix.
 start_time = time.time()
+# beam.calc_jones is also available, but that makes a single Jones matrix at a
+# time, so one would need to iterate over az and za. calc_jones_array is done in
+# parallel with Rust (so it's fast).
 jones = beam.calc_jones_array(az, za, freq, delays, amps, norm_to_zenith)
 duration = time.time() - start_time
 print("Time to calculate {} pointings: {:.3}s".format(n, duration))

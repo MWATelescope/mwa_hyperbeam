@@ -1,14 +1,19 @@
 [package]
 name = "mwa_hyperbeam"
-version = "0.2.1"
+version = "0.3.0"
 authors = ["Marcin Sokolowski <marcin.sokolowski@curtin.edu.au",
            "Christopher H. Jordan <christopherjordan87@gmail.com>"]
 edition = "2018"
+license = "MPL-2.0"
+readme = "README.md"
+description = "Primary beam code for the Murchison Widefield Array (MWA) radio telescope."
+repository = "https://github.com/MWATelescope/mwa_hyperbeam"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
 default = []
+hdf5-static = ["hdf5-sys"]
 python = ["pyo3", "numpy"]
 
 [profile.release]
@@ -21,15 +26,17 @@ codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size redu
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
-dashmap = "3.11.*"
+dashmap = "4.0.*"
 hdf5 = "0.7.*"
 ndarray = "0.13.*"
 num = "0.3.*"
 rayon = "1.*"
 thiserror = "1.0.*"
 
-pyo3 = { version = "0.12.*", features = ["extension-module"], optional = true }
-numpy = { version = "0.12.*", optional = true }
+hdf5-sys = { version = "0.7.*", features = ["static"], optional = true }
+
+pyo3 = { version = "0.13.*", features = ["extension-module"], optional = true }
+numpy = { version = "0.13.*", optional = true }
 
 [dev-dependencies]
 anyhow = "1.0.*"
@@ -40,6 +47,15 @@ structopt = "0.3.*"
 
 [build-dependencies]
 cbindgen = "*"
+
+[package.metadata.docs.rs]
+features = ["hdf5-static"]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[package.metadata.maturin]
+requires-dist = ["numpy"]
+project-url = ["GitHub project page, https://github.com/MWATelescope/mwa_hyperbeam"]
+requires-python = ">=3.6"
 
 [[bench]]
 name = "bench"

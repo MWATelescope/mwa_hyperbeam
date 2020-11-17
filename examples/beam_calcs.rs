@@ -9,7 +9,7 @@ Build and run with something like:
 cargo run --release --example beam_calcs -- mwa_full_embedded_element_pattern.h5 10000
  */
 
-use mwa_hyperbeam::*;
+use mwa_hyperbeam::fee::FEEBeam;
 use structopt::*;
 
 #[derive(StructOpt, Debug)]
@@ -21,6 +21,10 @@ struct Opts {
     /// The number of pointings to run.
     #[structopt()]
     num_pointings: usize,
+
+    /// Calculate the Jones matrices in parallel.
+    #[structopt(short, long)]
+    parallel: bool,
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -44,9 +48,19 @@ fn main() -> Result<(), anyhow::Error> {
     let norm_to_zenith = false;
 
     // Call hyperbeam.
-    let jones = beam
-        .calc_jones_array(&az, &za, freq_hz, &delays, &amps, norm_to_zenith)
-        .unwrap();
+    let jones = if opts.parallel {
+        beam.calc_jones_array(&az, &za, freq_hz, &delays, &amps, norm_to_zenith)
+            .unwrap()
+    } else {
+        az.into_iter()
+            .zip(za.into_iter())
+            .map(|(a, z)| {
+                beam.calc_jones(a, z, freq_hz, &delays, &amps, norm_to_zenith)
+                    .unwrap()
+            })
+            .collect::<Vec<_>>()
+            .into()
+    };
     println!("The first Jones matrix:");
     for j in jones.outer_iter() {
         // This works, but the formatting for this isn't very pretty.

@@ -1,0 +1,43 @@
+---
+name: "Release"
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  python:
+    name: "Compile a Release"
+    runs-on: ubuntu-18.04
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: build
+      uses: docker://chjordan/maturin:latest
+      with:
+        entrypoint: /bin/bash
+        args: .github/workflows/build.sh
+
+    # Because we've compiled HDF5 into hyperbeam products, we legally must
+    # distribute the HDF5 license with the products.
+    - name: Get HDF5 license
+      run: curl https://raw.githubusercontent.com/HDFGroup/hdf5/develop/COPYING -o COPYING-hdf5
+
+    # To make getting the tag name easier, just copy the python wheel and rename it.
+    - name: Create new release asset tarballs
+      run: |
+        sudo mv target/wheels/*.whl target/release/libmwa_hyperbeam.a target/release/libmwa_hyperbeam.so include/mwa_hyperbeam.h .
+        tar -acvf $(ls *.whl | cut -d- -f-2).-python-wheel.tar.gz LICENSE COPYING-hdf5 *.whl
+        tar -acvf $(ls *.whl | cut -d- -f-2).-C-library.tar.gz LICENSE COPYING-hdf5 libmwa_hyperbeam.a libmwa_hyperbeam.so mwa_hyperbeam.h
+
+    - name: Provide new release asset
+      uses: "marvinpinto/action-automatic-releases@latest"
+      with:
+        repo_token: "${{ secrets.GITHUB_TOKEN }}"
+        prerelease: false
+        files: |
+          *.tar.gz

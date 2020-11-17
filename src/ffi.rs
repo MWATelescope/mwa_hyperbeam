@@ -11,7 +11,7 @@ directory for usage.
 
 use std::ffi::CStr;
 
-use crate::*;
+use crate::fee::FEEBeam;
 
 /// Create a new MWA FEE beam.
 ///

@@ -3,7 +3,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 /*!
-Errors associated with all aspects of hyperbeam.
+Errors associated with the FEE beam.
  */
 
 use thiserror::Error;

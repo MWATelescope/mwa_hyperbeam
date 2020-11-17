@@ -6,7 +6,7 @@
 Useful constants.
  */
 
-use crate::c64;
+use crate::types::c64;
 
 /// Beamformer delay step [seconds]
 pub(crate) const DELAY_STEP: f64 = 435.0e-12;

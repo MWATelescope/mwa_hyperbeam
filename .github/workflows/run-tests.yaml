@@ -1,0 +1,33 @@
+---
+name: Run tests
+
+# Do this on every push
+on: [push]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Install dependencies
+      run: |
+          sudo apt update -y
+          DEBIAN_FRONTEND="noninteractive" sudo apt-get -y install tzdata
+          sudo apt install -y curl libhdf5-dev
+
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          . $HOME/.cargo/env
+          rustup update stable --no-self-update && rustup default stable
+          rustup target add x86_64-unknown-linux-gnu
+
+    - name: Get the HDF5 file
+      run: curl http://cerberus.mwa128t.org/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5
+
+    - name: Run tests
+      run: |
+        . $HOME/.cargo/env
+        cargo test

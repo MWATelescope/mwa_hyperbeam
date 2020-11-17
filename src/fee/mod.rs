@@ -3,8 +3,11 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 /*!
-Code to read the spherical harmonic coefficients from the supplied HDF5 file.
+Code to implement the MWA Fully Embedded Element (FEE) beam, a.k.a. "the 2016
+beam".
  */
+
+pub mod error;
 
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::sync::Mutex;
@@ -13,9 +16,11 @@ use dashmap::DashMap;
 use ndarray::Array2;
 use rayon::prelude::*;
 
+use crate::constants::*;
 use crate::factorial::FACTORIAL;
 use crate::legendre::p1sin;
-use crate::*;
+use crate::types::*;
+pub use error::FEEBeamError;
 
 /// Coefficients for X and Y.
 // TODO: Improve docs.
@@ -138,7 +143,7 @@ impl FEEBeam {
         })
     }
 
-    /// Create a new `FEEBeam` struct from the MWA_BEAM_FILE environment
+    /// Create a new `FEEBeam` struct from the `MWA_BEAM_FILE` environment
     /// variable.
     pub fn new_from_env() -> Result<Self, FEEBeamError> {
         match std::env::var("MWA_BEAM_FILE") {
@@ -374,7 +379,9 @@ impl FEEBeam {
 
     /// Calculate the Jones matrix for a pointing.
     ///
-    /// `delays` and `amps` *must* have 16 elements.
+    /// `delays` and `amps` apply to each dipole in a given MWA tile (in the M&C
+    /// order), and *must* have 16 elements. `amps` being dipole gains (usually
+    /// 1 or 0), not digital gains.
     pub fn calc_jones(
         &self,
         az_rad: f64,
@@ -412,10 +419,11 @@ impl FEEBeam {
         Ok(jones)
     }
 
-    /// Calculate the Jones matrix for many pointings.
+    /// Calculate the Jones matrices for many pointings.
     ///
-    /// This is basically a wrapper around `calc_jones`. `delays` and `amps`
-    /// *must* have 16 elements.
+    /// This is basically a wrapper around `calc_jones`; this function
+    /// calculates the Jones matrices in parallel. `delays` and `amps` *must*
+    /// have 16 elements.
     pub fn calc_jones_array(
         &mut self,
         az_rad: &[f64],

@@ -9,7 +9,9 @@ Generic types.
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-pub(crate) type Jones = [crate::c64; 4];
+pub(crate) use num::complex::Complex64 as c64;
+
+pub(crate) type Jones = [c64; 4];
 
 #[derive(Debug)]
 pub(crate) enum Pol {
@@ -32,7 +34,7 @@ impl std::fmt::Display for Pol {
 
 /// A special hash used to determine what's in our coefficients cache.
 #[derive(Hash, Debug, Clone, Eq, PartialEq)]
-pub struct CacheHash(u64);
+pub(crate) struct CacheHash(u64);
 
 impl CacheHash {
     /// Create a new `CacheHash`.

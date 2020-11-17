@@ -15,26 +15,88 @@ please raise them here so everyone can benefit.
   `wget http://cerberus.mwa128t.org/mwa_full_embedded_element_pattern.h5`
 
 When making a new beam object, `hyperbeam` needs to know where this HDF5 file
-is. The easiest thing to do is set the environment variable MWA_BEAM_FILE:
+is. The easiest thing to do is set the environment variable `MWA_BEAM_FILE`:
 
   `export MWA_BEAM_FILE=/path/to/mwa_full_embedded_element_pattern.h5`
 
+(On Pawsey systems, this should be `export
+MWA_BEAM_FILE=/pawsey/mwa/mwa_full_embedded_element_pattern.h5`)
+
 `hyperbeam` can be used by any programming language providing FFI via C. In
-other words, most languages. See Rust and C examples in the `examples`
-directory.
+other words, most languages. See Rust, C and Python examples of usage in the
+`examples` directory. A simple Python example is:
 
-### Python
-`hyperbeam` can also be used via Python. This requires installation of the
-Python package `maturin`. To install `hyperbeam` to your currently-in-use
-virtualenv or conda environment, run:
+    import mwa_hyperbeam
+    beam = mwa_hyperbeam.FEEBeam()
+    print(beam.calc_jones(0, 0.7, 167e6, [0]*16, [1]*16, True))
 
-  `maturin develop --release -b pyo3 --cargo-extra-args="--features python"`
+    [ 1.73003520e-05-1.53580286e-05j -2.23184781e-01-4.51051073e-02j
+     -1.51506097e-01-4.35034884e-02j -9.76099405e-06-1.21699926e-05j]
 
-See an example of usage in the `examples` directory.
+## Installation
+### Python PyPI
+If you're using Python version >=3.6:
 
-Unfortunately it is not possible to provide `hyperbeam` via PyPI. This is
-because `hyperbeam` depends on the C library of HDF5, and it will differ across
-platforms. In other words, `hyperbeam` needs to be built from source.
+    pip install mwa-hyperbeam
+
+### Pre-compiled
+Have a look at the [GitHub
+releases](https://github.com/MWATelescope/mwa_hyperbeam/releases) page. There is
+a Python wheel for all versions of Python 3.6+, as well as shared and static
+objects for C-style linking. To get an idea of how to link `hyperbeam`, see the
+`beam_calcs.c` file in the examples directory.
+
+Because these `hyperbeam` objects have the HDF5 library compiled in, the HDF5
+license is also distributed.
+
+### From source
+#### Prerequisites
+<details>
+
+- Cargo and a Rust compiler. `rustup` is recommended:
+
+  `https://www.rust-lang.org/tools/install`
+
+  The Rust compiler must be at least version 1.47.0:
+  ```bash
+  $ rustc -V
+  rustc 1.47.0 (18bf6b4f0 2020-10-07)
+  ```
+
+- [hdf5](https://www.hdfgroup.org/hdf5)
+  - Optional; use the `hdf5-static` feature.
+  - Ubuntu: `libhdf5-dev`
+  - Arch: `hdf5`
+
+</details>
+
+Clone the repo, and run:
+
+    cargo build --release
+
+For usage with other languages, an include file will be in the `include`
+directory, along with C-compatible shared and static objects in the
+`target/release` directory.
+
+To make `hyperbeam` without a dependence on a system HDF5 library, give the
+`build` command a feature flag:
+
+    cargo build --release --features=hdf5-static
+
+This will automatically compile the HDF5 source code and "bake" it into the
+`hyperbeam` products, meaning that HDF5 is not needed as a system dependency.
+`CMake` version 3.10 or higher is needed to build the HDF5 source.
+
+#### Python
+To install `hyperbeam` to your currently-in-use virtualenv or conda environment,
+you'll need the Python package `maturin` (can get it with `pip`), then run:
+
+    maturin develop --release -b pyo3 --cargo-extra-args="--features python"
+
+If you don't have or don't want to install HDF5 as a system dependency, include
+the `hdf5-static` feature:
+
+    maturin develop --release -b pyo3 --cargo-extra-args="--features python,hdf5-static"
 
 ## Comparing with other FEE beam codes
 Below is a table comparing other implementations of the FEE beam code. All
@@ -65,44 +127,14 @@ Not sure what's up with the C++ code. Maybe I'm calling `CalcJonesArray` wrong,
 but it uses a huge amount of memory. In any case, `hyperbeam` seems to be
 roughly 10x faster.
 
-## Installation
-
-### Prerequisites
-<details>
-
-- Cargo and a Rust compiler. `rustup` is recommended:
-
-  `https://www.rust-lang.org/tools/install`
-
-  The Rust compiler must be at least version 1.47.0:
-  ```bash
-  $ rustc -V
-  rustc 1.47.0 (18bf6b4f0 2020-10-07)
-  ```
-
-- [hdf5](https://www.hdfgroup.org/hdf5)
-  - Ubuntu: `libhdf5-dev`
-  - Arch: `hdf5`
-
-</details>
-
-### From source
-
-Clone the repo, and run:
-
-    cargo build --release
-
-For usage with other languages, an include file will be in the `include`
-directory, along with shared and static objects in the `target/release`
-directory.
-
 ## Troubleshooting
 
-Run your code with `hyperbeam` again, but this time with the debug build. This should be as simple as running:
+Run your code with `hyperbeam` again, but this time with the debug build. This
+should be as simple as running:
 
     cargo build
     
-And then linking against the object in `./target/debug`.
+and then using the results in `./target/debug`.
 
 If that doesn't help reveal the problem, report the version of the software
 used, your usage and the program output in a new GitHub issue.
