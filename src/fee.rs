@@ -387,8 +387,16 @@ impl FEEBeam {
         debug_assert_eq!(delays.len(), 16);
         debug_assert_eq!(amps.len(), 16);
 
+        // Ensure that any delays of 32 have an amplitude (dipole gain) of 0.
+        // The results are bad otherwise!
+        let amps = delays
+            .iter()
+            .zip(amps.iter())
+            .map(|(&d, &a)| if d == 32 { 0.0 } else { a })
+            .collect::<Vec<_>>();
+
         // Ensure the dipole coefficients for the provided parameters exist.
-        let hash = self.populate_modes(freq_hz, delays, amps)?;
+        let hash = self.populate_modes(freq_hz, delays, &amps)?;
 
         // If we're normalising the beam, get the normalisation frequency here.
         let norm_freq = if norm_to_zenith {
@@ -420,8 +428,16 @@ impl FEEBeam {
         debug_assert_eq!(delays.len(), 16);
         debug_assert_eq!(amps.len(), 16);
 
+        // Ensure that any delays of 32 have an amplitude (dipole gain) of 0.
+        // The results are bad otherwise!
+        let amps = delays
+            .iter()
+            .zip(amps.iter())
+            .map(|(&d, &a)| if d == 32 { 0.0 } else { a })
+            .collect::<Vec<_>>();
+
         // Ensure the dipole coefficients for the provided parameters exist.
-        let hash = self.populate_modes(freq_hz, delays, amps)?;
+        let hash = self.populate_modes(freq_hz, delays, &amps)?;
 
         // If we're normalising the beam, get the normalisation Jones matrix
         // here.
