@@ -1,5 +1,7 @@
 # mwa_hyperbeam
 
+[![docs](https://docs.rs/mwa_hyperbeam/badge.svg)](https://docs.rs/crate/mwa_hyperbeam)
+
 Primary beam code for the Murchison Widefield Array (MWA) radio telescope.
 
 This code exists to provide a single correct, convenient implementation of
