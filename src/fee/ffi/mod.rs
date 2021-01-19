@@ -15,6 +15,14 @@ use std::slice;
 
 use super::FEEBeam;
 
+cfg_if::cfg_if! {
+    if #[cfg(feature = "cuda")] {
+        use ndarray::prelude::*;
+        use super::cuda::{CudaFloat, FEEBeamCUDA};
+        use marlu::ndarray;
+    }
+}
+
 /// Private function to conveniently write errors to error strings.
 unsafe fn error_to_error_string<E: Error>(error: E, error_str: *mut c_char) {
     if !error_str.is_null() {
@@ -403,5 +411,269 @@ pub unsafe extern "C" fn closest_freq(fee_beam: *mut FEEBeam, freq: u32) -> u32 
 ///
 #[no_mangle]
 pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
+    Box::from_raw(fee_beam);
+}
+
+/// Get a `FEEBeamCUDA` struct, which is used to calculate beam responses on a
+/// CUDA-capable device.
+///
+/// # Arguments
+///
+/// `fee_beam` - a pointer to a previously set `FEEBeam` struct.
+/// `freqs_hz` - a pointer to an array of frequencies (units of Hz) at which the
+/// beam responses will be calculated.
+/// `delays` - a pointer to two-dimensional array of dipole delays. There must
+/// be 16 delays per row; each row corresponds to a tile.
+/// `amps` - a pointer to two-dimensional array of dipole amplitudes. There must
+/// be 16 or 32 amps per row; each row corresponds to a tile. The number of amps
+/// per row is specified by `num_amps`.
+/// `num_freqs` - the number of frequencies in the array pointed to by `freqs_hz`.
+/// `num_tiles` - the number of tiles in both `delays` and `amps`.
+/// `num_amps` - either 16 or 32. See the documentation for `calc_jones` for
+/// more explanation.
+/// `norm_to_zenith` - A boolean indicating whether the beam responses should be
+/// normalised with respect to zenith.
+/// `cuda_fee_beam` - a double pointer to the `FEEBeamCUDA` struct which is set
+/// by this function. This struct must be freed by calling `free_cuda_fee_beam`.
+/// `error_str` - a pointer to a character array which is set by this function
+/// if an error occurs. If this pointer is null, no error message can be
+/// reported if an error occurs.
+///
+/// # Returns
+///
+/// * An exit code integer. If this is non-zero and an error string was
+///   provided, then the error string is set.
+///
+#[cfg(feature = "cuda")]
+#[no_mangle]
+pub unsafe extern "C" fn new_cuda_fee_beam(
+    fee_beam: *mut FEEBeam,
+    freqs_hz: *const u32,
+    delays: *const u32,
+    amps: *const f64,
+    num_freqs: u32,
+    num_tiles: u32,
+    num_amps: u32,
+    norm_to_zenith: u8,
+    cuda_fee_beam: *mut *mut FEEBeamCUDA,
+    error_str: *mut c_char,
+) -> i32 {
+    match num_amps {
+        16 | 32 => (),
+        _ => {
+            string_to_error_string(
+                "A value other than 16 or 32 was used for num_amps",
+                error_str,
+            );
+            return 1;
+        }
+    };
+    // Turn the pointers into slices and/or arrays.
+    let freqs = slice::from_raw_parts(freqs_hz, num_freqs as usize);
+    let amps = ArrayView2::from_shape_ptr((num_tiles as usize, num_amps as usize), amps);
+    let delays = ArrayView2::from_shape_ptr((num_tiles as usize, 16), delays);
+    let norm_bool = match norm_to_zenith {
+        0 => false,
+        1 => true,
+        _ => {
+            string_to_error_string(
+                "A value other than 0 or 1 was used for norm_to_zenith",
+                error_str,
+            );
+            return 1;
+        }
+    };
+
+    let beam = &mut *fee_beam;
+    let cuda_beam = match beam.cuda_prepare(freqs, delays, amps, norm_bool) {
+        Ok(b) => b,
+        Err(e) => {
+            error_to_error_string(e, error_str);
+            return 1;
+        }
+    };
+    *cuda_fee_beam = Box::into_raw(Box::new(cuda_beam));
+    0
+}
+
+/// Get beam response Jones matrices for the given directions, using CUDA. The
+/// Jones matrix elements for each direction are put into a single array (made
+/// available with the output pointer `jones`). Can optionally re-define the X
+/// and Y polarisations and apply a parallactic-angle correction; see Jack's
+/// thorough investigation at
+/// https://github.com/JLBLine/polarisation_tests_for_FEE.
+///
+/// # Arguments
+///
+/// `cuda_fee_beam` - A pointer to a `FEEBeamCUDA` struct created with the
+/// `new_cuda_fee_beam` function
+/// `az_rad` - The azimuth directions to get the beam response (units of
+/// radians)
+/// `za_rad` - The zenith angle directions to get the beam response (units of
+/// radians)
+/// `parallactic` - A boolean indicating whether the parallactic angle
+/// correction should be applied.
+/// `jones` - A double pointer to a buffer with resulting beam-response Jones
+/// matrices.
+/// `error_str` - a pointer to a character array which is set by this function
+/// if an error occurs. If this pointer is null, no error message can be
+/// reported if an error occurs.
+///
+/// # Returns
+///
+/// * An exit code integer. If this is non-zero and an error string was
+///   provided, then the error string is set.
+///
+#[cfg(feature = "cuda")]
+#[no_mangle]
+pub unsafe extern "C" fn calc_jones_cuda(
+    cuda_fee_beam: *mut FEEBeamCUDA,
+    num_azza: u32,
+    az_rad: *const CudaFloat,
+    za_rad: *const CudaFloat,
+    parallactic: u8,
+    jones: *mut *mut CudaFloat,
+    error_str: *mut c_char,
+) -> i32 {
+    let beam = &mut *cuda_fee_beam;
+    let az = slice::from_raw_parts(az_rad, num_azza as usize);
+    let za = slice::from_raw_parts(za_rad, num_azza as usize);
+    let para_bool = match parallactic {
+        0 => false,
+        1 => true,
+        _ => {
+            string_to_error_string(
+                "A value other than 0 or 1 was used for parallactic",
+                error_str,
+            );
+            return 1;
+        }
+    };
+    let mut beam_jones = match beam.calc_jones(az, za, para_bool) {
+        Ok(j) => j,
+        Err(e) => {
+            error_to_error_string(e, error_str);
+            return 1;
+        }
+    };
+
+    let ptr = beam_jones.as_mut_ptr();
+    std::mem::forget(beam_jones);
+    *jones = ptr.cast();
+    0
+}
+
+/// Get beam response Jones matrices for the given directions, using CUDA. The
+/// Jones matrix elements for each direction are left on the device (the device
+/// pointer is communicated via `d_jones`). Can optionally re-define the X and Y
+/// polarisations and apply a parallactic-angle correction; see Jack's thorough
+/// investigation at https://github.com/JLBLine/polarisation_tests_for_FEE.
+///
+/// # Arguments
+///
+/// `cuda_fee_beam` - A pointer to a `FEEBeamCUDA` struct created with the
+/// `new_cuda_fee_beam` function
+/// `az_rad` - The azimuth directions to get the beam response (units of
+/// radians)
+/// `za_rad` - The zenith angle directions to get the beam response (units of
+/// radians)
+/// `parallactic` - A boolean indicating whether the parallactic angle
+/// correction should be applied.
+/// `d_jones` - A double pointer to a device buffer with resulting beam-response
+/// Jones matrices.
+/// `error_str` - a pointer to a character array which is set by this function
+/// if an error occurs. If this pointer is null, no error message can be
+/// reported if an error occurs.
+///
+/// # Returns
+///
+/// * An exit code integer. If this is non-zero and an error string was
+///   provided, then the error string is set.
+///
+#[cfg(feature = "cuda")]
+#[no_mangle]
+pub unsafe extern "C" fn calc_jones_cuda_device(
+    cuda_fee_beam: *mut FEEBeamCUDA,
+    num_azza: u32,
+    az_rad: *const CudaFloat,
+    za_rad: *const CudaFloat,
+    parallactic: u8,
+    d_jones: *mut *mut CudaFloat,
+    error_str: *mut c_char,
+) -> i32 {
+    let beam = &mut *cuda_fee_beam;
+    let az = slice::from_raw_parts(az_rad, num_azza as usize);
+    let za = slice::from_raw_parts(za_rad, num_azza as usize);
+    let para_bool = match parallactic {
+        0 => false,
+        1 => true,
+        _ => {
+            string_to_error_string(
+                "A value other than 0 or 1 was used for parallactic",
+                error_str,
+            );
+            return 1;
+        }
+    };
+    let device_ptr = match beam.calc_jones_device(az, za, para_bool) {
+        Ok(j) => j,
+        Err(e) => {
+            error_to_error_string(e, error_str);
+            return 1;
+        }
+    };
+
+    *d_jones = device_ptr.get_mut().cast();
+    std::mem::forget(device_ptr);
+    0
+}
+
+/// Get a pointer to the device beam Jones map. This is necessary to access
+/// de-duplicated beam Jones matrices on the device.
+///
+/// # Arguments
+///
+/// `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+///
+/// # Returns
+///
+/// * A pointer to the device beam Jones map. The const annotation is
+///   deliberate; the caller does not own the map.
+///
+#[cfg(feature = "cuda")]
+#[no_mangle]
+pub unsafe extern "C" fn get_cuda_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const u64 {
+    let beam = &mut *cuda_fee_beam;
+    beam.get_beam_jones_map()
+}
+
+/// Get the number of de-duplicated frequencies associated with this
+/// `FEEBeamCUDA`.
+///
+/// # Arguments
+///
+/// `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+///
+/// # Returns
+///
+/// * The number of de-duplicated frequencies associated with this
+///   `FEEBeamCUDA`.
+///
+#[cfg(feature = "cuda")]
+#[no_mangle]
+pub unsafe extern "C" fn get_num_unique_fee_freqs(cuda_fee_beam: *mut FEEBeamCUDA) -> i32 {
+    let beam = &mut *cuda_fee_beam;
+    beam.num_freqs
+}
+
+/// Free the memory associated with an `FEEBeamCUDA` beam.
+///
+/// # Arguments
+///
+/// `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+///
+#[cfg(feature = "cuda")]
+#[no_mangle]
+pub unsafe extern "C" fn free_cuda_fee_beam(fee_beam: *mut FEEBeamCUDA) {
     Box::from_raw(fee_beam);
 }

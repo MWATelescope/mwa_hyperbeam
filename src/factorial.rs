@@ -11,7 +11,7 @@
 
 int main(int argc, char *argv[]) {
     for (int i = 0; i < 100; i++) {
-        printf("%f\n", boost::math::factorial<double>(i));
+        printf("%.1lf\n", boost::math::factorial<double>(i));
     }
 
     return 0;

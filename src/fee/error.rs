@@ -60,4 +60,8 @@ pub enum FEEBeamError {
     /// An error associated with the hdf5 crate.
     #[error("HDF5 error: {0}")]
     Hdf5Error(#[from] hdf5::Error),
+
+    #[cfg(feature = "cuda")]
+    #[error("{0}")]
+    Cuda(#[from] marlu::cuda::CudaError),
 }

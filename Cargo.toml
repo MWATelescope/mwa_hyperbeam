@@ -21,14 +21,21 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 default = []
 hdf5-static = ["hdf5-sys"]
 erfa-static = ["marlu/erfa-static"]
-all-static = ["hdf5-static", "erfa-static"]
+cuda-static = ["marlu/cuda-static"]
+all-static = ["hdf5-static", "erfa-static", "cuda-static"]
 python = ["pyo3", "numpy"]
+
+# Provide beam functionality with CUDA, double precision.
+cuda = ["marlu/cuda", "cc"]
+# Opt-out of double precision, use only single precision.
+cuda-single = ["cuda"]
 
 [profile.release]
 lto = true
 codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size reduction optimizations
 
 [dependencies]
+cfg-if = "1.0.*"
 dashmap = "4.0.*"
 hdf5 = "0.7.*"
 marlu = { version = "0.3.*", default-features = false }
@@ -51,6 +58,8 @@ ndarray = { version = ">=0.15.4,<0.16", features = ["approx-0_5"] }
 [build-dependencies]
 cbindgen = "0.*"
 
+cc = { version = "1.0.*", features = ["parallel"], optional = true }
+
 [package.metadata.docs.rs]
 features = ["hdf5-static"]
 targets = ["x86_64-unknown-linux-gnu"]
@@ -63,3 +72,10 @@ project-url = { homepage = "https://github.com/MWATelescope/mwa_hyperbeam" }
 [[bench]]
 name = "bench"
 harness = false
+
+[[example]]
+name = "beam_calcs"
+
+[[example]]
+name = "beam_calcs_cuda"
+required-features = ["cuda"]

@@ -9,21 +9,29 @@ mod error;
 mod ffi;
 mod types;
 
+#[cfg(feature = "cuda")]
+mod cuda;
+
 #[cfg(test)]
 mod tests;
+
+pub use error::{FEEBeamError, InitFEEBeamError};
+use types::*;
+
+#[cfg(feature = "cuda")]
+pub use cuda::*;
 
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::sync::Mutex;
 
-use marlu::{c64, ndarray::Array2, rayon, AzEl, Jones};
+use marlu::{c64, ndarray, rayon, AzEl, Jones};
+use ndarray::prelude::*;
 use rayon::prelude::*;
 
 use crate::constants::*;
 use crate::factorial::FACTORIAL;
 use crate::legendre::p1sin;
-use crate::types::*;
-pub use error::{FEEBeamError, InitFEEBeamError};
-use types::*;
+use crate::types::{CacheKey, Pol};
 
 /// The main struct to be used for calculating Jones matrices.
 #[allow(clippy::upper_case_acronyms)]
@@ -581,6 +589,36 @@ impl FEEBeam {
         self.coeff_cache.clear();
         self.norm_cache.clear();
     }
+
+    /// Prepare a CUDA-capable device for beam-response computations given the
+    /// frequencies, delays and amps to be used. The resulting object takes
+    /// directions and computes the beam responses on the device.
+    ///
+    /// `delays_array` and `amps_array` must have the same number of rows; these
+    /// correspond to tile configurations (i.e. each tile is allowed to have
+    /// distinct delays and amps). `delays_array` must have 16 elements per row,
+    /// but `amps_array` can have 16 or 32 elements per row (see `calc_jones`
+    /// for an explanation).
+    ///
+    /// The code will automatically de-duplicate tile configurations so that no
+    /// redundant calculations are done.
+    ///
+    /// # Safety
+    ///
+    /// This function interfaces directly with the CUDA API. Rust errors attempt
+    /// to catch problems but there are no guarantees.
+    #[cfg(feature = "cuda")]
+    pub unsafe fn cuda_prepare(
+        &self,
+        freqs_hz: &[u32],
+        delays_array: ArrayView2<u32>,
+        amps_array: ArrayView2<f64>,
+        norm_to_zenith: bool,
+    ) -> Result<cuda::FEEBeamCUDA, FEEBeamError> {
+        // This function is deliberately kept thin to keep the focus of this
+        // module on the CPU code.
+        cuda::FEEBeamCUDA::new(self, freqs_hz, delays_array, amps_array, norm_to_zenith)
+    }
 }
 
 /// Calculate the Jones matrix components given a pointing and coefficients
@@ -665,7 +703,7 @@ fn calc_zenith_norm_jones(coeffs: &BowtieCoefficients) -> Jones<f64> {
 /// Ensure that any delays of 32 have an amplitude (dipole gain) of 0. The
 /// results are bad otherwise! Also ensure that we have 32 dipole gains (amps)
 /// here.
-fn fix_amps(amps: &[f64], delays: &[u32]) -> [f64; 32] {
+pub(super) fn fix_amps(amps: &[f64], delays: &[u32]) -> [f64; 32] {
     let mut full_amps: [f64; 32] = [1.0; 32];
     full_amps
         .iter_mut()

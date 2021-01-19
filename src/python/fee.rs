@@ -10,6 +10,9 @@ use pyo3::prelude::*;
 
 use crate::fee::{FEEBeam as FEEBeamRust, FEEBeamError, InitFEEBeamError};
 
+#[cfg(feature = "cuda")]
+use marlu::ndarray::prelude::*;
+
 // Add a python exception for hyperbeam.
 create_exception!(mwa_hyperbeam, HyperbeamError, pyo3::exceptions::PyException);
 impl std::convert::From<FEEBeamError> for PyErr {
@@ -51,6 +54,7 @@ impl FEEBeam {
     /// dipoles. If there are 32, the first 16 amps are for the X elements, the
     /// next 16 the Y elements.
     #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)"]
+    #[allow(clippy::too_many_arguments)]
     fn calc_jones(
         &mut self,
         az_rad: f64,
@@ -97,6 +101,7 @@ impl FEEBeam {
     /// threads used can be controlled by setting RAYON_NUM_THREADS. `delays`
     /// must have 16 ints, and `amps` must have 16 or 32 floats.
     #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)"]
+    #[allow(clippy::too_many_arguments)]
     fn calc_jones_array(
         &mut self,
         az_rad: Vec<f64>,
@@ -159,6 +164,77 @@ impl FEEBeam {
     #[text_signature = "(freq_hz)"]
     fn closest_freq(&self, freq_hz: f64) -> u32 {
         self.beam.find_closest_freq(freq_hz.round() as _)
+    }
+
+    /// Calculate the Jones matrices for multiple directions given a pointing on
+    /// a CUDA-capable device.
+    ///
+    /// `delays_array` and `amps_array` must have the same number of rows; these
+    /// correspond to tile configurations (i.e. each tile is allowed to have
+    /// distinct delays and amps). `delays_array` must have 16 elements per row,
+    /// but `amps_array` can have 16 or 32 elements per row (see `calc_jones`
+    /// for an explanation).
+    #[cfg(feature = "cuda")]
+    #[text_signature = "(az_rad, za_rad, freq_hz, delays_array, amps_array, norm_to_zenith, parallactic)"]
+    #[allow(clippy::too_many_arguments)]
+    fn calc_jones_cuda(
+        &mut self,
+        az_rad: Vec<f64>,
+        za_rad: Vec<f64>,
+        freqs_hz: Vec<f64>,
+        delays_array: Vec<u32>,
+        amps_array: Vec<f64>,
+        norm_to_zenith: bool,
+        parallactic: bool,
+    ) -> PyResult<Py<PyArray4<numpy::c64>>> {
+        // hyperbeam expects ints for the frequencies. Convert them to make sure
+        // everything's OK.
+        let freqs: Vec<u32> = freqs_hz.iter().map(|&f| f.round() as _).collect();
+        // We assume that there are 16 delays per row of delays, so we can get
+        // the number of tiles.
+        let num_tiles = delays_array.len() / 16;
+        let delays = Array2::from_shape_vec((num_tiles, 16), delays_array).unwrap();
+        // We then know how many amps per tile are provided.
+        let amps =
+            Array2::from_shape_vec((num_tiles, amps_array.len() / num_tiles), amps_array).unwrap();
+        // Convert the direction type to match the CUDA precision.
+        let azs: Vec<_> = az_rad.into_iter().map(|f| f as _).collect();
+        let zas: Vec<_> = za_rad.into_iter().map(|f| f as _).collect();
+
+        let cuda_beam = unsafe {
+            self.beam
+                .cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)?
+        };
+        let jones = cuda_beam.calc_jones(&azs, &zas, parallactic)?;
+
+        // Convert the Rust Jones type into numpy::c64.
+        let d = jones.dim();
+        let jones: Vec<numpy::c64> = jones
+            .into_iter()
+            .flat_map(|j| {
+                [
+                    numpy::c64::new(j[0].re as _, j[0].im as _),
+                    numpy::c64::new(j[1].re as _, j[1].im as _),
+                    numpy::c64::new(j[2].re as _, j[2].im as _),
+                    numpy::c64::new(j[3].re as _, j[3].im as _),
+                ]
+            })
+            .collect();
+        // Now populate a numpy array.
+        let gil = pyo3::Python::acquire_gil();
+        let np_array1 = PyArray1::from_vec(gil.python(), jones);
+        // Reshape with the fourth dimension being each Jones matrix (as a
+        // 4-element sub-array).
+        let np_array4 = np_array1
+            .reshape([
+                np_array1.len() / (d.1 * d.2 * 4),
+                np_array1.len() / (d.0 * d.2 * 4),
+                np_array1.len() / (d.0 * d.1 * 4),
+                4,
+            ])
+            .unwrap();
+
+        Ok(np_array4.to_owned())
     }
 }
 

@@ -6,7 +6,8 @@
 //! the project's root directory.
 
 use criterion::*;
-use marlu::rayon;
+use marlu::{ndarray, rayon};
+use ndarray::prelude::*;
 use rayon::prelude::*;
 
 use mwa_hyperbeam::fee::*;
@@ -112,6 +113,100 @@ fn fee(c: &mut Criterion) {
                         .unwrap()
                 })
                 .collect::<Vec<_>>();
+        })
+    });
+
+    #[cfg(feature = "cuda")]
+    c.bench_function("cuda_calc_jones", |b| {
+        let freqs = [51200000];
+        let delays = Array2::zeros((1, 16));
+        let amps = Array2::ones((1, 32));
+        let norm_to_zenith = false;
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let cuda_beam = unsafe {
+            beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)
+                .unwrap()
+        };
+
+        let mut az = vec![];
+        let mut za = vec![];
+        for d in 5..85 {
+            #[cfg(feature = "cuda-single")]
+            let rad = (d as f32).to_radians();
+            #[cfg(not(feature = "cuda-single"))]
+            let rad = (d as f64).to_radians();
+            az.push(rad);
+            za.push(rad);
+        }
+        let parallactic_correction = false;
+
+        b.iter(|| {
+            cuda_beam
+                .calc_jones(&az, &za, parallactic_correction)
+                .unwrap();
+        })
+    });
+
+    // Benchmarks with a fair few pointings!
+    let num_directions = 100000;
+    let mut az_double = vec![];
+    let mut za_double = vec![];
+    for i in 1..=num_directions {
+        az_double.push(0.9 * std::f64::consts::TAU / i as f64);
+        za_double.push(std::f64::consts::PI / i as f64);
+    }
+    let freqs = [51200000];
+    let delays = Array2::zeros((1, 16));
+    let amps = Array2::ones((1, 16));
+    let norm_to_zenith = true;
+
+    c.bench_function("calc_jones_array 100000 dirs", |b| {
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        // Prime the cache.
+        beam.calc_jones(
+            az_double[0],
+            za_double[0],
+            freqs[0],
+            delays.as_slice().unwrap(),
+            amps.as_slice().unwrap(),
+            norm_to_zenith,
+        )
+        .unwrap();
+        b.iter(|| {
+            beam.calc_jones_array(
+                &az_double,
+                &za_double,
+                freqs[0],
+                delays.as_slice().unwrap(),
+                amps.as_slice().unwrap(),
+                norm_to_zenith,
+            )
+            .unwrap();
+        })
+    });
+
+    #[cfg(feature = "cuda")]
+    c.bench_function("cuda_calc_jones 100000 dirs", |b| {
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let cuda_beam = unsafe {
+            beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)
+                .unwrap()
+        };
+        let parallactic_correction = true;
+
+        #[cfg(feature = "cuda-single")]
+        let (az, za): (Vec<_>, Vec<_>) = az_double
+            .iter()
+            .zip(za_double.iter())
+            .map(|(&az, &za)| (az as f32, za as f32))
+            .unzip();
+        #[cfg(not(feature = "cuda-single"))]
+        let (az, za) = (az_double.clone(), za_double.clone());
+
+        b.iter(|| {
+            cuda_beam
+                .calc_jones(&az, &za, parallactic_correction)
+                .unwrap();
         })
     });
 

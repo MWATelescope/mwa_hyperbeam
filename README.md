@@ -46,6 +46,12 @@ other words, most languages. See Rust, C and Python examples of usage in the
     [-1.51506097e-01-4.35034884e-02j -9.76099405e-06-1.21699926e-05j
       1.73003520e-05-1.53580286e-05j -2.23184781e-01-4.51051073e-02j]
 
+### CUDA
+`hyperbeam` also can also be run on NVIDIA GPUs. To see an example of usage, see
+any of the examples with "_cuda" in the name. CUDA functionality is only
+provided with one of two Cargo features; see installing from source instructions
+below.
+
 ## Installation
 ### Python PyPI
 If you're using Python version >=3.6:
