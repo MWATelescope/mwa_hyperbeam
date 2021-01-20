@@ -101,17 +101,16 @@ pub unsafe extern "C" fn calc_jones(
     Box::into_raw(Box::new(jones)) as *mut f64
 }
 
-/// Get the beam response Jones matrix for several pointings. The Jones matrix
-/// elements for each pointing are put into a single array. As there are 8
-/// floats per Jones matrix, there are 8 * `num_pointings` floats in the array.
-///
+/// Get the beam response Jones matrix for several az/za directions for the 
+/// given pointing. The Jones matrix elements for each direction are
+/// put into a single array. As there are 8  floats per Jones matrix,
+/// there are 8 * `num_pointings` floats in the array.
 /// Rust will calculate the Jones matrices in parallel.
-///
 /// See the documentation for `calc_jones` for more info.
 #[no_mangle]
 pub unsafe extern "C" fn calc_jones_array(
     fee_beam: *mut FEEBeam,
-    num_pointings: u32,
+    num_azza: u32,
     az_rad: *const f64,
     za_rad: *const f64,
     freq_hz: u32,
@@ -120,8 +119,8 @@ pub unsafe extern "C" fn calc_jones_array(
     norm_to_zenith: u8,
 ) -> *mut f64 {
     let beam = &mut *fee_beam;
-    let az = std::slice::from_raw_parts(az_rad, num_pointings as usize);
-    let za = std::slice::from_raw_parts(za_rad, num_pointings as usize);
+    let az = std::slice::from_raw_parts(az_rad, num_azza as usize);
+    let za = std::slice::from_raw_parts(za_rad, num_azza as usize);
     let delays_s = std::slice::from_raw_parts(delays, 16);
     let amps_s = std::slice::from_raw_parts(amps, 16);
     let norm_bool = match norm_to_zenith {
