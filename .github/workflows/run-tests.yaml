@@ -25,7 +25,7 @@ jobs:
           rustup target add x86_64-unknown-linux-gnu
 
     - name: Get the HDF5 file
-      run: curl http://cerberus.mwa128t.org/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5
+      run: curl http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5
 
     - name: Run tests
       run: |

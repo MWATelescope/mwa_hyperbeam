@@ -14,7 +14,7 @@ please raise them here so everyone can benefit.
 ## Usage
 `hyperbeam` requires the MWA FEE HDF5 file. This can be obtained with:
 
-  `wget http://cerberus.mwa128t.org/mwa_full_embedded_element_pattern.h5`
+  `wget http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5`
 
 When making a new beam object, `hyperbeam` needs to know where this HDF5 file
 is. The easiest thing to do is set the environment variable `MWA_BEAM_FILE`:

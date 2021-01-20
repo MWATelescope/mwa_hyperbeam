@@ -101,12 +101,11 @@ pub unsafe extern "C" fn calc_jones(
     Box::into_raw(Box::new(jones)) as *mut f64
 }
 
-/// Get the beam response Jones matrix for several az/za directions for the 
-/// given pointing. The Jones matrix elements for each direction are
-/// put into a single array. As there are 8  floats per Jones matrix,
-/// there are 8 * `num_pointings` floats in the array.
-/// Rust will calculate the Jones matrices in parallel.
-/// See the documentation for `calc_jones` for more info.
+/// Get the beam response Jones matrix for several az/za directions for the
+/// given pointing. The Jones matrix elements for each direction are put into a
+/// single array. As there are 8 floats per Jones matrix, there are 8 *
+/// `num_azza` floats in the array. Rust will calculate the Jones matrices
+/// in parallel. See the documentation for `calc_jones` for more info.
 #[no_mangle]
 pub unsafe extern "C" fn calc_jones_array(
     fee_beam: *mut FEEBeam,
