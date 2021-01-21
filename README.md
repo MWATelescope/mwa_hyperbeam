@@ -93,12 +93,12 @@ This will automatically compile the HDF5 source code and "bake" it into the
 To install `hyperbeam` to your currently-in-use virtualenv or conda environment,
 you'll need the Python package `maturin` (can get it with `pip`), then run:
 
-    maturin develop --release -b pyo3 --cargo-extra-args="--features python"
+    maturin develop --release -b pyo3 --cargo-extra-args="--features python" --strip
 
 If you don't have or don't want to install HDF5 as a system dependency, include
 the `hdf5-static` feature:
 
-    maturin develop --release -b pyo3 --cargo-extra-args="--features python,hdf5-static"
+    maturin develop --release -b pyo3 --cargo-extra-args="--features python,hdf5-static" --strip
 
 ## Comparing with other FEE beam codes
 Below is a table comparing other implementations of the FEE beam code. All

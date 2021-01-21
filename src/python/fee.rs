@@ -129,6 +129,7 @@ fn mwa_hyperbeam(py: Python, m: &PyModule) -> PyResult<()> {
     py.import("numpy")?;
     m.add_class::<FEEBeam>()?;
     m.add("HyperbeamError", py.get_type::<HyperbeamError>())?;
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
     Ok(())
 }

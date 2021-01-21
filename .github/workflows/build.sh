@@ -7,7 +7,7 @@ set -eux
 curl https://sh.rustup.rs -sSf | sh -s -- -y
 
 # Build python first
-/usr/bin/maturin build --release --cargo-extra-args='--features=python,hdf5-static'
+/usr/bin/maturin build --release --cargo-extra-args='--features=python,hdf5-static' --strip
 
 # Build C objects
 cargo build --release --features hdf5-static
