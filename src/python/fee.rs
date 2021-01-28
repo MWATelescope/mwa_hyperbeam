@@ -68,12 +68,9 @@ impl FEEBeam {
                 norm_to_zenith,
             )?
             .to_vec();
-        // transmute used here to get around differing versions of complex types
-        // used by hdf5/numpy/hyperbeam.
-        let numpy_jones = unsafe { std::mem::transmute(jones) };
 
         let gil = pyo3::Python::acquire_gil();
-        let np_array = PyArray1::from_vec(gil.python(), numpy_jones).to_owned();
+        let np_array = PyArray1::from_vec(gil.python(), jones).to_owned();
         Ok(np_array)
     }
 
@@ -99,12 +96,9 @@ impl FEEBeam {
             &amps,
             norm_to_zenith,
         )?;
-        // transmute used here to get around differing versions of complex types
-        // and ndarray types used by hdf5/numpy/hyperbeam.
-        let numpy_jones = unsafe { std::mem::transmute(jones) };
 
         let gil = pyo3::Python::acquire_gil();
-        let np_array = PyArray2::from_owned_array(gil.python(), numpy_jones).to_owned();
+        let np_array = PyArray2::from_owned_array(gil.python(), jones).to_owned();
         Ok(np_array)
     }
 
