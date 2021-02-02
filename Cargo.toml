@@ -1,15 +1,20 @@
 [package]
 name = "mwa_hyperbeam"
-version = "0.3.0"
-authors = ["Marcin Sokolowski <marcin.sokolowski@curtin.edu.au",
-           "Christopher H. Jordan <christopherjordan87@gmail.com>"]
+version = "0.3.1"
+authors = ["Christopher H. Jordan <christopherjordan87@gmail.com>",
+           "Jack L. B. Line <jack.line@curtin.edu.au>",
+           "Marcin Sokolowski <marcin.sokolowski@curtin.edu.au"]
 edition = "2018"
 license = "MPL-2.0"
 readme = "README.md"
 description = "Primary beam code for the Murchison Widefield Array (MWA) radio telescope."
 repository = "https://github.com/MWATelescope/mwa_hyperbeam"
+homepage = "https://github.com/MWATelescope/mwa_hyperbeam"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+# Make a rust library, as well as static and C-compatible dynamic libraries
+# available as "libmwa_hyperbeam.a" and "libmwa_hyperbeam.so".
+[lib]
+crate-type = ["rlib", "staticlib", "cdylib"]
 
 [features]
 default = []
@@ -19,11 +24,6 @@ python = ["pyo3", "numpy"]
 [profile.release]
 lto = true
 codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size reduction optimizations
-
-# Make a rust library, as well as static and C-compatible dynamic libraries
-# available as "libmwa_hyperbeam.a" and "libmwa_hyperbeam.so".
-[lib]
-crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 dashmap = "4.0.*"
