@@ -1,9 +1,9 @@
 [package]
 name = "mwa_hyperbeam"
-version = "0.3.1"
+version = "0.3.2"
 authors = ["Christopher H. Jordan <christopherjordan87@gmail.com>",
            "Jack L. B. Line <jack.line@curtin.edu.au>",
-           "Marcin Sokolowski <marcin.sokolowski@curtin.edu.au"]
+           "Marcin Sokolowski <marcin.sokolowski@curtin.edu.au>"]
 edition = "2018"
 license = "MPL-2.0"
 readme = "README.md"

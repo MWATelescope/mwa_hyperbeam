@@ -44,7 +44,7 @@ other words, most languages. See Rust, C and Python examples of usage in the
 ### Python PyPI
 If you're using Python version >=3.6:
 
-    pip install mwa-hyperbeam
+    pip install mwa_hyperbeam
 
 ### Pre-compiled
 Have a look at the [GitHub
