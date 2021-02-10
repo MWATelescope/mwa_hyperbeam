@@ -16,7 +16,11 @@ fn main() {
     match env::var("DOCS_RS").as_deref() {
         Ok("1") => (),
         _ => {
+            let mut config = cbindgen::Config::default();
+            config.cpp_compat = true;
+            config.pragma_once = true;
             cbindgen::Builder::new()
+                .with_config(config)
                 .with_crate(crate_dir)
                 .with_language(cbindgen::Language::C)
                 .generate()
