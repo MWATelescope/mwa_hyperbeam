@@ -20,7 +20,7 @@ use crate::constants::*;
 use crate::factorial::FACTORIAL;
 use crate::legendre::p1sin;
 use crate::types::*;
-pub use error::FEEBeamError;
+pub use error::{FEEBeamError, InitFEEBeamError};
 
 /// Coefficients for X and Y.
 // TODO: Improve docs.
@@ -73,7 +73,7 @@ pub struct FEEBeam {
 
 impl FEEBeam {
     /// Given the path to the FEE beam file, create a new `FEEBeam` struct.
-    pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, FEEBeamError> {
+    pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, InitFEEBeamError> {
         // so that libhdf5 doesn't print errors to stdout
         let _e = hdf5::silence_errors();
 
@@ -89,9 +89,9 @@ impl FEEBeam {
                 let dipole_index = match dipole_index_str {
                     Some(s) => match s.parse() {
                         Ok(i) => i,
-                        Err(_) => return Err(FEEBeamError::Parse(s.to_string())),
+                        Err(_) => return Err(InitFEEBeamError::Parse(s.to_string())),
                     },
-                    None => return Err(FEEBeamError::MissingDipole),
+                    None => return Err(InitFEEBeamError::MissingDipole),
                 };
                 match biggest_dip_index {
                     None => biggest_dip_index = Some(dipole_index),
@@ -110,7 +110,7 @@ impl FEEBeam {
                 let freq_str = d.strip_prefix("X1_").unwrap();
                 let freq: u32 = match freq_str.parse() {
                     Ok(f) => f,
-                    Err(_) => return Err(FEEBeamError::Parse(freq_str.to_string())),
+                    Err(_) => return Err(InitFEEBeamError::Parse(freq_str.to_string())),
                 };
                 freqs.push(freq);
             }
@@ -118,13 +118,13 @@ impl FEEBeam {
 
         // Sanity checks.
         if biggest_dip_index.is_none() {
-            return Err(FEEBeamError::NoDipoles);
+            return Err(InitFEEBeamError::NoDipoles);
         }
         if freqs.is_empty() {
-            return Err(FEEBeamError::NoFreqs);
+            return Err(InitFEEBeamError::NoFreqs);
         }
         if biggest_dip_index.unwrap() != NUM_DIPOLES {
-            return Err(FEEBeamError::DipoleCountMismatch {
+            return Err(InitFEEBeamError::DipoleCountMismatch {
                 expected: NUM_DIPOLES,
                 got: biggest_dip_index.unwrap(),
             });
@@ -145,10 +145,10 @@ impl FEEBeam {
 
     /// Create a new `FEEBeam` struct from the `MWA_BEAM_FILE` environment
     /// variable.
-    pub fn new_from_env() -> Result<Self, FEEBeamError> {
+    pub fn new_from_env() -> Result<Self, InitFEEBeamError> {
         match std::env::var("MWA_BEAM_FILE") {
             Ok(f) => Self::new(f),
-            Err(e) => Err(FEEBeamError::MwaBeamFileVarError(e)),
+            Err(e) => Err(InitFEEBeamError::MwaBeamFileVarError(e)),
         }
     }
 

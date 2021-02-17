@@ -10,12 +10,17 @@ use numpy::*;
 use pyo3::create_exception;
 use pyo3::prelude::*;
 
-use crate::fee::{FEEBeam as FEEBeamRust, FEEBeamError};
+use crate::fee::{FEEBeam as FEEBeamRust, FEEBeamError, InitFEEBeamError};
 
 // Add a python exception for hyperbeam.
 create_exception!(mwa_hyperbeam, HyperbeamError, pyo3::exceptions::PyException);
 impl std::convert::From<FEEBeamError> for PyErr {
     fn from(err: FEEBeamError) -> PyErr {
+        HyperbeamError::new_err(err.to_string())
+    }
+}
+impl std::convert::From<InitFEEBeamError> for PyErr {
+    fn from(err: InitFEEBeamError) -> PyErr {
         HyperbeamError::new_err(err.to_string())
     }
 }
