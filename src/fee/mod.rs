@@ -8,11 +8,11 @@ beam".
  */
 
 pub mod error;
+mod types;
 
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::sync::Mutex;
 
-use dashmap::DashMap;
 use ndarray::Array2;
 use rayon::prelude::*;
 
@@ -21,37 +21,7 @@ use crate::factorial::FACTORIAL;
 use crate::legendre::p1sin;
 use crate::types::*;
 pub use error::{FEEBeamError, InitFEEBeamError};
-
-/// Coefficients for X and Y.
-// TODO: Improve docs.
-struct PolCoefficients {
-    q1_accum: Vec<c64>,
-    q2_accum: Vec<c64>,
-    m_accum: Vec<i8>,
-    n_accum: Vec<i8>,
-    /// The sign of M coefficients (i.e. -1 or 1).
-    m_signs: Vec<i8>,
-    /// The biggest N coefficient.
-    n_max: usize,
-}
-
-struct DipoleCoefficients {
-    x: PolCoefficients,
-    y: PolCoefficients,
-}
-
-/// `CoeffCache` is mostly just a `RwLock` around a `HashMap` (which is handled
-/// by `DashMap`). This allows multiple concurrent readers with the ability to
-/// halt all reading when writing.
-///
-/// A `CacheHash` is used as the key. This is a wrapper around Rust's own
-/// hashing code so that we get something specific to FEE beam settings.
-struct CoeffCache(DashMap<CacheHash, DipoleCoefficients>);
-
-/// `NormCache` is very similar to `CoeffCache`. It stores Jones matrices used
-/// to normalise beam responses at various frequencies (i.e. frequency is the
-/// key of the `HashMap`).
-struct NormCache(DashMap<u32, Jones>);
+use types::*;
 
 /// The main struct to be used for calculating FEE pointings.
 pub struct FEEBeam {
@@ -138,8 +108,8 @@ impl FEEBeam {
             hdf5_file: Mutex::new(h5),
             freqs,
             modes,
-            coeff_cache: CoeffCache(DashMap::new()),
-            norm_cache: NormCache(DashMap::new()),
+            coeff_cache: CoeffCache::default(),
+            norm_cache: NormCache::default(),
         })
     }
 
@@ -215,14 +185,14 @@ impl FEEBeam {
         let hash = CacheHash::new(freq, delays, amps);
 
         // If the cache for this hash exists, we can return the hash.
-        if self.coeff_cache.0.contains_key(&hash) {
+        if self.coeff_cache.contains_key(&hash) {
             return Ok(hash);
         }
 
         // If we hit this part of the code, the coefficients were not in the
         // cache.
         let modes = self.calc_modes(freq, delays, amps)?;
-        self.coeff_cache.0.insert(hash.clone(), modes);
+        self.coeff_cache.insert(hash.clone(), modes);
         Ok(hash)
     }
 
@@ -363,16 +333,16 @@ impl FEEBeam {
         let freq = self.find_closest_freq(desired_freq);
 
         // If the cache for this freq exists, we can return it.
-        if self.norm_cache.0.contains_key(&freq) {
+        if self.norm_cache.contains_key(&freq) {
             return Ok(freq);
         }
 
         // If we hit this part of the code, the normalisation Jones matrix was
         // not in the cache.
         let hash = self.populate_modes(freq, &[0; 16], &[1.0; 16])?;
-        let coeffs = self.coeff_cache.0.get(&hash).unwrap();
+        let coeffs = self.coeff_cache.get(&hash).unwrap();
         let jones = calc_zenith_norm_jones(&coeffs);
-        self.norm_cache.0.insert(freq, jones);
+        self.norm_cache.insert(freq, jones);
 
         Ok(freq)
     }
@@ -412,8 +382,8 @@ impl FEEBeam {
             None
         };
 
-        let coeffs = self.coeff_cache.0.get(&hash).unwrap();
-        let norm_jones = norm_freq.and_then(|f| self.norm_cache.0.get(&f));
+        let coeffs = self.coeff_cache.get(&hash).unwrap();
+        let norm_jones = norm_freq.and_then(|f| self.norm_cache.get(&f));
 
         let jones = calc_jones_direct(az_rad, za_rad, &coeffs, norm_jones.as_deref());
         Ok(jones)
@@ -455,8 +425,8 @@ impl FEEBeam {
             None
         };
 
-        let coeffs = self.coeff_cache.0.get(&hash).unwrap();
-        let norm = norm_freq.and_then(|f| self.norm_cache.0.get(&f));
+        let coeffs = self.coeff_cache.get(&hash).unwrap();
+        let norm = norm_freq.and_then(|f| self.norm_cache.get(&f));
 
         let mut out = Vec::with_capacity(az_rad.len());
         az_rad
@@ -470,8 +440,8 @@ impl FEEBeam {
     /// Empty the cached dipole coefficients and normalisation Jones matrices to
     /// recover memory.
     pub fn empty_cache(&self) {
-        self.coeff_cache.0.clear();
-        self.norm_cache.0.clear();
+        self.coeff_cache.clear();
+        self.norm_cache.clear();
     }
 }
 
@@ -605,7 +575,7 @@ mod tests {
         let result = beam.populate_modes(51200000, &[0; 16], &[1.0; 16]);
         assert!(result.is_ok());
         let hash = result.unwrap();
-        let coeffs = beam.coeff_cache.0.get(&hash).unwrap();
+        let coeffs = beam.coeff_cache.get(&hash).unwrap();
 
         // Values taken from the C++ code.
         // m_accum and n_accum are floats in the C++ code, but these appear to
@@ -686,7 +656,7 @@ mod tests {
         );
         assert!(result.is_ok());
         let hash = result.unwrap();
-        let coeffs = beam.coeff_cache.0.get(&hash).unwrap();
+        let coeffs = beam.coeff_cache.get(&hash).unwrap();
 
         // Values taken from the C++ code.
         let x_m_expected = vec![-1, 0, 1, -2, -1, 0, 1, 2, -3, -2, -1, 0, 1, 2, 3];
