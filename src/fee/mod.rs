@@ -466,6 +466,13 @@ impl FEEBeam {
             .collect_into_vec(&mut out);
         Ok(Array2::from(out))
     }
+
+    /// Empty the cached dipole coefficients and normalisation Jones matrices to
+    /// recover memory.
+    pub fn empty_cache(&self) {
+        self.coeff_cache.0.clear();
+        self.norm_cache.0.clear();
+    }
 }
 
 /// Calculate the Jones matrix for a pointing for a single dipole polarisation.
