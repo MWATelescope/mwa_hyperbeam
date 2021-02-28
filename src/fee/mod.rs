@@ -34,7 +34,7 @@ pub struct FEEBeam {
     /// Row 0: Type
     /// Row 1: M
     /// Row 2: N
-    modes: Array2<f64>,
+    modes: Array2<i8>,
     /// A cache of X and Y coefficients.
     coeff_cache: CoeffCache,
     /// A cache of normalisation Jones matrices.
@@ -257,12 +257,11 @@ impl FEEBeam {
             // ???
             let mut b_update_n_accum = false;
             for i in 0..n_dip_coeffs {
-                // TODO: Convert the modes before getting here.
                 let mode_type = self.modes[[0, i]];
-                let mode_m = self.modes[[1, i]] as i8;
-                let mode_n = self.modes[[2, i]] as i8;
+                let mode_m = self.modes[[1, i]];
+                let mode_n = self.modes[[2, i]];
 
-                if mode_type <= 1.0 {
+                if mode_type <= 1 {
                     s1_list.push(i);
                     ms1.push(mode_m);
                     ns1.push(mode_n);
