@@ -173,37 +173,65 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
 mod tests {
     use super::*;
     use approx::*;
+    use ndarray::prelude::*;
+
+    #[test]
+    fn test_legendre_single() {
+        let result = Array1::from(legendre_single(5, 0, -1.0));
+        let expected = array![1.0, -1.0, 1.0, -1.0, 1.0, -1.0];
+        assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
+
+        let result = Array1::from(legendre_single(5, 0, -0.25));
+        let expected = array![
+            1.0,
+            -0.25,
+            -0.40625,
+            0.3359375,
+            0.15771484375,
+            -0.3397216796875
+        ];
+        assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
+
+        let result = Array1::from(legendre_single(5, 0, 0.25));
+        let expected = array![
+            1.0,
+            0.25,
+            -0.40625,
+            -0.3359375,
+            0.15771484375,
+            0.3397216796875
+        ];
+        assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
+
+        let result = Array1::from(legendre_single(5, 0, 1.0));
+        let expected = array![1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
+    }
 
     #[test]
     fn legendre_values_n5m0() {
         let x = vec![-1.0, -0.5, 0.0, 0.5, 1.0];
-        let result = _legendre_values(5, 0, &x);
-        let expected = vec![
+        let result = Array1::from(_legendre_values(5, 0, &x));
+        let expected = array![
             1.000000, 1.000000, 1.000000, 1.000000, 1.000000, -1.000000, -0.500000, 0.000000,
             0.500000, 1.000000, 1.000000, -0.125000, -0.500000, -0.125000, 1.000000, -1.000000,
             0.437500, -0.000000, -0.437500, 1.000000, 1.000000, -0.289062, 0.375000, -0.289062,
             1.000000, -1.000000, -0.089844, 0.000000, 0.089844, 1.000000,
         ];
-        assert_eq!(result.len(), expected.len());
-        for (r, e) in result.iter().zip(expected.iter()) {
-            assert_abs_diff_eq!(r, e, epsilon = 1e-6);
-        }
+        assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
     }
 
     #[test]
     fn legendre_values_n5m1() {
         let x = vec![-1.0, -0.5, 0.0, 0.5, 1.0];
-        let result = _legendre_values(5, 1, &x);
-        let expected = vec![
+        let result = Array1::from(_legendre_values(5, 1, &x));
+        let expected = array![
             0.000000, 0.000000, 0.000000, 0.000000, 0.000000, -0.000000, -0.866025, -1.000000,
             -0.866025, -0.000000, 0.000000, 1.299038, -0.000000, -1.299038, -0.000000, 0.000000,
             -0.324760, 1.500000, -0.324760, 0.000000, -0.000000, -1.353165, 0.000000, 1.353165,
             0.000000, 0.000000, 1.928260, -1.875000, 1.928260, 0.000000,
         ];
-        assert_eq!(result.len(), expected.len());
-        for (r, e) in result.iter().zip(expected.iter()) {
-            assert_abs_diff_eq!(r, e, epsilon = 1e-6);
-        }
+        assert_abs_diff_eq!(result, expected, epsilon = 1e-6);
     }
 
     #[test]

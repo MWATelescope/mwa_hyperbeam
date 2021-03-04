@@ -212,6 +212,7 @@ pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
 mod tests {
     use super::*;
     use approx::*;
+    use ndarray::prelude::*;
     use serial_test::serial;
 
     #[test]
@@ -229,29 +230,27 @@ mod tests {
                 [1.0; 16].as_ptr(),
                 0,
             );
-            Vec::from_raw_parts(jones_ptr, 8, 8)
+            Array1::from(Vec::from_raw_parts(jones_ptr, 8, 8))
         };
 
-        let expected = [
+        let expected = array![
             0.036179, 0.103586, 0.036651, 0.105508, 0.036362, 0.103868, -0.036836, -0.105791,
         ];
-        for (&j, e) in jones.iter().zip(&expected) {
-            assert_abs_diff_eq!(j, e, epsilon = 1e-6);
-        }
+        assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
     }
 
     #[test]
     #[serial]
     fn test_calc_jones_array_via_ffi() {
-        let num_pointings = 10000;
+        let num_directions = 1000;
         let file = std::ffi::CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let jones = unsafe {
             let beam = new_fee_beam(file.into_raw());
-            let az = vec![45.0_f64.to_radians(); num_pointings];
-            let za = vec![10.0_f64.to_radians(); num_pointings];
+            let az = vec![45.0_f64.to_radians(); num_directions];
+            let za = vec![10.0_f64.to_radians(); num_directions];
             let jones_ptr = calc_jones_array(
                 beam,
-                num_pointings as _,
+                num_directions as _,
                 az.as_ptr(),
                 za.as_ptr(),
                 51200000,
@@ -259,20 +258,19 @@ mod tests {
                 [1.0; 16].as_ptr(),
                 0,
             );
-            Vec::from_raw_parts(jones_ptr, 8 * num_pointings, 8 * num_pointings)
+            Array1::from(Vec::from_raw_parts(
+                jones_ptr,
+                8 * num_directions,
+                8 * num_directions,
+            ))
+            .into_shape((num_directions, 8))
+            .unwrap()
         };
 
-        let expected = [
+        let expected = array![
             0.036179, 0.103586, 0.036651, 0.105508, 0.036362, 0.103868, -0.036836, -0.105791,
         ];
-        for (&j, e) in jones.iter().zip(&expected) {
-            assert_abs_diff_eq!(j, e, epsilon = 1e-6);
-        }
-        for (&j, e) in jones[num_pointings - 8..num_pointings]
-            .iter()
-            .zip(&expected)
-        {
-            assert_abs_diff_eq!(j, e, epsilon = 1e-6);
-        }
+        assert_abs_diff_eq!(jones.slice(s![0, ..]), expected, epsilon = 1e-6);
+        assert_abs_diff_eq!(jones.slice(s![-1, ..]), expected, epsilon = 1e-6);
     }
 }
