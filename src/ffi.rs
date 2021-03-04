@@ -26,8 +26,8 @@ use crate::fee::FEEBeam;
 ///
 #[no_mangle]
 pub unsafe extern "C" fn new_fee_beam(hdf5_file: *const std::os::raw::c_char) -> *mut FEEBeam {
-    let m = CStr::from_ptr(hdf5_file).to_str().unwrap().to_string();
-    let beam = FEEBeam::new(&m).unwrap();
+    let m = CStr::from_ptr(hdf5_file).to_str().unwrap();
+    let beam = FEEBeam::new(m).unwrap();
     Box::into_raw(Box::new(beam))
 }
 
