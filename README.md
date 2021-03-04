@@ -107,15 +107,15 @@ the `hdf5-static` feature:
 
 ## Comparing with other FEE beam codes
 Below is a table comparing other implementations of the FEE beam code. All
-benchmarks were done with unique azimuth and zenith angle pointings, and all on
-the same system. The CPU is a Ryzen 9 3900X, which has 12 cores and SMT (24
+benchmarks were done with unique azimuth and zenith angle directionss, and all
+on the same system. The CPU is a Ryzen 9 3900X, which has 12 cores and SMT (24
 threads). All benchmarks were done in serial, unless indicated by "parallel".
 Python times were taken by running `time.time()` before and after the
 calculations. Memory usage is measured by running `time -v` on the command (not
 the `time` associated with your shell; this is usually at `/usr/bin/time`).
 
-| Code             | Number of pointings | Duration | Max. memory usage |
-|:-----------------|--------------------:|---------:|------------------:|
+| Code             | Number of directions | Duration | Max. memory usage |
+|:-----------------|---------------------:|---------:|------------------:|
 | [mwa_pb](https://github.com/MWATelescope/mwa_pb) | 500     | 98.8 ms  | 134.6 MiB |
 |                                                  | 100000  | 13.4 s   | 5.29 GiB  |
 |                                                  | 1000000 | 139.8 s  | 51.6 GiB  |

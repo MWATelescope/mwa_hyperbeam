@@ -7,6 +7,11 @@ Example code using hyperbeam with Rust.
 
 Build and run with something like:
 cargo run --release --example beam_calcs -- mwa_full_embedded_element_pattern.h5 10000
+
+If you want to use hyperbeam in your own Rust crate, then check out the latest
+version on crates.io:
+
+https://crates.io/crates/mwa_hyperbeam
  */
 
 use mwa_hyperbeam::fee::FEEBeam;
@@ -18,9 +23,9 @@ struct Opts {
     #[structopt(short, long, parse(from_os_str))]
     hdf5_file: Option<std::path::PathBuf>,
 
-    /// The number of pointings to run.
+    /// The number of directions to run.
     #[structopt()]
-    num_pointings: usize,
+    num_directions: usize,
 
     /// Calculate the Jones matrices in parallel.
     #[structopt(short, long)]
@@ -35,12 +40,12 @@ fn main() -> Result<(), anyhow::Error> {
         None => FEEBeam::new_from_env()?,
     };
 
-    // Set up the pointings to test.
-    let mut az = Vec::with_capacity(opts.num_pointings);
-    let mut za = Vec::with_capacity(opts.num_pointings);
-    for i in 0..opts.num_pointings {
-        az.push(0.9 * std::f64::consts::PI * i as f64 / opts.num_pointings as f64);
-        za.push(0.1 + 0.9 * std::f64::consts::PI / 2.0 * i as f64 / opts.num_pointings as f64);
+    // Set up the directions to test.
+    let mut az = Vec::with_capacity(opts.num_directions);
+    let mut za = Vec::with_capacity(opts.num_directions);
+    for i in 0..opts.num_directions {
+        az.push(0.9 * std::f64::consts::PI * i as f64 / opts.num_directions as f64);
+        za.push(0.1 + 0.9 * std::f64::consts::PI / 2.0 * i as f64 / opts.num_directions as f64);
     }
     let freq_hz = 51200000;
     let delays = vec![0; 16];

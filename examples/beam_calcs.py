@@ -16,7 +16,7 @@ if len(sys.argv) > 1:
 else:
     beam = mwa_hyperbeam.FEEBeam()
 
-# Make a lot of pointings for hyperbeam to calculate in parallel.
+# Make a lot of directions for hyperbeam to calculate in parallel.
 n = 1000000
 az = np.linspace(0, 0.9 * np.pi, n)
 za = np.linspace(0.1, 0.9 * np.pi / 2, n)
@@ -33,6 +33,6 @@ start_time = time.time()
 # parallel with Rust (so it's fast).
 jones = beam.calc_jones_array(az, za, freq, delays, amps, norm_to_zenith)
 duration = time.time() - start_time
-print("Time to calculate {} pointings: {:.3}s".format(n, duration))
+print("Time to calculate {} directions: {:.3}s".format(n, duration))
 print("First Jones matrix:")
 print(jones[0])

@@ -21,12 +21,12 @@ int main(int argc, char *argv[]) {
     // Get a new beam from hyperbeam.
     FEEBeam *beam = new_fee_beam(argv[1]);
 
-    // Set up the pointings to test.
-    int num_pointings = 2000000;
-    double *az = malloc(num_pointings * sizeof(double));
-    double *za = malloc(num_pointings * sizeof(double));
-    for (int i = 0; i < num_pointings; i++) {
-        double coord_deg = 5.0 + (double)i * 80.0 / (double)num_pointings;
+    // Set up the directions to test.
+    int num_directions = 2000000;
+    double *az = malloc(num_directions * sizeof(double));
+    double *za = malloc(num_directions * sizeof(double));
+    for (int i = 0; i < num_directions; i++) {
+        double coord_deg = 5.0 + (double)i * 80.0 / (double)num_directions;
         double coord_rad = coord_deg * M_PI / 180.0;
         az[i] = coord_rad;
         za[i] = coord_rad;
@@ -36,10 +36,10 @@ int main(int argc, char *argv[]) {
     int freq_hz = 51200000;
     int norm_to_zenith = 0;
 
-    // Calculate the Jones matrices for all pointings.
-    double **jones = malloc(num_pointings * 8 * sizeof(double));
-    #pragma omp parallel for
-    for (int i = 0; i < num_pointings; i++) {
+    // Calculate the Jones matrices for all directions.
+    double **jones = malloc(num_directions * 8 * sizeof(double));
+#pragma omp parallel for
+    for (int i = 0; i < num_directions; i++) {
         double *j = calc_jones(beam, az[i], za[i], freq_hz, delays, amps, norm_to_zenith);
         jones[i] = j;
     }
@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
     // Freeing memory.
     free(az);
     free(za);
-    for (int i = 0; i < num_pointings; i++) {
+    for (int i = 0; i < num_directions; i++) {
         free(jones[i]);
     }
     free(jones);

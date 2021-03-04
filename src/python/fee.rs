@@ -46,8 +46,8 @@ impl FEEBeam {
         Ok(FEEBeam { beam: strct })
     }
 
-    /// Calculate the Jones matrix for a single pointing. `delays` must have 16
-    /// ints, and `amps` must have 16 floats.
+    /// Calculate the Jones matrix for a single direction given a pointing.
+    /// `delays` must have 16 ints, and `amps` must have 16 floats.
     #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)"]
     fn calc_jones(
         &mut self,
@@ -79,10 +79,10 @@ impl FEEBeam {
         Ok(np_array)
     }
 
-    /// Calculate the Jones matrices for multiple pointings. Each pointing is
-    /// calculated in parallel by Rust. The number of parallel threads used can
-    /// be controlled by setting RAYON_NUM_THREADS. `delays` must have 16 ints,
-    /// and `amps` must have 16 floats.
+    /// Calculate the Jones matrices for multiple directions given a pointing.
+    /// Each direction is calculated in parallel by Rust. The number of parallel
+    /// threads used can be controlled by setting RAYON_NUM_THREADS. `delays`
+    /// must have 16 ints, and `amps` must have 16 floats.
     #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)"]
     fn calc_jones_array(
         &mut self,

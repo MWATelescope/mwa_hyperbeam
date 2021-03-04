@@ -41,6 +41,13 @@ pub enum FEEBeamError {
     #[error("Expected {expected} dipole coefficients, but got {got}")]
     S1S2CountMismatch { expected: usize, got: usize },
 
+    #[error("The number of {ctype} coefficients did not match m_accum - got {got} when we expected {expected}")]
+    CoeffCountMismatch {
+        ctype: &'static str,
+        got: usize,
+        expected: usize,
+    },
+
     /// An error associated with the hdf5 crate.
     #[error("HDF5 error: {0}")]
     Hdf5Error(#[from] hdf5::Error),

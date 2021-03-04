@@ -23,7 +23,7 @@ use crate::types::*;
 pub use error::{FEEBeamError, InitFEEBeamError};
 use types::*;
 
-/// The main struct to be used for calculating FEE pointings.
+/// The main struct to be used for calculating Jones matrices.
 pub struct FEEBeam {
     /// The `hdf5::File` struct associated with the opened HDF5 file. It is
     /// behind a `Mutex` to prevent parallel usage of the file.
@@ -254,7 +254,7 @@ impl FEEBeam {
             let mut ms2 = Vec::with_capacity(n_dip_coeffs / 2);
             let mut ns2 = Vec::with_capacity(n_dip_coeffs / 2);
 
-            // ???
+            // What does this do???
             let mut b_update_n_accum = false;
             for i in 0..n_dip_coeffs {
                 let mode_type = self.modes[[0, i]];
@@ -318,6 +318,21 @@ impl FEEBeam {
             m_signs.push(sign)
         }
 
+        if m_accum.len() != n_accum.len() {
+            return Err(FEEBeamError::CoeffCountMismatch {
+                ctype: "n_accum",
+                got: q1_accum.len(),
+                expected: m_accum.len(),
+            });
+        }
+        if m_accum.len() != m_signs.len() {
+            return Err(FEEBeamError::CoeffCountMismatch {
+                ctype: "m_signs",
+                got: m_signs.len(),
+                expected: m_accum.len(),
+            });
+        }
+
         Ok(PolCoefficients {
             q1_accum,
             q2_accum,
@@ -346,7 +361,7 @@ impl FEEBeam {
         Ok(freq)
     }
 
-    /// Calculate the Jones matrix for a pointing.
+    /// Calculate the Jones matrix for a given direction and pointing.
     ///
     /// `delays` and `amps` apply to each dipole in a given MWA tile (in the M&C
     /// order), and *must* have 16 elements. `amps` being dipole gains (usually
@@ -388,7 +403,7 @@ impl FEEBeam {
         Ok(jones)
     }
 
-    /// Calculate the Jones matrices for many pointings.
+    /// Calculate the Jones matrices for many directions given a pointing.
     ///
     /// This is basically a wrapper around `calc_jones`; this function
     /// calculates the Jones matrices in parallel. `delays` and `amps` *must*
@@ -444,13 +459,11 @@ impl FEEBeam {
     }
 }
 
-/// Calculate the Jones matrix for a pointing for a single dipole polarisation.
+/// Calculate the Jones matrix components given a pointing and coefficients
+/// associated with a single dipole polarisation.
 fn calc_sigmas(phi: f64, theta: f64, coeffs: &PolCoefficients) -> (c64, c64) {
     let u = theta.cos();
     let (p1sin_arr, p1_arr) = p1sin(coeffs.n_max, theta);
-
-    // TODO: Check that the sizes of N_accum and M_accum agree. This check
-    // should actually be in the PolCoefficients generation.
 
     let mut sigma_p = c64::new(0.0, 0.0);
     let mut sigma_t = c64::new(0.0, 0.0);
@@ -487,7 +500,8 @@ fn calc_sigmas(phi: f64, theta: f64, coeffs: &PolCoefficients) -> (c64, c64) {
     (sigma_t, -sigma_p)
 }
 
-/// Calculate the Jones matrix for a pointing for both dipole polarisations.
+/// Actually calculate a Jones matrix. All other "calc" functions use this
+/// function.
 fn calc_jones_direct(
     az_rad: f64,
     za_rad: f64,
@@ -515,8 +529,9 @@ fn calc_zenith_norm_jones(coeffs: &DipoleCoefficients) -> Jones {
     let (j10, _) = calc_sigmas(max_phi[2], 0.0, &coeffs.y);
     let (_, j11) = calc_sigmas(max_phi[3], 0.0, &coeffs.y);
     // C++ uses abs(c) here, where abs is the magnitude of the complex number
-    // vector. Confusingly, it looks like the returned Jones matrix is all real,
-    // but it should be complex. This is more explicit in Rust.
+    // vector. The result of this function should be a complex Jones matrix,
+    // but, confusingly, the returned "Jones matrix" is all real in the C++.
+    // This less ambiguous in Rust.
     let abs = |c: c64| c64::new(c.norm(), 0.0);
     [abs(j00), abs(j01), abs(j10), abs(j11)]
 }

@@ -45,7 +45,7 @@ pub unsafe extern "C" fn new_fee_beam_from_env() -> *mut FEEBeam {
     Box::into_raw(Box::new(beam))
 }
 
-/// Get the beam response Jones matrix for the given pointing.
+/// Get the beam response Jones matrix for the given direction and pointing.
 ///
 /// Note the return type (*double); we can't pass complex numbers across the FFI
 /// boundary, so the real and imaginary components are unpacked into

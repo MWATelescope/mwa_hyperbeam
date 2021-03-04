@@ -21,7 +21,7 @@ int main(int argc, char *argv[]) {
     // Get a new beam from hyperbeam.
     FEEBeam *beam = new_fee_beam(argv[1]);
 
-    // Set up the pointing to test.
+    // Set up the direction and pointing to test.
     double az = 45.0 * M_PI / 180.0;
     double za = 80.0 * M_PI / 180.0;
     unsigned delays[16] = {3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0};
@@ -29,7 +29,7 @@ int main(int argc, char *argv[]) {
     int freq_hz = 51200000;
     int norm_to_zenith = 0;
 
-    // Calculate the Jones matrix for this pointing.
+    // Calculate the Jones matrix for this direction and pointing.
     double *jones = calc_jones(beam, az, za, freq_hz, delays, amps, norm_to_zenith);
     printf("The returned Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", jones[0], jones[1]);
