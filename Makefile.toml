@@ -1,0 +1,61 @@
+[tasks.linux_apt_get_update]
+command = "sudo"
+args = ["apt-get", "update"]
+
+[tasks.linux_install_deps]
+command = "sudo"
+args = ["apt-get", "install", "-y", "libhdf5-dev"]
+dependencies = ["linux_apt_get_update"]
+
+[tasks.mac_install_deps]
+command = "brew"
+args = ["install", "hdf5"]
+
+[tasks.install_deps]
+linux_alias = "linux_install_deps"
+mac_alias = "mac_install_deps"
+
+[tasks.check]
+command = "cargo"
+args = ["check"]
+
+[tasks.format_fix]
+command = "cargo"
+args = ["fmt", "--", "--emit=files"]
+install_crate = "rustfmt"
+
+[tasks.format_check]
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+install_crate = "rustfmt"
+
+[tasks.clippy]
+command = "cargo"
+args = ["clippy", "--", "-D", "warnings"]
+install_crate = "clippy"
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.build_clean]
+command = "cargo"
+args = ["build"]
+dependencies = ["clean"]
+
+[tasks.test]
+command = "cargo"
+args = ["test"]
+
+[tasks.ci]
+dependencies = [
+  "check",
+  "format_check",
+  "clippy",
+]
+
+[tasks.pre_commit]
+dependencies = [
+  "format_fix",
+  "test",
+]

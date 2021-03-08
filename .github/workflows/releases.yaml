@@ -1,6 +1,7 @@
 ---
-name: "Release"
+name: Release
 
+# Do this on every push
 on:
   push:
     tags:
@@ -10,33 +11,99 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-release:
-    name: "Compile a Release"
-    runs-on: ubuntu-18.04
-    steps:
-    - uses: actions/checkout@v2
+  build-linux-release:
+    name: Build release for Linux
+    runs-on: ubuntu-latest
 
-    - name: build
+    steps:
+    - name: Checkout sources
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Build hyperbeam
       uses: docker://chjordan/maturin:latest
       with:
         entrypoint: /bin/bash
         args: .github/workflows/build.sh
 
-    # Because we've compiled HDF5 into hyperbeam products, we legally must
-    # distribute the HDF5 license with the products.
-    - name: Get HDF5 license
-      run: curl https://raw.githubusercontent.com/HDFGroup/hdf5/develop/COPYING -o COPYING-hdf5
-
-    - name: Create new release asset tarballs
-      run: |
-        sudo mv target/wheels/*.whl target/release/libmwa_hyperbeam.a target/release/libmwa_hyperbeam.so include/mwa_hyperbeam.h .
-        tar -acvf mwa_hyperbeam-$(git describe --tags)-python-wheel.tar.gz LICENSE COPYING-hdf5 *.whl
-        tar -acvf mwa_hyperbeam-$(git describe --tags)-C-library.tar.gz LICENSE COPYING-hdf5 libmwa_hyperbeam.a libmwa_hyperbeam.so mwa_hyperbeam.h
-
-    - name: Provide new release asset
-      uses: "marvinpinto/action-automatic-releases@latest"
+    - name: Upload tarball
+      uses: actions/upload-artifact@v2
       with:
-        repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        prerelease: false
-        files: |
-          *.tar.gz
+        name: linux.tar.gz
+        path: "*.tar.gz"
+        if-no-files-found: error
+
+  build-macos-release:
+    name: Build release for MacOS
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout sources
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Install stable toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+
+    - name: Add Python 3.6
+      uses: actions/setup-python@v2
+      with:
+        python-version: "3.6"
+        architecture: "x64"
+
+    - name: Add Python 3.7
+      uses: actions/setup-python@v2
+      with:
+        python-version: "3.7"
+        architecture: "x64"
+
+    - name: Add Python 3.8
+      uses: actions/setup-python@v2
+      with:
+        python-version: "3.8"
+        architecture: "x64"
+
+    - name: Add Python 3.9
+      uses: actions/setup-python@v2
+      with:
+        python-version: "3.9"
+        architecture: "x64"
+
+    - name: Build hyperbeam
+      run: .github/workflows/build.sh
+
+    - name: Upload tarball
+      uses: actions/upload-artifact@v2
+      with:
+        name: macos.tar.gz
+        path: "*.tar.gz"
+        if-no-files-found: error
+
+  create-release:
+    name: Create a new release
+    runs-on: ubuntu-latest
+    needs: [build-linux-release, build-macos-release]
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: linux.tar.gz
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: macos.tar.gz
+
+      - name: Provide new release asset
+        uses: "marvinpinto/action-automatic-releases@latest"
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: false
+          files: |
+            *.tar.gz
