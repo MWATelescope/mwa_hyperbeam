@@ -2,17 +2,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-/*!
-Example code using hyperbeam with Rust.
-
-Build and run with something like:
-cargo run --release --example beam_calcs -- mwa_full_embedded_element_pattern.h5 10000
-
-If you want to use hyperbeam in your own Rust crate, then check out the latest
-version on crates.io:
-
-https://crates.io/crates/mwa_hyperbeam
- */
+//! Example code using hyperbeam with Rust.
+//!
+//! Build and run with something like:
+//! `cargo run --release --example beam_calcs -- mwa_full_embedded_element_pattern.h5 10000`
+//!
+//! If you want to use hyperbeam in your own Rust crate, then check out the latest
+//! version on crates.io:
+//!
+//! https://crates.io/crates/mwa_hyperbeam
 
 use mwa_hyperbeam::fee::FEEBeam;
 use structopt::*;
@@ -48,6 +46,9 @@ fn main() -> Result<(), anyhow::Error> {
         za.push(0.1 + 0.9 * std::f64::consts::PI / 2.0 * i as f64 / opts.num_directions as f64);
     }
     let freq_hz = 51200000;
+    // Delays and amps correspond to dipoles in the "M&C order". See
+    // https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139) for
+    // more info.
     let delays = vec![0; 16];
     let amps = vec![1.0; 16];
     let norm_to_zenith = false;

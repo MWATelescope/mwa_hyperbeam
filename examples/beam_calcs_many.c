@@ -29,6 +29,9 @@ int main(int argc, char *argv[]) {
         az[i] = 45.0 * M_PI / 180.0;
         za[i] = 10.0 * M_PI / 180.0;
     }
+    // Delays and amps correspond to dipoles in the "M&C order". See
+    // https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139) for
+    // more info.
     unsigned delays[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     double amps[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
     int freq_hz = 51200000;

@@ -2,13 +2,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-/*!
-Errors associated with the FEE beam.
- */
+//! Errors associated with the FEE beam.
 
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum InitFEEBeamError {
     #[error("One of HDF5 datasets started with 'X_'; what's wrong with your file?")]
     MissingDipole,
@@ -37,6 +36,7 @@ pub enum InitFEEBeamError {
 }
 
 #[derive(Error, Debug)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum FEEBeamError {
     #[error("Expected {expected} dipole coefficients, but got {got}")]
     S1S2CountMismatch { expected: usize, got: usize },

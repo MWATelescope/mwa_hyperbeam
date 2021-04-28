@@ -21,6 +21,9 @@ n = 1000000
 az = np.linspace(0, 0.9 * np.pi, n)
 za = np.linspace(0.1, 0.9 * np.pi / 2, n)
 freq = 167000000
+# Delays and amps correspond to dipoles in the "M&C order". See
+# https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139) for more
+# info.
 delays = [0] * 16
 amps = [1.0] * 16
 norm_to_zenith = True

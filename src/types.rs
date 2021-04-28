@@ -2,9 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-/*!
-Generic types.
- */
+//! Generic types.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};

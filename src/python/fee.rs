@@ -2,9 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-/*!
-Python interface to hyperbeam FEE code.
- */
+//! Python interface to hyperbeam FEE code.
 
 use numpy::*;
 use pyo3::create_exception;
@@ -28,6 +26,7 @@ impl std::convert::From<InitFEEBeamError> for PyErr {
 /// A Python class interfacing with the hyperbeam code written in Rust.
 #[pyclass]
 #[text_signature = "(hdf5_file)"]
+#[allow(clippy::upper_case_acronyms)]
 struct FEEBeam {
     beam: FEEBeamRust,
 }

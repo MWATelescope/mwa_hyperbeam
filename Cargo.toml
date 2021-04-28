@@ -10,6 +10,7 @@ readme = "README.md"
 description = "Primary beam code for the Murchison Widefield Array (MWA) radio telescope."
 repository = "https://github.com/MWATelescope/mwa_hyperbeam"
 homepage = "https://github.com/MWATelescope/mwa_hyperbeam"
+exclude = [".github/*"]
 
 # Make a rust library, as well as static and C-compatible dynamic libraries
 # available as "libmwa_hyperbeam.a" and "libmwa_hyperbeam.so".

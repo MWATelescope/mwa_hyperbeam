@@ -2,12 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-/*!
-Code to implement the MWA Fully Embedded Element (FEE) beam, a.k.a. "the 2016
-beam".
- */
+//! Code to implement the MWA Fully Embedded Element (FEE) beam, a.k.a. "the
+//! 2016 beam".
 
-pub mod error;
+mod error;
 mod types;
 
 use std::f64::consts::{FRAC_PI_2, TAU};
@@ -24,6 +22,7 @@ pub use error::{FEEBeamError, InitFEEBeamError};
 use types::*;
 
 /// The main struct to be used for calculating Jones matrices.
+#[allow(clippy::upper_case_acronyms)]
 pub struct FEEBeam {
     /// The `hdf5::File` struct associated with the opened HDF5 file. It is
     /// behind a `Mutex` to prevent parallel usage of the file.
@@ -363,9 +362,11 @@ impl FEEBeam {
 
     /// Calculate the Jones matrix for a given direction and pointing.
     ///
-    /// `delays` and `amps` apply to each dipole in a given MWA tile (in the M&C
-    /// order), and *must* have 16 elements. `amps` being dipole gains (usually
-    /// 1 or 0), not digital gains.
+    /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
+    /// have 16 elements (each corresponds to an MWA dipole in a tile, in the
+    /// M&C order; see
+    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
+    /// `amps` being dipole gains (usually 1 or 0), not digital gains.
     pub fn calc_jones(
         &self,
         az_rad: f64,
@@ -407,7 +408,9 @@ impl FEEBeam {
     ///
     /// This is basically a wrapper around `calc_jones`; this function
     /// calculates the Jones matrices in parallel. `delays` and `amps` *must*
-    /// have 16 elements.
+    /// have 16 elements (each corresponds to an MWA dipole in a tile, in the
+    /// M&C order; see
+    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
     pub fn calc_jones_array(
         &self,
         az_rad: &[f64],

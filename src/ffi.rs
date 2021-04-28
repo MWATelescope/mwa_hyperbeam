@@ -2,10 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-/*!
-Code for allowing other languages to talk to this Rust library. See the examples
-directory for usage.
- */
+//! Code for allowing other languages to talk to this Rust library. See the
+//! examples directory for usage.
 
 // TODO: Error handling.
 
@@ -47,10 +45,16 @@ pub unsafe extern "C" fn new_fee_beam_from_env() -> *mut FEEBeam {
 
 /// Get the beam response Jones matrix for the given direction and pointing.
 ///
+/// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
+/// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
+/// order; see
+/// https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139). `amps`
+/// being dipole gains (usually 1 or 0), not digital gains.
+///
 /// Note the return type (*double); we can't pass complex numbers across the FFI
-/// boundary, so the real and imaginary components are unpacked into
-/// doubles. The output contains 8 doubles, where the j00 is the first pair, j01
-/// is the second pair, etc.
+/// boundary, so the real and imaginary components are unpacked into doubles.
+/// The output contains 8 doubles, where the j00 is the first pair, j01 is the
+/// second pair, etc.
 ///
 /// # Arguments
 ///
@@ -59,15 +63,15 @@ pub unsafe extern "C" fn new_fee_beam_from_env() -> *mut FEEBeam {
 /// `az_rad` - The azimuth coordinate of the beam in radians
 /// `za_rad` - The zenith angle coordinate of the beam in radians
 /// `freq_hz` - The frequency used for the beam response in Hertz
-/// `delays` - A pointer to a 16-element array of dipole delays for an MWA tile.
-/// `amps` - A pointer to a 16-element array of dipole gains for an MWA tile.
+/// `delays` - A pointer to a 16-element array of dipole delays for an MWA tile
+/// `amps` - A pointer to a 16-element array of dipole gains for an MWA tile
 /// `norm_to_zenith` - A boolean indicating whether the beam response should be
 /// normalised with respect to zenith.
 ///
 /// # Returns
 ///
 /// * A pointer to an 8-element Jones matrix array on the heap. This array may
-/// be freed by the caller.
+///   be freed by the caller.
 ///
 #[no_mangle]
 pub unsafe extern "C" fn calc_jones(
@@ -103,9 +107,17 @@ pub unsafe extern "C" fn calc_jones(
 
 /// Get the beam response Jones matrix for several az/za directions for the
 /// given pointing. The Jones matrix elements for each direction are put into a
-/// single array. As there are 8 floats per Jones matrix, there are 8 *
-/// `num_azza` floats in the array. Rust will calculate the Jones matrices
-/// in parallel. See the documentation for `calc_jones` for more info.
+/// single array.
+///
+/// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
+/// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
+/// order; see
+/// https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139). `amps`
+/// being dipole gains (usually 1 or 0), not digital gains.
+///
+/// As there are 8 floats per Jones matrix, there are 8 * `num_azza` floats in
+/// the array. Rust will calculate the Jones matrices in parallel. See the
+/// documentation for `calc_jones` for more info.
 #[no_mangle]
 pub unsafe extern "C" fn calc_jones_array(
     fee_beam: *mut FEEBeam,

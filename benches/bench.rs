@@ -2,10 +2,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-/*!
-Benchmarks. FEE beam code benchmarks rely on the HDF5 file being present in the
-project's root directory.
- */
+//! Benchmarks. FEE beam code benchmarks rely on the HDF5 file being present in
+//! the project's root directory.
 
 use criterion::*;
 use rayon::prelude::*;
