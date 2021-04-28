@@ -409,7 +409,7 @@ impl FEEBeam {
     /// calculates the Jones matrices in parallel. `delays` and `amps` *must*
     /// have 16 elements.
     pub fn calc_jones_array(
-        &mut self,
+        &self,
         az_rad: &[f64],
         za_rad: &[f64],
         freq_hz: u32,

@@ -77,7 +77,7 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let gains = [1.0; 16];
         let norm_to_zenith = false;
-        let mut beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
         beam.calc_jones(az[0], za[0], freq, &delays, &gains, norm_to_zenith)
             .unwrap();

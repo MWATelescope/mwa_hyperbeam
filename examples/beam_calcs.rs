@@ -35,7 +35,7 @@ struct Opts {
 fn main() -> Result<(), anyhow::Error> {
     let opts = Opts::from_args();
     // If we were given a file, use it. Otherwise, fall back on MWA_BEAM_FILE.
-    let mut beam = match opts.hdf5_file {
+    let beam = match opts.hdf5_file {
         Some(f) => FEEBeam::new(f)?,
         None => FEEBeam::new_from_env()?,
     };
