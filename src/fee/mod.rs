@@ -11,7 +11,7 @@ mod types;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::sync::Mutex;
 
-use ndarray::Array2;
+use ndarray::{Array1, Array2};
 use rayon::prelude::*;
 
 use crate::constants::*;
@@ -419,7 +419,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-    ) -> Result<Array2<c64>, FEEBeamError> {
+    ) -> Result<Array1<Jones>, FEEBeamError> {
         debug_assert_eq!(delays.len(), 16);
         debug_assert_eq!(amps.len(), 16);
 
@@ -451,7 +451,7 @@ impl FEEBeam {
             .zip(za_rad.par_iter())
             .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm.as_deref()))
             .collect_into_vec(&mut out);
-        Ok(Array2::from(out))
+        Ok(Array1::from(out))
     }
 
     /// Empty the cached dipole coefficients and normalisation Jones matrices to

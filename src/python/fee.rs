@@ -4,6 +4,7 @@
 
 //! Python interface to hyperbeam FEE code.
 
+use ndarray::Array2;
 use numpy::*;
 use pyo3::create_exception;
 use pyo3::prelude::*;
@@ -100,6 +101,9 @@ impl FEEBeam {
             &amps,
             norm_to_zenith,
         )?;
+        // Convert `jones` from one- to two-dimensional by unpacking the
+        // four-element arrays.
+        let jones: Array2<c64> = Array2::from(jones.to_vec());
 
         let gil = pyo3::Python::acquire_gil();
         let np_array = PyArray2::from_owned_array(gil.python(), jones).to_owned();

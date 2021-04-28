@@ -68,7 +68,7 @@ fn main() -> Result<(), anyhow::Error> {
             .into()
     };
     println!("The first Jones matrix:");
-    for j in jones.outer_iter() {
+    for j in jones.iter() {
         // This works, but the formatting for this isn't very pretty.
         // println!("{}", j);
 
