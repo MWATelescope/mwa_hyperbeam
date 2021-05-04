@@ -30,6 +30,9 @@ pub enum InitFEEBeamError {
     #[error("Problem with the MWA_BEAM_FILE variable: {0}")]
     MwaBeamFileVarError(#[from] std::env::VarError),
 
+    #[error("Unexpected array shape when reading HDF5 dataset 'modes': expected 3 rows")]
+    ModesShape,
+
     /// An error associated with the hdf5 crate.
     #[error("HDF5 error: {0}")]
     Hdf5Error(#[from] hdf5::Error),
@@ -47,6 +50,9 @@ pub enum FEEBeamError {
         got: usize,
         expected: usize,
     },
+
+    #[error("Unexpected array shape when reading HDF5 dataset '{key}': expected {exp} rows")]
+    DatasetShape { key: String, exp: usize },
 
     /// An error associated with the hdf5 crate.
     #[error("HDF5 error: {0}")]

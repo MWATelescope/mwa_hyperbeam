@@ -4,7 +4,6 @@
 
 //! Python interface to hyperbeam FEE code.
 
-use ndarray::Array2;
 use numpy::*;
 use pyo3::create_exception;
 use pyo3::prelude::*;
@@ -101,13 +100,19 @@ impl FEEBeam {
             &amps,
             norm_to_zenith,
         )?;
-        // Convert `jones` from one- to two-dimensional by unpacking the
-        // four-element arrays.
-        let jones: Array2<c64> = Array2::from(jones.to_vec());
-
+        // Flatten the four-element arrays into a single vector.
+        let jones: Vec<c64> = jones
+            .into_iter()
+            .flat_map(|j| j.iter().map(|c| numpy::c64::new(c.re, c.im)))
+            .collect();
+        // Now populate a numpy array.
         let gil = pyo3::Python::acquire_gil();
-        let np_array = PyArray2::from_owned_array(gil.python(), jones).to_owned();
-        Ok(np_array)
+        let np_array1 = PyArray1::from_vec(gil.python(), jones);
+        // Reshape with the second dimension being each Jones matrix (as a
+        // 4-element sub-array).
+        let np_array2 = np_array1.reshape([np_array1.len() / 4, 4]).unwrap();
+
+        Ok(np_array2.to_owned())
     }
 
     /// Get the available frequencies inside the HDF5 file.

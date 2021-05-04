@@ -101,7 +101,16 @@ impl FEEBeam {
 
         freqs.sort_unstable();
 
-        let modes = h5.dataset("modes")?.read_2d()?;
+        let modes = {
+            let h5_modes = h5.dataset("modes")?.read_raw()?;
+            // The modes dataset is a 2D array with three rows. If 3 doesn't
+            // divide evenly into the data length, then something is wrong.
+            if h5_modes.len() % 3 == 0 {
+                Array2::from_shape_vec((3, h5_modes.len() / 3), h5_modes).unwrap()
+            } else {
+                return Err(InitFEEBeamError::ModesShape);
+            }
+        };
 
         Ok(Self {
             hdf5_file: Mutex::new(h5),
@@ -156,8 +165,18 @@ impl FEEBeam {
     /// This function is expected to only receive keys like X16_51200000
     fn get_dataset(&self, key: &str) -> Result<Array2<f64>, FEEBeamError> {
         let h5 = self.hdf5_file.lock().unwrap();
-        let data = h5.dataset(key)?.read_2d()?;
-        Ok(data)
+        let h5_data = h5.dataset(key)?.read_raw()?;
+        // The aforementioned expected keys are 2D arrays with two rows. If 2
+        // doesn't divide evenly into the data length, then something is wrong.
+        if h5_data.len() % 2 == 0 {
+            let arr = Array2::from_shape_vec((2, h5_data.len() / 2), h5_data).unwrap();
+            Ok(arr)
+        } else {
+            Err(FEEBeamError::DatasetShape {
+                key: key.to_string(),
+                exp: 2,
+            })
+        }
     }
 
     /// Check that `DipoleCoefficients` are cached for the input parameters. If
