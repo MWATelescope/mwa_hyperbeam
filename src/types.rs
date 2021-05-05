@@ -40,13 +40,17 @@ impl CacheHash {
     /// It hashes the input parameters for a unique hash. If these parameters
     /// are re-used, the same hash will be generated, and we can use the cache
     /// that these `CacheHash`es guard.
-    pub(crate) fn new(freq: u32, delays: &[u32], amps: &[f64]) -> Self {
+    pub(crate) fn new(freq: u32, delays: &[u32], amps: &[f64; 32]) -> Self {
         let mut hasher = DefaultHasher::new();
         freq.hash(&mut hasher);
         delays.hash(&mut hasher);
         // We can't hash f64 values, so convert the amps to ints. Multiply by a
         // big number to get away from integer rounding.
-        let amps_ints: Vec<u32> = amps.iter().map(|a| (a * 1e6) as u32).collect();
+        let mut amps_ints: [u32; 32] = [0; 32];
+        amps_ints
+            .iter_mut()
+            .zip(amps.iter())
+            .for_each(|(amp_int, amp)| *amp_int = (amp * 1e6) as u32);
         amps_ints.hash(&mut hasher);
         Self(hasher.finish())
     }
@@ -56,24 +60,37 @@ impl CacheHash {
 mod tests {
     use super::*;
 
-    fn settings_1() -> (u32, [u32; 16], [f64; 16]) {
-        (51200000, [0; 16], [1.0; 16])
+    fn settings_1() -> (u32, [u32; 16], [f64; 32]) {
+        (51200000, [0; 16], [1.0; 32])
     }
 
-    fn settings_2() -> (u32, [u32; 16], [f64; 16]) {
+    fn settings_2() -> (u32, [u32; 16], [f64; 32]) {
         (
             51200000,
             [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-            [1.0; 16],
+            [1.0; 32],
         )
     }
 
-    fn settings_3() -> (u32, [u32; 16], [f64; 16]) {
+    fn settings_3() -> (u32, [u32; 16], [f64; 32]) {
         (
             51200000,
             [0; 16],
             [
                 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+                1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            ],
+        )
+    }
+
+    fn settings_4() -> (u32, [u32; 16], [f64; 32]) {
+        (
+            51200000,
+            [0; 16],
+            [
+                1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+                // One amp difference from settings_3
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
             ],
         )
     }
@@ -131,6 +148,16 @@ mod tests {
         // (which is what happens in the real code), we expect a difference.
         let mut s2 = settings_1();
         s2.0 += 1;
+        let hash2 = CacheHash::new(s2.0, &s2.1, &s2.2).0;
+        assert_ne!(hash1, hash2);
+    }
+
+    #[test]
+    fn different5() {
+        let s1 = settings_3();
+        let hash1 = CacheHash::new(s1.0, &s1.1, &s1.2).0;
+
+        let s2 = settings_4();
         let hash2 = CacheHash::new(s2.0, &s2.1, &s2.2).0;
         assert_ne!(hash1, hash2);
     }

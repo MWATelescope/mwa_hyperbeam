@@ -148,6 +148,66 @@ pub unsafe extern "C" fn calc_jones_array(
     ptr as *mut f64
 }
 
+/// The same as "calc_jones", except 32 elements are given to amps. The first 16
+/// amps are for the X elements, the next 16 the Y elements.
+#[no_mangle]
+pub unsafe extern "C" fn calc_jones_all_amps(
+    fee_beam: *mut FEEBeam,
+    az_rad: f64,
+    za_rad: f64,
+    freq_hz: u32,
+    delays: *const u32,
+    amps: *const f64,
+    norm_to_zenith: u8,
+) -> *mut f64 {
+    let beam = &mut *fee_beam;
+    let delays_s = std::slice::from_raw_parts(delays, 16);
+    let amps_s = std::slice::from_raw_parts(amps, 32);
+    let norm_bool = match norm_to_zenith {
+        0 => false,
+        1 => true,
+        _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
+    };
+
+    let jones = beam
+        .calc_jones(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
+        .unwrap();
+
+    Box::into_raw(Box::new(jones)) as *mut f64
+}
+
+/// The same as "calc_jones_array", except 32 elements are given to amps. The
+/// first 16 amps are for the X elements, the next 16 the Y elements.
+#[no_mangle]
+pub unsafe extern "C" fn calc_jones_array_all_amps(
+    fee_beam: *mut FEEBeam,
+    num_azza: u32,
+    az_rad: *const f64,
+    za_rad: *const f64,
+    freq_hz: u32,
+    delays: *const u32,
+    amps: *const f64,
+    norm_to_zenith: u8,
+) -> *mut f64 {
+    let beam = &mut *fee_beam;
+    let az = std::slice::from_raw_parts(az_rad, num_azza as usize);
+    let za = std::slice::from_raw_parts(za_rad, num_azza as usize);
+    let delays_s = std::slice::from_raw_parts(delays, 16);
+    let amps_s = std::slice::from_raw_parts(amps, 32);
+    let norm_bool = match norm_to_zenith {
+        0 => false,
+        1 => true,
+        _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
+    };
+
+    let mut jones = beam
+        .calc_jones_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
+        .unwrap();
+    let ptr = jones.as_mut_ptr();
+    std::mem::forget(jones);
+    ptr as *mut f64
+}
+
 // Yeah, I wish I could just give the caller the number of frequencies and the
 // array in one go, but I'm not sure it's possible.
 

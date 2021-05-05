@@ -195,7 +195,7 @@ impl FEEBeam {
         &self,
         desired_freq: u32,
         delays: &[u32],
-        amps: &[f64],
+        amps: &[f64; 32],
     ) -> Result<CacheHash, FEEBeamError> {
         let freq = self.find_closest_freq(desired_freq);
 
@@ -216,12 +216,12 @@ impl FEEBeam {
 
     /// Given the input parameters, calculate and return the X and Y
     /// coefficients ("modes"). As this function is relatively expensive, it
-    /// should only be called by `Self::get_modes` to cache the outputs.
+    /// should only be called by `Self::populate_modes` to cache the outputs.
     fn calc_modes(
         &self,
         freq: u32,
         delays: &[u32],
-        amps: &[f64],
+        amps: &[f64; 32],
     ) -> Result<DipoleCoefficients, FEEBeamError> {
         let x = self.calc_mode(freq, delays, amps, Pol::X)?;
         let y = self.calc_mode(freq, delays, amps, Pol::Y)?;
@@ -235,7 +235,7 @@ impl FEEBeam {
         &self,
         freq: u32,
         delays: &[u32],
-        amps: &[f64],
+        amps: &[f64; 32],
         pol: Pol,
     ) -> Result<PolCoefficients, FEEBeamError> {
         let mut q1: Vec<c64> = vec![];
@@ -247,7 +247,14 @@ impl FEEBeam {
         // Biggest N coefficient.
         let mut n_max = 0;
 
-        for (dipole_num, (&amp, &delay)) in amps.iter().zip(delays.iter()).enumerate() {
+        // Use the X or Y dipole gains based off how many elements to skip in
+        // `amps`.
+        let skip = match pol {
+            Pol::X => 0,
+            Pol::Y => 16,
+        };
+
+        for (dipole_num, (&amp, &delay)) in amps.iter().skip(skip).zip(delays.iter()).enumerate() {
             // Get the relevant HDF5 data.
             let q_all: Array2<f64> = {
                 let key = format!("{}{}_{}", pol, dipole_num + 1, freq);
@@ -371,7 +378,7 @@ impl FEEBeam {
 
         // If we hit this part of the code, the normalisation Jones matrix was
         // not in the cache.
-        let hash = self.populate_modes(freq, &[0; 16], &[1.0; 16])?;
+        let hash = self.populate_modes(freq, &[0; 16], &[1.0; 32])?;
         let coeffs = self.coeff_cache.get(&hash).unwrap();
         let jones = calc_zenith_norm_jones(&coeffs);
         self.norm_cache.insert(freq, jones);
@@ -381,11 +388,12 @@ impl FEEBeam {
 
     /// Calculate the Jones matrix for a given direction and pointing.
     ///
-    /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
-    /// have 16 elements (each corresponds to an MWA dipole in a tile, in the
-    /// M&C order; see
+    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
+    /// order; see
     /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `amps` being dipole gains (usually 1 or 0), not digital gains.
+    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
+    /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
+    /// the first 16 are for X dipole elements, and the next 16 are for Y.
     pub fn calc_jones(
         &self,
         az_rad: f64,
@@ -395,19 +403,31 @@ impl FEEBeam {
         amps: &[f64],
         norm_to_zenith: bool,
     ) -> Result<Jones, FEEBeamError> {
+        // `delays` must have 16 elements...
         debug_assert_eq!(delays.len(), 16);
-        debug_assert_eq!(amps.len(), 16);
+        // ... but `amps` may have either 16 or 32. 32 elements corresponds to
+        // each element of each dipole; i.e. 16 X amplitudes followed by 16 Y
+        // amplitudes.
+        debug_assert!(amps.len() == 16 || amps.len() == 32);
 
         // Ensure that any delays of 32 have an amplitude (dipole gain) of 0.
-        // The results are bad otherwise!
-        let amps = delays
-            .iter()
-            .zip(amps.iter())
-            .map(|(&d, &a)| if d == 32 { 0.0 } else { a })
-            .collect::<Vec<_>>();
+        // The results are bad otherwise! Also ensure that we have 32 dipole
+        // gains (amps) here.
+        let mut full_amps: [f64; 32] = [1.0; 32];
+        full_amps
+            .iter_mut()
+            .zip(amps.iter().cycle())
+            .zip(delays.iter().cycle())
+            .for_each(|((out_amp, &in_amp), &delay)| {
+                if delay == 32 {
+                    *out_amp = 0.0;
+                } else {
+                    *out_amp = in_amp
+                }
+            });
 
         // Ensure the dipole coefficients for the provided parameters exist.
-        let hash = self.populate_modes(freq_hz, delays, &amps)?;
+        let hash = self.populate_modes(freq_hz, delays, &full_amps)?;
 
         // If we're normalising the beam, get the normalisation frequency here.
         let norm_freq = if norm_to_zenith {
@@ -426,10 +446,14 @@ impl FEEBeam {
     /// Calculate the Jones matrices for many directions given a pointing.
     ///
     /// This is basically a wrapper around `calc_jones`; this function
-    /// calculates the Jones matrices in parallel. `delays` and `amps` *must*
-    /// have 16 elements (each corresponds to an MWA dipole in a tile, in the
-    /// M&C order; see
+    /// calculates the Jones matrices in parallel.
+    ///
+    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
+    /// order; see
     /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
+    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
+    /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
+    /// the first 16 are for X dipole elements, and the next 16 are for Y.
     pub fn calc_jones_array(
         &self,
         az_rad: &[f64],
@@ -439,19 +463,31 @@ impl FEEBeam {
         amps: &[f64],
         norm_to_zenith: bool,
     ) -> Result<Array1<Jones>, FEEBeamError> {
+        // `delays` must have 16 elements...
         debug_assert_eq!(delays.len(), 16);
-        debug_assert_eq!(amps.len(), 16);
+        // ... but `amps` may have either 16 or 32. 32 elements corresponds to
+        // each element of each dipole; i.e. 16 X amplitudes followed by 16 Y
+        // amplitudes.
+        debug_assert!(amps.len() == 16 || amps.len() == 32);
 
         // Ensure that any delays of 32 have an amplitude (dipole gain) of 0.
-        // The results are bad otherwise!
-        let amps = delays
-            .iter()
-            .zip(amps.iter())
-            .map(|(&d, &a)| if d == 32 { 0.0 } else { a })
-            .collect::<Vec<_>>();
+        // The results are bad otherwise! Also ensure that we have 32 dipole
+        // gains (amps) here.
+        let mut full_amps: [f64; 32] = [1.0; 32];
+        full_amps
+            .iter_mut()
+            .zip(amps.iter().cycle())
+            .zip(delays.iter().cycle())
+            .for_each(|((out_amp, &in_amp), &delay)| {
+                if delay == 32 {
+                    *out_amp = 0.0;
+                } else {
+                    *out_amp = in_amp
+                }
+            });
 
         // Ensure the dipole coefficients for the provided parameters exist.
-        let hash = self.populate_modes(freq_hz, delays, &amps)?;
+        let hash = self.populate_modes(freq_hz, delays, &full_amps)?;
 
         // If we're normalising the beam, get the normalisation Jones matrix
         // here.
@@ -609,7 +645,7 @@ mod tests {
     #[serial]
     fn test_get_modes() {
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let hash = match beam.populate_modes(51200000, &[0; 16], &[1.0; 16]) {
+        let hash = match beam.populate_modes(51200000, &[0; 16], &[1.0; 32]) {
             Ok(h) => h,
             Err(e) => panic!("{}", e),
         };
@@ -800,6 +836,7 @@ mod tests {
             &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
             &[
                 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
             ],
         ) {
             Ok(h) => h,
@@ -977,6 +1014,80 @@ mod tests {
         assert_abs_diff_eq!(
             y_q2_accum_arr.slice(s![-5..]),
             y_q2_expected_last,
+            epsilon = 1e-6
+        );
+
+        // Check that if the Y dipole gains are different, they don't match the
+        // earlier values.
+        let hash = match beam.populate_modes(
+            51200000,
+            &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
+            &[
+                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
+                // First value here
+                10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
+            ],
+        ) {
+            Ok(h) => h,
+            Err(e) => panic!("{}", e),
+        };
+        let coeffs = beam.coeff_cache.get(&hash).unwrap();
+
+        // X values are the same.
+        let x_q1_accum_arr = Array1::from(coeffs.x.q1_accum.clone());
+        assert_abs_diff_eq!(
+            x_q1_accum_arr.slice(s![0..5]),
+            x_q1_expected_first,
+            epsilon = 1e-6
+        );
+
+        let x_q2_accum_arr = Array1::from(coeffs.x.q2_accum.clone());
+        assert_abs_diff_eq!(
+            x_q2_accum_arr.slice(s![0..5]),
+            x_q2_expected_first,
+            epsilon = 1e-6
+        );
+
+        // Y values are not the same.
+        let y_q1_accum_arr = Array1::from(coeffs.y.q1_accum.clone());
+        assert_abs_diff_ne!(
+            y_q1_accum_arr.slice(s![0..5]),
+            y_q1_expected_first,
+            epsilon = 1e-6
+        );
+
+        let y_q2_accum_arr = Array1::from(coeffs.y.q2_accum.clone());
+        assert_abs_diff_ne!(
+            y_q2_accum_arr.slice(s![0..5]),
+            y_q2_expected_first,
+            epsilon = 1e-6
+        );
+
+        // Test against expected Y values.
+        let y_q1_expected_first = array![
+            c64::new(-0.020510457596022602, -0.02719067783451879),
+            c64::new(-0.005893442096591942, 0.010353674045181267),
+            c64::new(0.02068524851191211, 0.028624921920498963),
+            c64::new(-0.00899761240125443, 0.0017058598981518776),
+            c64::new(-0.016074160827913245, 0.016292904120669145),
+        ];
+        let y_q2_expected_first = array![
+            c64::new(-0.019651382591095376, -0.030546413628593075),
+            c64::new(-0.0057627241860343775, -0.00416648736914009),
+            c64::new(-0.0224990478461125, -0.02754743859133888),
+            c64::new(-0.011107944651304743, 0.0002948793061857774),
+            c64::new(-0.024422943755493767, 0.014316796508644876),
+        ];
+
+        assert_abs_diff_eq!(
+            y_q1_accum_arr.slice(s![0..5]),
+            y_q1_expected_first,
+            epsilon = 1e-6
+        );
+
+        assert_abs_diff_eq!(
+            y_q2_accum_arr.slice(s![0..5]),
+            y_q2_expected_first,
             epsilon = 1e-6
         );
     }

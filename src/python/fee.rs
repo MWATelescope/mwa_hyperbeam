@@ -57,24 +57,23 @@ impl FEEBeam {
         amps: [f64; 16],
         norm_to_zenith: bool,
     ) -> PyResult<Py<PyArray1<numpy::c64>>> {
-        let jones = self
-            .beam
-            .calc_jones(
-                az_rad,
-                za_rad,
-                // hyperbeam expects an int for the frequency. By specifying
-                // that Python should pass in a float, it also allows an int to
-                // be passed in (!?). Convert the float here in Rust for usage
-                // in hyperbeam.
-                freq_hz.round() as _,
-                &delays,
-                &amps,
-                norm_to_zenith,
-            )?
-            .to_vec();
+        let jones = self.beam.calc_jones(
+            az_rad,
+            za_rad,
+            // hyperbeam expects an int for the frequency. By specifying
+            // that Python should pass in a float, it also allows an int to
+            // be passed in (!?). Convert the float here in Rust for usage
+            // in hyperbeam.
+            freq_hz.round() as _,
+            &delays,
+            &amps,
+            norm_to_zenith,
+        )?;
+        // Ensure that the numpy crate's c64 is being used.
+        let jones_py: Vec<numpy::c64> = jones.iter().map(|c| numpy::c64::new(c.re, c.im)).collect();
 
         let gil = pyo3::Python::acquire_gil();
-        let np_array = PyArray1::from_vec(gil.python(), jones).to_owned();
+        let np_array = PyArray1::from_vec(gil.python(), jones_py).to_owned();
         Ok(np_array)
     }
 
@@ -101,9 +100,90 @@ impl FEEBeam {
             norm_to_zenith,
         )?;
         // Flatten the four-element arrays into a single vector.
-        let jones: Vec<c64> = jones
+        let jones: Vec<numpy::c64> = jones
             .into_iter()
-            .flat_map(|j| j.iter().map(|c| numpy::c64::new(c.re, c.im)))
+            .flat_map(|j| {
+                [
+                    numpy::c64::new(j[0].re, j[0].im),
+                    numpy::c64::new(j[1].re, j[1].im),
+                    numpy::c64::new(j[2].re, j[2].im),
+                    numpy::c64::new(j[3].re, j[3].im),
+                ]
+            })
+            .collect();
+        // Now populate a numpy array.
+        let gil = pyo3::Python::acquire_gil();
+        let np_array1 = PyArray1::from_vec(gil.python(), jones);
+        // Reshape with the second dimension being each Jones matrix (as a
+        // 4-element sub-array).
+        let np_array2 = np_array1.reshape([np_array1.len() / 4, 4]).unwrap();
+
+        Ok(np_array2.to_owned())
+    }
+
+    /// The same as "calc_jones", but amps has 32 values. The first 16 values
+    /// are for X dipole elements, the second 16 for Y.
+    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)"]
+    fn calc_jones_all_amps(
+        &mut self,
+        az_rad: f64,
+        za_rad: f64,
+        freq_hz: f64,
+        delays: [u32; 16],
+        amps: [f64; 32],
+        norm_to_zenith: bool,
+    ) -> PyResult<Py<PyArray1<numpy::c64>>> {
+        let jones = self.beam.calc_jones(
+            az_rad,
+            za_rad,
+            // hyperbeam expects an int for the frequency. By specifying
+            // that Python should pass in a float, it also allows an int to
+            // be passed in (!?). Convert the float here in Rust for usage
+            // in hyperbeam.
+            freq_hz.round() as _,
+            &delays,
+            &amps,
+            norm_to_zenith,
+        )?;
+        // Ensure that the numpy crate's c64 is being used.
+        let jones_py: Vec<numpy::c64> = jones.iter().map(|c| numpy::c64::new(c.re, c.im)).collect();
+
+        let gil = pyo3::Python::acquire_gil();
+        let np_array = PyArray1::from_vec(gil.python(), jones_py).to_owned();
+        Ok(np_array)
+    }
+
+    /// The same as "calc_jones_array", but amps has 32 values. The first 16
+    /// values are for X dipole elements, the second 16 for Y.
+    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)"]
+    fn calc_jones_array_all_amps(
+        &mut self,
+        az_rad: Vec<f64>,
+        za_rad: Vec<f64>,
+        freq_hz: f64,
+        delays: [u32; 16],
+        amps: [f64; 32],
+        norm_to_zenith: bool,
+    ) -> PyResult<Py<PyArray2<numpy::c64>>> {
+        let jones = self.beam.calc_jones_array(
+            &az_rad,
+            &za_rad,
+            freq_hz.round() as _,
+            &delays,
+            &amps,
+            norm_to_zenith,
+        )?;
+        // Flatten the four-element arrays into a single vector.
+        let jones: Vec<numpy::c64> = jones
+            .into_iter()
+            .flat_map(|j| {
+                [
+                    numpy::c64::new(j[0].re, j[0].im),
+                    numpy::c64::new(j[1].re, j[1].im),
+                    numpy::c64::new(j[2].re, j[2].im),
+                    numpy::c64::new(j[3].re, j[3].im),
+                ]
+            })
             .collect();
         // Now populate a numpy array.
         let gil = pyo3::Python::acquire_gil();

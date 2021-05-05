@@ -2,6 +2,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+// See beam_calcs.c for a more thorough discussion. This example merely
+// illustrates using hyperbeam with OpenMP.
+
 // Build and run with something like:
 // gcc -O3 -fopenmp -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./beam_calcs_many_omp.c -o beam_calcs_many_omp
 // LD_LIBRARY_PATH=../target/release ./beam_calcs_many_omp ../mwa_full_embedded_element_pattern.h5
@@ -22,7 +25,7 @@ int main(int argc, char *argv[]) {
     FEEBeam *beam = new_fee_beam(argv[1]);
 
     // Set up the directions to test.
-    int num_directions = 2000000;
+    int num_directions = 5000;
     double *az = malloc(num_directions * sizeof(double));
     double *za = malloc(num_directions * sizeof(double));
     for (int i = 0; i < num_directions; i++) {

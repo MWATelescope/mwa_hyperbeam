@@ -26,7 +26,8 @@ int main(int argc, char *argv[]) {
     double za = 80.0 * M_PI / 180.0;
     // Delays and amps correspond to dipoles in the "M&C order". See
     // https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139) for
-    // more info.
+    // more info. Amps refer to dipole gains, and are usually set to 1 or 0 (if
+    // a dipole is dead).
     unsigned delays[16] = {3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0};
     double amps[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1};
     int freq_hz = 51200000;
@@ -40,8 +41,24 @@ int main(int argc, char *argv[]) {
     printf(" [%+.8f%+.8fi,", jones[4], jones[5]);
     printf(" %+.8f%+.8fi]]\n", jones[6], jones[7]);
 
-    // Free the Jones matrix.
+    // Amps can have 32 elements to specify X and Y elements of the dipoles, but
+    // another function is needed to use this extra info. The first 16 elements
+    // are X elements, second 16 are Y elements.
+    double amps_2[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
+                         1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
+    double *jones_2 = calc_jones_all_amps(beam, az, za, freq_hz, delays, amps_2, norm_to_zenith);
+    // The resulting Jones matrix has different elements on the second row,
+    // corresponding to the Y element; this is because we only altered the Y
+    // amps.
+    printf("The returned Jones matrix with altered Y amps:\n");
+    printf("[[%+.8f%+.8fi,", jones_2[0], jones_2[1]);
+    printf(" %+.8f%+.8fi]\n", jones_2[2], jones_2[3]);
+    printf(" [%+.8f%+.8fi,", jones_2[4], jones_2[5]);
+    printf(" %+.8f%+.8fi]]\n", jones_2[6], jones_2[7]);
+
+    // Free the Jones matrices.
     free(jones);
+    free(jones_2);
     // Free the beam - we must use a special function to do this.
     free_fee_beam(beam);
 

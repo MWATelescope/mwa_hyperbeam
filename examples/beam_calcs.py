@@ -39,3 +39,12 @@ duration = time.time() - start_time
 print("Time to calculate {} directions: {:.3}s".format(n, duration))
 print("First Jones matrix:")
 print(jones[0])
+
+# It's also possible to supply amps for all dipole elements. The first 16 amps
+# are for X elements, the second 16 are for Y elements. beam.calc_jones_all_amps
+# is also available.
+amps = [1.0] * 32
+amps[-1] = 0
+jones = beam.calc_jones_array_all_amps(az[:1], za[:1], freq, delays, amps, norm_to_zenith)
+print("First Jones matrix with altered Y amps:")
+print(jones[0])
