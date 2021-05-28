@@ -44,6 +44,120 @@ pub unsafe extern "C" fn new_fee_beam_from_env() -> *mut FEEBeam {
 }
 
 /// Get the beam response Jones matrix for the given direction and pointing.
+/// This matches the original specification of the FEE beam code (hence "eng",
+/// or "engineering"). Astronomers more likely want the `calc_jones` method
+/// instead.
+///
+/// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
+/// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
+/// order; see
+/// https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139). `amps`
+/// being dipole gains (usually 1 or 0), not digital gains.
+///
+/// Note the return type (*double); we can't pass complex numbers across the FFI
+/// boundary, so the real and imaginary components are unpacked into doubles.
+/// The output contains 8 doubles, where the j00 is the first pair, j01 is the
+/// second pair, etc.
+///
+/// # Arguments
+///
+/// `fee_beam` - A pointer to a `FEEBeam` struct created with the `new_fee_beam`
+/// function
+/// `az_rad` - The azimuth coordinate of the beam in radians
+/// `za_rad` - The zenith angle coordinate of the beam in radians
+/// `freq_hz` - The frequency used for the beam response in Hertz
+/// `delays` - A pointer to a 16-element array of dipole delays for an MWA tile
+/// `amps` - A pointer to a 16-element array of dipole gains for an MWA tile
+/// `norm_to_zenith` - A boolean indicating whether the beam response should be
+/// normalised with respect to zenith.
+///
+/// # Returns
+///
+/// * A pointer to an 8-element Jones matrix array on the heap. This array may
+///   be freed by the caller.
+///
+#[no_mangle]
+pub unsafe extern "C" fn calc_jones_eng(
+    fee_beam: *mut FEEBeam,
+    az_rad: f64,
+    za_rad: f64,
+    freq_hz: u32,
+    delays: *const u32,
+    amps: *const f64,
+    norm_to_zenith: u8,
+) -> *mut f64 {
+    let beam = &mut *fee_beam;
+    let delays_s = std::slice::from_raw_parts(delays, 16);
+    let amps_s = std::slice::from_raw_parts(amps, 16);
+    let norm_bool = match norm_to_zenith {
+        0 => false,
+        1 => true,
+        _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
+    };
+
+    // Using the passed-in beam, get the beam response (Jones matrix).
+    let jones = beam
+        .calc_jones_eng(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
+        .unwrap();
+
+    // Because `jones` is a Rust slice, it is on the stack. We cannot safely
+    // pass this memory across the FFI boundary, so we put `jones` onto the heap
+    // by putting it in a Box. By casting the array of Complex64 into f64, we
+    // assume that the memory layout of a Complex64 is the same as two f64s side
+    // by side.
+    Box::into_raw(Box::new(jones)) as *mut f64
+}
+
+/// Get the beam response Jones matrix for several az/za directions for the
+/// given pointing. The Jones matrix elements for each direction are put into a
+/// single array. This matches the original specification of the FEE beam code
+/// (hence "eng", or "engineering"). Astronomers more likely want the
+/// `calc_jones` method instead.
+///
+/// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
+/// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
+/// order; see
+/// https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139). `amps`
+/// being dipole gains (usually 1 or 0), not digital gains.
+///
+/// As there are 8 floats per Jones matrix, there are 8 * `num_azza` floats in
+/// the array. Rust will calculate the Jones matrices in parallel. See the
+/// documentation for `calc_jones` for more info.
+#[no_mangle]
+pub unsafe extern "C" fn calc_jones_eng_array(
+    fee_beam: *mut FEEBeam,
+    num_azza: u32,
+    az_rad: *const f64,
+    za_rad: *const f64,
+    freq_hz: u32,
+    delays: *const u32,
+    amps: *const f64,
+    norm_to_zenith: u8,
+) -> *mut f64 {
+    let beam = &mut *fee_beam;
+    let az = std::slice::from_raw_parts(az_rad, num_azza as usize);
+    let za = std::slice::from_raw_parts(za_rad, num_azza as usize);
+    let delays_s = std::slice::from_raw_parts(delays, 16);
+    let amps_s = std::slice::from_raw_parts(amps, 16);
+    let norm_bool = match norm_to_zenith {
+        0 => false,
+        1 => true,
+        _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
+    };
+
+    let mut jones = beam
+        .calc_jones_eng_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
+        .unwrap();
+    let ptr = jones.as_mut_ptr();
+    std::mem::forget(jones);
+    ptr as *mut f64
+}
+
+/// Get the beam response Jones matrix for the given direction and pointing.
+/// Compared to the original specification of the FEE beam code, this method has
+/// re-defined the X and Y polarisations and applys a parallactic-angle
+/// correction; see Jack's elaborate investigation at
+/// https://github.com/JLBLine/polarisation_tests_for_FEE.
 ///
 /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
@@ -94,7 +208,7 @@ pub unsafe extern "C" fn calc_jones(
 
     // Using the passed-in beam, get the beam response (Jones matrix).
     let jones = beam
-        .calc_jones(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
+        .calc_jones_eng(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
         .unwrap();
 
     // Because `jones` is a Rust slice, it is on the stack. We cannot safely
@@ -107,7 +221,10 @@ pub unsafe extern "C" fn calc_jones(
 
 /// Get the beam response Jones matrix for several az/za directions for the
 /// given pointing. The Jones matrix elements for each direction are put into a
-/// single array.
+/// single array. Compared to the original specification of the FEE beam code,
+/// this method has re-defined the X and Y polarisations and applys a
+/// parallactic-angle correction; see Jack's elaborate investigation at
+/// https://github.com/JLBLine/polarisation_tests_for_FEE.
 ///
 /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
@@ -142,6 +259,66 @@ pub unsafe extern "C" fn calc_jones_array(
 
     let mut jones = beam
         .calc_jones_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
+        .unwrap();
+    let ptr = jones.as_mut_ptr();
+    std::mem::forget(jones);
+    ptr as *mut f64
+}
+
+/// The same as "calc_jones_eng", except 32 elements are given to amps. The
+/// first 16 amps are for the X elements, the next 16 the Y elements.
+#[no_mangle]
+pub unsafe extern "C" fn calc_jones_eng_all_amps(
+    fee_beam: *mut FEEBeam,
+    az_rad: f64,
+    za_rad: f64,
+    freq_hz: u32,
+    delays: *const u32,
+    amps: *const f64,
+    norm_to_zenith: u8,
+) -> *mut f64 {
+    let beam = &mut *fee_beam;
+    let delays_s = std::slice::from_raw_parts(delays, 16);
+    let amps_s = std::slice::from_raw_parts(amps, 32);
+    let norm_bool = match norm_to_zenith {
+        0 => false,
+        1 => true,
+        _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
+    };
+
+    let jones = beam
+        .calc_jones_eng(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
+        .unwrap();
+
+    Box::into_raw(Box::new(jones)) as *mut f64
+}
+
+/// The same as "calc_jones_eng_array", except 32 elements are given to amps.
+/// The first 16 amps are for the X elements, the next 16 the Y elements.
+#[no_mangle]
+pub unsafe extern "C" fn calc_jones_eng_array_all_amps(
+    fee_beam: *mut FEEBeam,
+    num_azza: u32,
+    az_rad: *const f64,
+    za_rad: *const f64,
+    freq_hz: u32,
+    delays: *const u32,
+    amps: *const f64,
+    norm_to_zenith: u8,
+) -> *mut f64 {
+    let beam = &mut *fee_beam;
+    let az = std::slice::from_raw_parts(az_rad, num_azza as usize);
+    let za = std::slice::from_raw_parts(za_rad, num_azza as usize);
+    let delays_s = std::slice::from_raw_parts(delays, 16);
+    let amps_s = std::slice::from_raw_parts(amps, 32);
+    let norm_bool = match norm_to_zenith {
+        0 => false,
+        1 => true,
+        _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
+    };
+
+    let mut jones = beam
+        .calc_jones_eng_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
         .unwrap();
     let ptr = jones.as_mut_ptr();
     std::mem::forget(jones);
@@ -293,7 +470,7 @@ mod tests {
         let file = std::ffi::CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let jones = unsafe {
             let beam = new_fee_beam(file.into_raw());
-            let jones_ptr = calc_jones(
+            let jones_ptr = calc_jones_eng(
                 beam,
                 45.0_f64.to_radians(),
                 10.0_f64.to_radians(),
@@ -320,7 +497,7 @@ mod tests {
             let beam = new_fee_beam(file.into_raw());
             let az = vec![45.0_f64.to_radians(); num_directions];
             let za = vec![10.0_f64.to_radians(); num_directions];
-            let jones_ptr = calc_jones_array(
+            let jones_ptr = calc_jones_eng_array(
                 beam,
                 num_directions as _,
                 az.as_ptr(),

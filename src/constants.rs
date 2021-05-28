@@ -6,7 +6,7 @@
 
 use crate::types::{c64, Jones};
 
-/// Beamformer delay step [seconds]
+/// Beamformer delay step \[seconds\]
 pub(crate) const DELAY_STEP: f64 = 435.0e-12;
 /// The number of dipoles per MWA tile.
 pub(crate) const NUM_DIPOLES: u8 = 16;
@@ -17,3 +17,6 @@ pub(crate) const J_POWER_TABLE: Jones = [
     c64::new(-1.0, 0.0),
     c64::new(0.0, -1.0),
 ];
+
+/// The MWA's latitude on Earth \[radians\]. This is -26d42m11.94986s.
+pub(crate) const MWA_LATITUDE_RADIANS: f64 = -0.4660608448386394;

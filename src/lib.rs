@@ -5,10 +5,12 @@
 //! Primary beam code for the Murchison Widefield Array.
 
 mod constants;
+mod erfa;
 mod factorial;
 pub mod fee;
 mod ffi;
 mod legendre;
+mod math;
 mod types;
 
 #[cfg(feature = "python")]
