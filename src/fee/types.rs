@@ -7,11 +7,13 @@
 use dashmap::DashMap;
 use marlu::{c64, Jones};
 
-use crate::types::*;
+use crate::types::CacheKey;
 
-/// Coefficients for X and Y.
-// TODO: Improve docs.
-pub(super) struct PolCoefficients {
+/// Coefficients for the X or Y dipole on an MWA bowtie. When combined with an
+/// (az, za) direction, this is everything that's needed to calculate a beam
+/// response.
+// TODO: Improve docs. What does these values actually do?
+pub(super) struct DipoleCoefficients {
     pub(super) q1_accum: Vec<c64>,
     pub(super) q2_accum: Vec<c64>,
     pub(super) m_accum: Vec<i8>,
@@ -22,31 +24,28 @@ pub(super) struct PolCoefficients {
     pub(super) n_max: usize,
 }
 
-pub(super) struct DipoleCoefficients {
-    pub(super) x: PolCoefficients,
-    pub(super) y: PolCoefficients,
+pub(super) struct BowtieCoefficients {
+    pub(super) x: DipoleCoefficients,
+    pub(super) y: DipoleCoefficients,
 }
 
-/// `CoeffCache` is mostly just a `RwLock` around a `HashMap` (which is handled
-/// by `DashMap`). This allows multiple concurrent readers with the ability to
+/// [CoeffCache] is mostly just a `RwLock` around a `HashMap` (which is handled
+/// by [DashMap]). This allows multiple concurrent readers with the ability to
 /// halt all reading when writing.
-///
-/// A `CacheHash` is used as the key. This is a wrapper around Rust's own
-/// hashing code so that we get something specific to FEE beam settings.
 #[derive(Default)]
-pub(super) struct CoeffCache(DashMap<CacheHash, DipoleCoefficients>);
+pub(super) struct CoeffCache(DashMap<CacheKey, BowtieCoefficients>);
 
 impl std::ops::Deref for CoeffCache {
-    type Target = DashMap<CacheHash, DipoleCoefficients>;
+    type Target = DashMap<CacheKey, BowtieCoefficients>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-/// `NormCache` is very similar to `CoeffCache`. It stores Jones matrices used
+/// [NormCache] is very similar to [CoeffCache]. It stores Jones matrices used
 /// to normalise beam responses at various frequencies (i.e. frequency is the
-/// key of the `HashMap`).
+/// key of the cache).
 #[derive(Default)]
 pub(super) struct NormCache(DashMap<u32, Jones<f64>>);
 

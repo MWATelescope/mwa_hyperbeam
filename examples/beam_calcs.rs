@@ -83,17 +83,15 @@ fn main() -> Result<(), anyhow::Error> {
         results
     };
     println!("The first Jones matrix:");
-    for j in jones.iter() {
-        // This works, but the formatting for this isn't very pretty.
-        // println!("{}", j);
+    // This works, but the formatting for this isn't very pretty.
+    // println!("{}", jones[0]);
 
-        // For demonstrations' sake, this gives easier-to-read output.
-        println!(
-            "[[{:+.8}, {:+.8}]\n [{:+.8}, {:+.8}]]",
-            j[0], j[1], j[2], j[3]
-        );
-        break;
-    }
+    // For demonstrations' sake, this gives easier-to-read output.
+    let j = jones[0];
+    println!(
+        "[[{:+.8}, {:+.8}]\n [{:+.8}, {:+.8}]]",
+        j[0], j[1], j[2], j[3]
+    );
 
     Ok(())
 }

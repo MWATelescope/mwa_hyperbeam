@@ -6,7 +6,11 @@
 //! 2016 beam".
 
 mod error;
+mod ffi;
 mod types;
+
+#[cfg(test)]
+mod tests;
 
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::sync::Mutex;
@@ -24,11 +28,11 @@ use types::*;
 /// The main struct to be used for calculating Jones matrices.
 #[allow(clippy::upper_case_acronyms)]
 pub struct FEEBeam {
-    /// The `hdf5::File` struct associated with the opened HDF5 file. It is
-    /// behind a `Mutex` to prevent parallel usage of the file.
+    /// The [hdf5::File] struct associated with the opened HDF5 file. It is
+    /// behind a [Mutex] to prevent parallel usage of the file.
     hdf5_file: Mutex<hdf5::File>,
     /// An ascendingly-sorted vector of frequencies available in the HDF5 file.
-    pub freqs: Vec<u32>,
+    freqs: Vec<u32>,
     /// Values used in calculating coefficients for X and Y.
     /// Row 0: Type
     /// Row 1: M
@@ -41,11 +45,18 @@ pub struct FEEBeam {
 }
 
 impl FEEBeam {
-    /// Given the path to the FEE beam file, create a new `FEEBeam` struct.
+    /// Given the path to the FEE beam file, create a new [FEEBeam] struct.
     pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, InitFEEBeamError> {
         // so that libhdf5 doesn't print errors to stdout
         let _e = hdf5::silence_errors();
 
+        // If the file doesn't exist, hdf5::File::open will handle it, but the
+        // error message is horrendous.
+        if !file.as_ref().exists() {
+            return Err(InitFEEBeamError::BeamFileDoesntExist(
+                file.as_ref().display().to_string(),
+            ));
+        }
         let h5 = hdf5::File::open(file)?;
         // We want all of the available frequencies and the biggest antenna index.
         let mut freqs: Vec<u32> = vec![];
@@ -121,13 +132,19 @@ impl FEEBeam {
         })
     }
 
-    /// Create a new `FEEBeam` struct from the `MWA_BEAM_FILE` environment
+    /// Create a new [FEEBeam] struct from the `MWA_BEAM_FILE` environment
     /// variable.
     pub fn new_from_env() -> Result<Self, InitFEEBeamError> {
         match std::env::var("MWA_BEAM_FILE") {
             Ok(f) => Self::new(f),
             Err(e) => Err(InitFEEBeamError::MwaBeamFileVarError(e)),
         }
+    }
+
+    /// Get the frequencies defined in the HDF5 file that was used to create
+    /// this [FEEBeam]. They are ascendingly sorted.
+    pub fn get_freqs(&self) -> &[u32] {
+        &self.freqs
     }
 
     /// Given a frequency in Hz, find the closest frequency that is defined in
@@ -179,7 +196,7 @@ impl FEEBeam {
         }
     }
 
-    /// Check that `DipoleCoefficients` are cached for the input parameters. If
+    /// Check that [DipoleCoefficients] are cached for the input parameters. If
     /// they aren't, populate the cache. The returned hash is used to access the
     /// populated cache.
     ///
@@ -196,11 +213,11 @@ impl FEEBeam {
         desired_freq: u32,
         delays: &[u32],
         amps: &[f64; 32],
-    ) -> Result<CacheHash, FEEBeamError> {
+    ) -> Result<CacheKey, FEEBeamError> {
         let freq = self.find_closest_freq(desired_freq);
 
         // Are the input settings already cached? Hash them to check.
-        let hash = CacheHash::new(freq, delays, amps);
+        let hash = CacheKey::new(freq, delays, amps);
 
         // If the cache for this hash exists, we can return the hash.
         if self.coeff_cache.contains_key(&hash) {
@@ -210,7 +227,7 @@ impl FEEBeam {
         // If we hit this part of the code, the coefficients were not in the
         // cache.
         let modes = self.calc_modes(freq, delays, amps)?;
-        self.coeff_cache.insert(hash.clone(), modes);
+        self.coeff_cache.insert(hash, modes);
         Ok(hash)
     }
 
@@ -222,26 +239,29 @@ impl FEEBeam {
         freq: u32,
         delays: &[u32],
         amps: &[f64; 32],
-    ) -> Result<DipoleCoefficients, FEEBeamError> {
-        let x = self.calc_mode(freq, delays, amps, Pol::X)?;
-        let y = self.calc_mode(freq, delays, amps, Pol::Y)?;
-        Ok(DipoleCoefficients { x, y })
+    ) -> Result<BowtieCoefficients, FEEBeamError> {
+        Ok(BowtieCoefficients {
+            x: self.calc_mode(freq, delays, amps, Pol::X)?,
+            y: self.calc_mode(freq, delays, amps, Pol::Y)?,
+        })
     }
 
     /// Given the input parameters, calculate and return the coefficients for a
     /// single polarisation (X or Y). This function should only be called by
     /// `Self::calc_modes`.
+    ///
+    /// This function can only produce sensible results if the HDF5 file
+    /// supplying the modes is also sensible. To check that the file is OK, run
+    /// verify-beam-file.
     fn calc_mode(
         &self,
-        freq: u32,
+        freq_hz: u32,
         delays: &[u32],
         amps: &[f64; 32],
         pol: Pol,
-    ) -> Result<PolCoefficients, FEEBeamError> {
-        let mut q1: Vec<c64> = vec![];
-        let mut q2: Vec<c64> = vec![];
-        let mut q1_accum: Vec<c64> = vec![c64::new(0.0, 0.0); self.modes.shape()[1]];
-        let mut q2_accum: Vec<c64> = vec![c64::new(0.0, 0.0); self.modes.shape()[1]];
+    ) -> Result<DipoleCoefficients, FEEBeamError> {
+        let mut q1_accum: Vec<c64> = vec![c64::new(0.0, 0.0); self.modes.dim().1];
+        let mut q2_accum: Vec<c64> = vec![c64::new(0.0, 0.0); self.modes.dim().1];
         let mut m_accum = vec![];
         let mut n_accum = vec![];
         // Biggest N coefficient.
@@ -257,14 +277,14 @@ impl FEEBeam {
         for (dipole_num, (&amp, &delay)) in amps.iter().skip(skip).zip(delays.iter()).enumerate() {
             // Get the relevant HDF5 data.
             let q_all: Array2<f64> = {
-                let key = format!("{}{}_{}", pol, dipole_num + 1, freq);
+                let key = format!("{}{}_{}", pol, dipole_num + 1, freq_hz);
                 self.get_dataset(&key)?
             };
-            let n_dip_coeffs: usize = q_all.shape()[1];
+            let n_dip_coeffs: usize = q_all.dim().1;
 
             // Complex excitation voltage.
             let v: c64 = {
-                let phase = TAU * freq as f64 * (-(delay as f64)) * DELAY_STEP;
+                let phase = TAU * freq_hz as f64 * (-(delay as f64)) * DELAY_STEP;
                 let (s_phase, c_phase) = phase.sin_cos();
                 let phase_factor = c64::new(c_phase, s_phase);
                 amp * phase_factor
@@ -322,7 +342,6 @@ impl FEEBeam {
                 let arg = s11_coeff.to_radians();
                 let (s_arg, c_arg) = arg.sin_cos();
                 let q1_val = s10_coeff * c64::new(c_arg, s_arg);
-                q1.push(q1_val);
                 q1_accum[i] += q1_val * v;
 
                 // Calculate Q2.
@@ -332,7 +351,6 @@ impl FEEBeam {
                 let arg = s21_coeff.to_radians();
                 let (s_arg, c_arg) = arg.sin_cos();
                 let q2_val = s20_coeff * c64::new(c_arg, s_arg);
-                q2.push(q2_val);
                 q2_accum[i] += q2_val * v;
             }
         }
@@ -358,7 +376,7 @@ impl FEEBeam {
             });
         }
 
-        Ok(PolCoefficients {
+        Ok(DipoleCoefficients {
             q1_accum,
             q2_accum,
             m_accum,
@@ -413,21 +431,7 @@ impl FEEBeam {
         // amplitudes.
         debug_assert!(amps.len() == 16 || amps.len() == 32);
 
-        // Ensure that any delays of 32 have an amplitude (dipole gain) of 0.
-        // The results are bad otherwise! Also ensure that we have 32 dipole
-        // gains (amps) here.
-        let mut full_amps: [f64; 32] = [1.0; 32];
-        full_amps
-            .iter_mut()
-            .zip(amps.iter().cycle())
-            .zip(delays.iter().cycle())
-            .for_each(|((out_amp, &in_amp), &delay)| {
-                if delay == 32 {
-                    *out_amp = 0.0;
-                } else {
-                    *out_amp = in_amp
-                }
-            });
+        let full_amps = fix_amps(amps, delays);
 
         // Ensure the dipole coefficients for the provided parameters exist.
         let hash = self.populate_modes(freq_hz, delays, &full_amps)?;
@@ -476,21 +480,7 @@ impl FEEBeam {
         // amplitudes.
         debug_assert!(amps.len() == 16 || amps.len() == 32);
 
-        // Ensure that any delays of 32 have an amplitude (dipole gain) of 0.
-        // The results are bad otherwise! Also ensure that we have 32 dipole
-        // gains (amps) here.
-        let mut full_amps: [f64; 32] = [1.0; 32];
-        full_amps
-            .iter_mut()
-            .zip(amps.iter().cycle())
-            .zip(delays.iter().cycle())
-            .for_each(|((out_amp, &in_amp), &delay)| {
-                if delay == 32 {
-                    *out_amp = 0.0;
-                } else {
-                    *out_amp = in_amp
-                }
-            });
+        let full_amps = fix_amps(amps, delays);
 
         // Ensure the dipole coefficients for the provided parameters exist.
         let hash = self.populate_modes(freq_hz, delays, &full_amps)?;
@@ -595,14 +585,14 @@ impl FEEBeam {
 
 /// Calculate the Jones matrix components given a pointing and coefficients
 /// associated with a single dipole polarisation.
-fn calc_sigmas(phi: f64, theta: f64, coeffs: &PolCoefficients) -> (c64, c64) {
+fn calc_sigmas(phi: f64, theta: f64, coeffs: &DipoleCoefficients) -> (c64, c64) {
     let u = theta.cos();
     let (p1sin_arr, p1_arr) = p1sin(coeffs.n_max, theta);
 
     let mut sigma_p = c64::new(0.0, 0.0);
     let mut sigma_t = c64::new(0.0, 0.0);
     // Use an iterator for maximum performance.
-    for ((((((m, n), sign), q1), q2), p1sin), p1) in coeffs
+    coeffs
         .m_accum
         .iter()
         .zip(coeffs.n_accum.iter())
@@ -611,24 +601,28 @@ fn calc_sigmas(phi: f64, theta: f64, coeffs: &PolCoefficients) -> (c64, c64) {
         .zip(coeffs.q2_accum.iter())
         .zip(p1sin_arr.iter())
         .zip(p1_arr.iter())
-    {
-        let mf = *m as f64;
-        let nf = *n as f64;
-        let signf = *sign as f64;
+        .for_each(|((((((m, n), sign), q1), q2), p1sin), p1)| {
+            let mf = *m as f64;
+            let nf = *n as f64;
+            let signf = *sign as f64;
 
-        let c_mn = ((0.5 * (2 * n + 1) as f64) * FACTORIAL[(n - m.abs()) as usize]
-            / FACTORIAL[(n + m.abs()) as usize])
-            .sqrt();
-        let (s_m_phi, c_m_phi) = (mf * phi).sin_cos();
-        let ejm_phi = c64::new(c_m_phi, s_m_phi);
-        let phi_comp = (ejm_phi * c_mn) / (nf * (nf + 1.0)).sqrt() * signf;
-        let j_power_n = J_POWER_TABLE[(*n % 4) as usize];
-        let e_theta_mn = j_power_n * ((p1sin * (mf.abs() * q2 * u - mf * q1)) + q2 * p1);
-        let j_power_np1 = J_POWER_TABLE[((*n + 1) % 4) as usize];
-        let e_phi_mn = j_power_np1 * ((p1sin * (mf * q2 - mf.abs() * q1 * u)) - q1 * p1);
-        sigma_p += phi_comp * e_phi_mn;
-        sigma_t += phi_comp * e_theta_mn;
-    }
+            unsafe {
+                let c_mn = ((0.5 * (2 * n + 1) as f64)
+                // TODO: Is using get_unchecked going to help here?
+                * FACTORIAL[(n - m.abs()) as usize]
+                    / FACTORIAL[(n + m.abs()) as usize])
+                    .sqrt();
+                let (s_m_phi, c_m_phi) = (mf * phi).sin_cos();
+                let ejm_phi = c64::new(c_m_phi, s_m_phi);
+                let phi_comp = (ejm_phi * c_mn) / (nf * (nf + 1.0)).sqrt() * signf;
+                let j_power_n = J_POWER_TABLE.get_unchecked((*n % 4) as usize);
+                let e_theta_mn = j_power_n * ((p1sin * (mf.abs() * q2 * u - mf * q1)) + q2 * p1);
+                let j_power_np1 = J_POWER_TABLE.get_unchecked(((*n + 1) % 4) as usize);
+                let e_phi_mn = j_power_np1 * ((p1sin * (mf * q2 - mf.abs() * q1 * u)) - q1 * p1);
+                sigma_p += phi_comp * e_phi_mn;
+                sigma_t += phi_comp * e_theta_mn;
+            }
+        });
 
     // The C++ code currently doesn't distinguish between the polarisations.
     (sigma_t, -sigma_p)
@@ -639,23 +633,21 @@ fn calc_sigmas(phi: f64, theta: f64, coeffs: &PolCoefficients) -> (c64, c64) {
 fn calc_jones_direct(
     az_rad: f64,
     za_rad: f64,
-    coeffs: &DipoleCoefficients,
+    coeffs: &BowtieCoefficients,
     norm_matrix: Option<&Jones<f64>>,
 ) -> Jones<f64> {
     // Convert azimuth to FEKO phi (East through North).
     let phi_rad = FRAC_PI_2 - az_rad;
-    let (mut j00, mut j01) = calc_sigmas(phi_rad, za_rad, &coeffs.x);
-    let (mut j10, mut j11) = calc_sigmas(phi_rad, za_rad, &coeffs.y);
+    let (j00, j01) = calc_sigmas(phi_rad, za_rad, &coeffs.x);
+    let (j10, j11) = calc_sigmas(phi_rad, za_rad, &coeffs.y);
+    let mut jones = [j00, j01, j10, j11];
     if let Some(norm) = norm_matrix {
-        j00 /= norm[0];
-        j01 /= norm[1];
-        j10 /= norm[2];
-        j11 /= norm[3];
+        jones.iter_mut().zip(norm.iter()).for_each(|(j, n)| *j /= n);
     }
-    Jones::from([j00, j01, j10, j11])
+    Jones::from(jones)
 }
 
-fn calc_zenith_norm_jones(coeffs: &DipoleCoefficients) -> Jones<f64> {
+fn calc_zenith_norm_jones(coeffs: &BowtieCoefficients) -> Jones<f64> {
     // Azimuth angles at which Jones components are maximum.
     let max_phi = [0.0, -FRAC_PI_2, FRAC_PI_2, 0.0];
     let (j00, _) = calc_sigmas(max_phi[0], 0.0, &coeffs.x);
@@ -670,655 +662,21 @@ fn calc_zenith_norm_jones(coeffs: &DipoleCoefficients) -> Jones<f64> {
     Jones::from([abs(j00), abs(j01), abs(j10), abs(j11)])
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::jones_test::TestJones;
-    use approx::*;
-    use ndarray::prelude::*;
-    use serial_test::serial;
-
-    #[test]
-    #[serial]
-    fn new() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5");
-        assert!(beam.is_ok());
-    }
-
-    #[test]
-    #[serial]
-    fn new_from_env() {
-        std::env::set_var("MWA_BEAM_FILE", "mwa_full_embedded_element_pattern.h5");
-        let beam = FEEBeam::new_from_env();
-        assert!(beam.is_ok());
-    }
-
-    #[test]
-    #[serial]
-    fn test_find_nearest_freq() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        // Dancing around an available freq.
-        assert_eq!(beam.find_closest_freq(51199999), 51200000);
-        assert_eq!(beam.find_closest_freq(51200000), 51200000);
-        assert_eq!(beam.find_closest_freq(51200001), 51200000);
-        // On the precipice of choosing between two freqs: 51200000 and
-        // 52480000. When searching with 51840000, we will get the same
-        // difference in frequency for both nearby, defined freqs. Because we
-        // compare with "less than", the first freq. will be selected. This
-        // should be consistent with the C++ code.
-        assert_eq!(beam.find_closest_freq(51840000), 51200000);
-        assert_eq!(beam.find_closest_freq(51840001), 52480000);
-    }
-
-    #[test]
-    #[serial]
-    /// Check that we can open the dataset "X16_51200000".
-    fn test_get_dataset() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        assert!(beam.get_dataset("X16_51200000").is_ok());
-    }
-
-    #[test]
-    #[serial]
-    fn test_get_modes() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let hash = match beam.populate_modes(51200000, &[0; 16], &[1.0; 32]) {
-            Ok(h) => h,
-            Err(e) => panic!("{}", e),
-        };
-        let coeffs = beam.coeff_cache.get(&hash).unwrap();
-
-        // Values taken from the C++ code.
-        // m_accum and n_accum are floats in the C++ code, but these appear to
-        // always be small integers. I've converted the C++ output to ints here.
-        let x_m_expected = array![
-            -1, 0, 1, -2, -1, 0, 1, 2, -3, -2, -1, 0, 1, 2, 3, -4, -3, -2, -1, 0, 1, 2, 3, 4, -5,
-            -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, -7, -6,
-            -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3,
-            4, 5, 6, 7, 8, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -10,
-            -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, -11, -10, -9, -8,
-            -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, -12, -11, -10, -9,
-            -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, -13, -12,
-            -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-            13, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6,
-            7, 8, 9, 10, 11, 12, 13, 14, -15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3,
-            -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, -16, -15, -14, -13, -12,
-            -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-            13, 14, 15, 16
-        ];
-        let y_m_expected = array![
-            -1, 0, 1, -2, -1, 0, 1, 2, -3, -2, -1, 0, 1, 2, 3, -4, -3, -2, -1, 0, 1, 2, 3, 4, -5,
-            -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, -7, -6,
-            -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3,
-            4, 5, 6, 7, 8, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -10,
-            -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, -11, -10, -9, -8,
-            -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, -12, -11, -10, -9,
-            -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, -13, -12,
-            -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-            13, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6,
-            7, 8, 9, 10, 11, 12, 13, 14, -15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3,
-            -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, -16, -15, -14, -13, -12,
-            -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-            13, 14, 15, 16
-        ];
-        let x_n_expected = array![
-            1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5,
-            5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-            7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9,
-            9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-            10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
-            11, 11, 11, 11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
-            12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
-            13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 14, 14, 14, 14, 14,
-            14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
-            14, 14, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
-            15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-            16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16
-        ];
-        let y_n_expected = array![
-            1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5,
-            5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-            7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9,
-            9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-            10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
-            11, 11, 11, 11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
-            12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
-            13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 14, 14, 14, 14, 14,
-            14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
-            14, 14, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
-            15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-            16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16
-        ];
-
-        let x_q1_expected_first = array![
-            c64::new(-0.024744, 0.009424),
-            c64::new(0.000000, 0.000000),
-            c64::new(-0.024734, 0.009348),
-            c64::new(0.000000, -0.000000),
-            c64::new(0.005766, 0.015469),
-        ];
-        let x_q1_expected_last = array![
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-        ];
-
-        let x_q2_expected_first = array![
-            c64::new(-0.026122, 0.009724),
-            c64::new(-0.000000, -0.000000),
-            c64::new(0.026116, -0.009643),
-            c64::new(0.000000, -0.000000),
-            c64::new(0.006586, 0.018925),
-        ];
-        let x_q2_expected_last = array![
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-        ];
-
-        let y_q1_expected_first = array![
-            c64::new(-0.009398, -0.024807),
-            c64::new(0.000000, -0.000000),
-            c64::new(0.009473, 0.024817),
-            c64::new(0.000000, 0.000000),
-            c64::new(-0.015501, 0.005755),
-        ];
-        let y_q1_expected_last = array![
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-        ];
-
-        let y_q2_expected_first = array![
-            c64::new(-0.009692, -0.026191),
-            c64::new(0.000000, 0.000000),
-            c64::new(-0.009773, -0.026196),
-            c64::new(0.000000, 0.000000),
-            c64::new(-0.018968, 0.006566),
-        ];
-        let y_q2_expected_last = array![
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-        ];
-
-        assert_eq!(Array1::from(coeffs.x.m_accum.clone()), x_m_expected);
-        assert_eq!(Array1::from(coeffs.y.m_accum.clone()), y_m_expected);
-        assert_eq!(Array1::from(coeffs.x.n_accum.clone()), x_n_expected);
-        assert_eq!(Array1::from(coeffs.y.n_accum.clone()), y_n_expected);
-
-        let x_q1_accum_arr = Array1::from(coeffs.x.q1_accum.clone());
-        assert_abs_diff_eq!(
-            x_q1_accum_arr.slice(s![0..5]),
-            x_q1_expected_first,
-            epsilon = 1e-6
-        );
-        assert_abs_diff_eq!(
-            x_q1_accum_arr.slice(s![-5..]),
-            x_q1_expected_last,
-            epsilon = 1e-6
-        );
-
-        let x_q2_accum_arr = Array1::from(coeffs.x.q2_accum.clone());
-        assert_abs_diff_eq!(
-            x_q2_accum_arr.slice(s![0..5]),
-            x_q2_expected_first,
-            epsilon = 1e-6
-        );
-        assert_abs_diff_eq!(
-            x_q2_accum_arr.slice(s![-5..]),
-            x_q2_expected_last,
-            epsilon = 1e-6
-        );
-
-        let y_q1_accum_arr = Array1::from(coeffs.y.q1_accum.clone());
-        assert_abs_diff_eq!(
-            y_q1_accum_arr.slice(s![0..5]),
-            y_q1_expected_first,
-            epsilon = 1e-6
-        );
-        assert_abs_diff_eq!(
-            y_q1_accum_arr.slice(s![-5..]),
-            y_q1_expected_last,
-            epsilon = 1e-6
-        );
-
-        let y_q2_accum_arr = Array1::from(coeffs.y.q2_accum.clone());
-        assert_abs_diff_eq!(
-            y_q2_accum_arr.slice(s![0..5]),
-            y_q2_expected_first,
-            epsilon = 1e-6
-        );
-        assert_abs_diff_eq!(
-            y_q2_accum_arr.slice(s![-5..]),
-            y_q2_expected_last,
-            epsilon = 1e-6
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn test_get_modes2() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let hash = match beam.populate_modes(
-            51200000,
-            &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
-            &[
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
-            ],
-        ) {
-            Ok(h) => h,
-            Err(e) => panic!("{}", e),
-        };
-        let coeffs = beam.coeff_cache.get(&hash).unwrap();
-
-        // Values taken from the C++ code.
-        let x_m_expected = array![
-            -1, 0, 1, -2, -1, 0, 1, 2, -3, -2, -1, 0, 1, 2, 3, -4, -3, -2, -1, 0, 1, 2, 3, 4, -5,
-            -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, -7, -6,
-            -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3,
-            4, 5, 6, 7, 8, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -10,
-            -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, -11, -10, -9, -8,
-            -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, -12, -11, -10, -9,
-            -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, -13, -12,
-            -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-            13, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6,
-            7, 8, 9, 10, 11, 12, 13, 14, -15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3,
-            -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, -16, -15, -14, -13, -12,
-            -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-            13, 14, 15, 16
-        ];
-        let y_m_expected = array![
-            -1, 0, 1, -2, -1, 0, 1, 2, -3, -2, -1, 0, 1, 2, 3, -4, -3, -2, -1, 0, 1, 2, 3, 4, -5,
-            -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, -7, -6,
-            -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3,
-            4, 5, 6, 7, 8, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -10,
-            -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, -11, -10, -9, -8,
-            -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, -12, -11, -10, -9,
-            -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, -13, -12,
-            -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-            13, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6,
-            7, 8, 9, 10, 11, 12, 13, 14, -15, -14, -13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3,
-            -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, -16, -15, -14, -13, -12,
-            -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-            13, 14, 15, 16
-        ];
-        let x_n_expected = array![
-            1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5,
-            5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-            7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9,
-            9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-            10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
-            11, 11, 11, 11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
-            12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
-            13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 14, 14, 14, 14, 14,
-            14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
-            14, 14, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
-            15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-            16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16
-        ];
-        let y_n_expected = array![
-            1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 5, 5, 5, 5, 5,
-            5, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-            7, 7, 7, 7, 7, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 9, 9, 9, 9, 9, 9, 9,
-            9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-            10, 10, 10, 10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
-            11, 11, 11, 11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12,
-            12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13,
-            13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 14, 14, 14, 14, 14,
-            14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14, 14,
-            14, 14, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
-            15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
-            16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16
-        ];
-
-        let x_q1_expected_first = array![
-            c64::new(-0.020504, 0.013376),
-            c64::new(-0.001349, 0.000842),
-            c64::new(-0.020561, 0.013291),
-            c64::new(0.001013, 0.001776),
-            c64::new(0.008222, 0.012569),
-        ];
-        let x_q1_expected_last = array![
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-        ];
-
-        let x_q2_expected_first = array![
-            c64::new(-0.021903, 0.013940),
-            c64::new(0.001295, -0.000767),
-            c64::new(0.021802, -0.014047),
-            c64::new(0.001070, 0.002039),
-            c64::new(0.009688, 0.016040),
-        ];
-        let x_q2_expected_last = array![
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-        ];
-
-        let y_q1_expected_first = array![
-            c64::new(-0.013471, -0.020753),
-            c64::new(0.001130, 0.002400),
-            c64::new(0.013576, 0.020683),
-            c64::new(-0.001751, 0.001023),
-            c64::new(-0.013183, 0.008283),
-        ];
-        let y_q1_expected_last = array![
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-        ];
-
-        let y_q2_expected_first = array![
-            c64::new(-0.014001, -0.021763),
-            c64::new(-0.000562, -0.000699),
-            c64::new(-0.013927, -0.021840),
-            c64::new(-0.002247, 0.001152),
-            c64::new(-0.015716, 0.009685),
-        ];
-        let y_q2_expected_last = array![
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-            c64::new(0.0, 0.0),
-        ];
-
-        assert_eq!(Array1::from(coeffs.x.m_accum.clone()), x_m_expected);
-        assert_eq!(Array1::from(coeffs.y.m_accum.clone()), y_m_expected);
-        assert_eq!(Array1::from(coeffs.x.n_accum.clone()), x_n_expected);
-        assert_eq!(Array1::from(coeffs.y.n_accum.clone()), y_n_expected);
-
-        let x_q1_accum_arr = Array1::from(coeffs.x.q1_accum.clone());
-        assert_abs_diff_eq!(
-            x_q1_accum_arr.slice(s![0..5]),
-            x_q1_expected_first,
-            epsilon = 1e-6
-        );
-        assert_abs_diff_eq!(
-            x_q1_accum_arr.slice(s![-5..]),
-            x_q1_expected_last,
-            epsilon = 1e-6
-        );
-
-        let x_q2_accum_arr = Array1::from(coeffs.x.q2_accum.clone());
-        assert_abs_diff_eq!(
-            x_q2_accum_arr.slice(s![0..5]),
-            x_q2_expected_first,
-            epsilon = 1e-6
-        );
-        assert_abs_diff_eq!(
-            x_q2_accum_arr.slice(s![-5..]),
-            x_q2_expected_last,
-            epsilon = 1e-6
-        );
-
-        let y_q1_accum_arr = Array1::from(coeffs.y.q1_accum.clone());
-        assert_abs_diff_eq!(
-            y_q1_accum_arr.slice(s![0..5]),
-            y_q1_expected_first,
-            epsilon = 1e-6
-        );
-        assert_abs_diff_eq!(
-            y_q1_accum_arr.slice(s![-5..]),
-            y_q1_expected_last,
-            epsilon = 1e-6
-        );
-
-        let y_q2_accum_arr = Array1::from(coeffs.y.q2_accum.clone());
-        assert_abs_diff_eq!(
-            y_q2_accum_arr.slice(s![0..5]),
-            y_q2_expected_first,
-            epsilon = 1e-6
-        );
-        assert_abs_diff_eq!(
-            y_q2_accum_arr.slice(s![-5..]),
-            y_q2_expected_last,
-            epsilon = 1e-6
-        );
-
-        // Check that if the Y dipole gains are different, they don't match the
-        // earlier values.
-        let hash = match beam.populate_modes(
-            51200000,
-            &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
-            &[
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
-                // First value here
-                10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
-            ],
-        ) {
-            Ok(h) => h,
-            Err(e) => panic!("{}", e),
-        };
-        let coeffs = beam.coeff_cache.get(&hash).unwrap();
-
-        // X values are the same.
-        let x_q1_accum_arr = Array1::from(coeffs.x.q1_accum.clone());
-        assert_abs_diff_eq!(
-            x_q1_accum_arr.slice(s![0..5]),
-            x_q1_expected_first,
-            epsilon = 1e-6
-        );
-
-        let x_q2_accum_arr = Array1::from(coeffs.x.q2_accum.clone());
-        assert_abs_diff_eq!(
-            x_q2_accum_arr.slice(s![0..5]),
-            x_q2_expected_first,
-            epsilon = 1e-6
-        );
-
-        // Y values are not the same.
-        let y_q1_accum_arr = Array1::from(coeffs.y.q1_accum.clone());
-        assert_abs_diff_ne!(
-            y_q1_accum_arr.slice(s![0..5]),
-            y_q1_expected_first,
-            epsilon = 1e-6
-        );
-
-        let y_q2_accum_arr = Array1::from(coeffs.y.q2_accum.clone());
-        assert_abs_diff_ne!(
-            y_q2_accum_arr.slice(s![0..5]),
-            y_q2_expected_first,
-            epsilon = 1e-6
-        );
-
-        // Test against expected Y values.
-        let y_q1_expected_first = array![
-            c64::new(-0.020510457596022602, -0.02719067783451879),
-            c64::new(-0.005893442096591942, 0.010353674045181267),
-            c64::new(0.02068524851191211, 0.028624921920498963),
-            c64::new(-0.00899761240125443, 0.0017058598981518776),
-            c64::new(-0.016074160827913245, 0.016292904120669145),
-        ];
-        let y_q2_expected_first = array![
-            c64::new(-0.019651382591095376, -0.030546413628593075),
-            c64::new(-0.0057627241860343775, -0.00416648736914009),
-            c64::new(-0.0224990478461125, -0.02754743859133888),
-            c64::new(-0.011107944651304743, 0.0002948793061857774),
-            c64::new(-0.024422943755493767, 0.014316796508644876),
-        ];
-
-        assert_abs_diff_eq!(
-            y_q1_accum_arr.slice(s![0..5]),
-            y_q1_expected_first,
-            epsilon = 1e-6
-        );
-
-        assert_abs_diff_eq!(
-            y_q2_accum_arr.slice(s![0..5]),
-            y_q2_expected_first,
-            epsilon = 1e-6
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn test_calc_jones_eng() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let jones = match beam.calc_jones_eng(
-            45.0_f64.to_radians(),
-            10.0_f64.to_radians(),
-            51200000,
-            &[0; 16],
-            &[1.0; 16],
-            false,
-        ) {
-            Ok(j) => j,
-            Err(e) => panic!("{}", e),
-        };
-
-        let expected = Jones::from([
-            c64::new(0.036179, 0.103586),
-            c64::new(0.036651, 0.105508),
-            c64::new(0.036362, 0.103868),
-            c64::new(-0.036836, -0.105791),
-        ]);
-        let jones = TestJones::from(jones);
-        let expected = TestJones::from(expected);
-        assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
-    }
-
-    #[test]
-    #[serial]
-    fn test_calc_jones_eng_2() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let jones = match beam.calc_jones_eng(
-            70.0_f64.to_radians(),
-            10.0_f64.to_radians(),
-            51200000,
-            &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
-            &[
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
-            ],
-            false,
-        ) {
-            Ok(j) => j,
-            Err(e) => panic!("{}", e),
-        };
-
-        let expected = Jones::from([
-            c64::new(0.068028, 0.111395),
-            c64::new(0.025212, 0.041493),
-            c64::new(0.024792, 0.040577),
-            c64::new(-0.069501, -0.113706),
-        ]);
-        let jones = TestJones::from(jones);
-        let expected = TestJones::from(expected);
-        assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
-    }
-
-    #[test]
-    #[serial]
-    fn test_calc_jones_eng_norm() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let jones =
-            match beam.calc_jones_eng(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true) {
-                Ok(j) => j,
-                Err(e) => panic!("{}", e),
-            };
-
-        let expected = Jones::from([
-            c64::new(0.0887949, 0.0220569),
-            c64::new(0.891024, 0.2211),
-            c64::new(0.887146, 0.216103),
-            c64::new(-0.0896141, -0.021803),
-        ]);
-        let jones = TestJones::from(jones);
-        let expected = TestJones::from(expected);
-        assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
-    }
-
-    #[test]
-    #[serial]
-    fn test_calc_jones_eng_norm_2() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let jones = match beam.calc_jones_eng(
-            0.1_f64,
-            0.1_f64,
-            150000000,
-            &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
-            &[
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
-            ],
-            true,
-        ) {
-            Ok(j) => j,
-            Err(e) => panic!("{}", e),
-        };
-
-        let expected = Jones::from([
-            c64::new(0.0704266, -0.0251082),
-            c64::new(0.705241, -0.254518),
-            c64::new(0.697787, -0.257219),
-            c64::new(-0.0711516, 0.0264293),
-        ]);
-        let jones = TestJones::from(jones);
-        let expected = TestJones::from(expected);
-        assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
-    }
-
-    #[test]
-    #[serial]
-    fn test_calc_jones() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let jones = match beam.calc_jones(
-            45.0_f64.to_radians(),
-            10.0_f64.to_radians(),
-            51200000,
-            &[0; 16],
-            &[1.0; 16],
-            false,
-        ) {
-            Ok(j) => j,
-            Err(e) => panic!("{}", e),
-        };
-
-        let expected = Jones::from([
-            c64::new(0.051673288904250436, 0.14798615369209014),
-            c64::new(-0.0029907711920181858, -0.008965331092654419),
-            c64::new(0.002309524016541907, 0.006230549725189563),
-            c64::new(0.05144802517335513, 0.14772685224822762),
-        ]);
-        let jones = TestJones::from(jones);
-        let expected = TestJones::from(expected);
-        assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
-    }
-
-    #[test]
-    #[serial]
-    fn test_calc_jones_norm() {
-        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let jones = match beam.calc_jones(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true) {
-            Ok(j) => j,
-            Err(e) => panic!("{}", e),
-        };
-
-        let expected = Jones::from([
-            c64::new(0.8916497260404116, 0.21719761321518402),
-            c64::new(-0.004453788880133702, -0.0010585985171330595),
-            c64::new(0.003267814789407464, 0.0008339646338281076),
-            c64::new(0.8954320133256206, 0.22219600210153623),
-        ]);
-        let jones = TestJones::from(jones);
-        let expected = TestJones::from(expected);
-        assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
-    }
+/// Ensure that any delays of 32 have an amplitude (dipole gain) of 0. The
+/// results are bad otherwise! Also ensure that we have 32 dipole gains (amps)
+/// here.
+fn fix_amps(amps: &[f64], delays: &[u32]) -> [f64; 32] {
+    let mut full_amps: [f64; 32] = [1.0; 32];
+    full_amps
+        .iter_mut()
+        .zip(amps.iter().cycle())
+        .zip(delays.iter().cycle())
+        .for_each(|((out_amp, &in_amp), &delay)| {
+            if delay == 32 {
+                *out_amp = 0.0;
+            } else {
+                *out_amp = in_amp
+            }
+        });
+    full_amps
 }

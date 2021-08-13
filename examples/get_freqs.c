@@ -18,15 +18,20 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    // Get a new beam from hyperbeam.
-    FEEBeam *beam = new_fee_beam(argv[1]);
+    // Get a new beam object from hyperbeam.
+    FEEBeam *beam;
+    char error[200];
+    if (new_fee_beam(argv[1], &beam, error)) {
+        printf("Got an error when trying to make an FEEBeam: %s\n", error);
+    }
 
     // Of the available frequencies, which is closest to 255 MHz?
     printf("Closest freq. to 255 MHz: %.2f MHz\n", (double)closest_freq(beam, 255000000) / 1e6);
 
     // Get the frequecies from the FEEBeam struct.
-    unsigned num_freqs = get_num_fee_beam_freqs(beam);
-    unsigned *freqs = get_fee_beam_freqs(beam);
+    size_t num_freqs;
+    const unsigned *freqs;
+    get_fee_beam_freqs(beam, &freqs, &num_freqs);
 
     // Print them out.
     printf("All frequencies:\n");
@@ -42,8 +47,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // We own the freqs array - free it.
-    free(freqs);
+    // We DON'T own the freqs array - don't free it.
     // Free the beam - we must use a special function to do this.
     free_fee_beam(beam);
 

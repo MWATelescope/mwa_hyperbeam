@@ -8,6 +8,7 @@
 // gcc -O3 -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./beam_calcs_many.c -o beam_calcs_many
 // LD_LIBRARY_PATH=../target/release ./beam_calcs_many ../mwa_full_embedded_element_pattern.h5
 
+#include <complex.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,8 +21,13 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    // Get a new beam from hyperbeam.
-    FEEBeam *beam = new_fee_beam(argv[1]);
+    // Get a new beam object from hyperbeam.
+    FEEBeam *beam;
+    char error[200];
+    if (new_fee_beam(argv[1], &beam, error)) {
+        printf("Got an error when trying to make an FEEBeam: %s\n", error);
+        return EXIT_FAILURE;
+    }
 
     // Set up the directions to test.
     int num_directions = 5000;
@@ -45,22 +51,32 @@ int main(int argc, char *argv[]) {
 
     // Calculate the Jones matrices for all directions. Rust will do this in
     // parallel.
-    double *jones = calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps, norm_to_zenith, parallactic);
+    complex double *jones;
+    // hyperbeam expects a pointer to doubles. Casting the pointer works fine.
+    if (calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps, 16, norm_to_zenith, parallactic,
+                         (double **)&jones, error)) {
+        printf("Got an error when running calc_jones_array: %s\n", error);
+        return EXIT_FAILURE;
+    }
     printf("The first Jones matrix:\n");
-    printf("[[%+.8f%+.8fi,", jones[0], jones[1]);
-    printf(" %+.8f%+.8fi]\n", jones[2], jones[3]);
-    printf(" [%+.8f%+.8fi,", jones[4], jones[5]);
-    printf(" %+.8f%+.8fi]]\n", jones[6], jones[7]);
+    printf("[[%+.8f%+.8fi,", creal(jones[0]), cimag(jones[0]));
+    printf(" %+.8f%+.8fi]\n", creal(jones[1]), cimag(jones[1]));
+    printf(" [%+.8f%+.8fi,", creal(jones[2]), cimag(jones[2]));
+    printf(" %+.8f%+.8fi]]\n", creal(jones[3]), cimag(jones[3]));
 
     double amps_2[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0};
-    double *jones_2 =
-        calc_jones_array_all_amps(beam, num_directions, az, za, freq_hz, delays, amps_2, norm_to_zenith, parallactic);
+    complex double *jones_2;
+    if (calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps_2, 32, norm_to_zenith, parallactic,
+                         (double **)&jones_2, error)) {
+        printf("Got an error when running calc_jones_array_all_amps: %s\n", error);
+        return EXIT_FAILURE;
+    }
     printf("The first Jones matrix with altered Y amps:\n");
-    printf("[[%+.8f%+.8fi,", jones_2[0], jones_2[1]);
-    printf(" %+.8f%+.8fi]\n", jones_2[2], jones_2[3]);
-    printf(" [%+.8f%+.8fi,", jones_2[4], jones_2[5]);
-    printf(" %+.8f%+.8fi]]\n", jones_2[6], jones_2[7]);
+    printf("[[%+.8f%+.8fi,", creal(jones_2[0]), cimag(jones_2[0]));
+    printf(" %+.8f%+.8fi]\n", creal(jones_2[1]), cimag(jones_2[1]));
+    printf(" [%+.8f%+.8fi,", creal(jones_2[2]), cimag(jones_2[2]));
+    printf(" %+.8f%+.8fi]]\n", creal(jones_2[3]), cimag(jones_2[3]));
 
     // Freeing memory.
     free(az);

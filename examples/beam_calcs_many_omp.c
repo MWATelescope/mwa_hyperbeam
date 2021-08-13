@@ -9,6 +9,7 @@
 // gcc -O3 -fopenmp -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./beam_calcs_many_omp.c -o beam_calcs_many_omp
 // LD_LIBRARY_PATH=../target/release ./beam_calcs_many_omp ../mwa_full_embedded_element_pattern.h5
 
+#include <complex.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -21,8 +22,13 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    // Get a new beam from hyperbeam.
-    FEEBeam *beam = new_fee_beam(argv[1]);
+    // Get a new beam object from hyperbeam.
+    FEEBeam *beam;
+    char error[200];
+    if (new_fee_beam(argv[1], &beam, error)) {
+        printf("Got an error when trying to make an FEEBeam: %s\n", error);
+        return EXIT_FAILURE;
+    }
 
     // Set up the directions to test.
     int num_directions = 5000;
@@ -47,24 +53,25 @@ int main(int argc, char *argv[]) {
     int parallactic = 1;
 
     // Calculate the Jones matrices for all directions.
-    double **jones = malloc(num_directions * 8 * sizeof(double));
+    complex double *jones = malloc(num_directions * 4 * sizeof(complex double));
 #pragma omp parallel for
     for (int i = 0; i < num_directions; i++) {
-        double *j = calc_jones(beam, az[i], za[i], freq_hz, delays, amps, norm_to_zenith, parallactic);
-        jones[i] = j;
+        // hyperbeam expects a pointer to doubles. Casting the pointer works fine.
+        if (calc_jones(beam, az[i], za[i], freq_hz, delays, amps, 16, norm_to_zenith, parallactic,
+                       (double *)(jones + i * 4), error)) {
+            printf("Got an error when running calc_jones: %s\n", error);
+            return EXIT_FAILURE;
+        }
     }
     printf("The first Jones matrix:\n");
-    printf("[[%+.8f%+.8fi,", jones[0][0], jones[0][1]);
-    printf(" %+.8f%+.8fi]\n", jones[0][2], jones[0][3]);
-    printf(" [%+.8f%+.8fi,", jones[0][4], jones[0][5]);
-    printf(" %+.8f%+.8fi]]\n", jones[0][6], jones[0][7]);
+    printf("[[%+.8f%+.8fi,", creal(jones[0]), cimag(jones[0]));
+    printf(" %+.8f%+.8fi]\n", creal(jones[1]), cimag(jones[1]));
+    printf(" [%+.8f%+.8fi,", creal(jones[2]), cimag(jones[2]));
+    printf(" %+.8f%+.8fi]]\n", creal(jones[3]), cimag(jones[3]));
 
     // Freeing memory.
     free(az);
     free(za);
-    for (int i = 0; i < num_directions; i++) {
-        free(jones[i]);
-    }
     free(jones);
 
     // Free the beam - we must use a special function to do this.

@@ -7,7 +7,6 @@
 mod constants;
 mod factorial;
 pub mod fee;
-mod ffi;
 mod legendre;
 mod types;
 

@@ -6,6 +6,7 @@
 // gcc -O3 -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./beam_calcs.c -o beam_calcs
 // LD_LIBRARY_PATH=../target/release ./beam_calcs ../mwa_full_embedded_element_pattern.h5
 
+#include <complex.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,8 +19,13 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    // Get a new beam from hyperbeam.
-    FEEBeam *beam = new_fee_beam(argv[1]);
+    // Get a new beam object from hyperbeam.
+    FEEBeam *beam;
+    char error[200];
+    if (new_fee_beam(argv[1], &beam, error)) {
+        printf("Got an error when trying to make an FEEBeam: %s\n", error);
+        return EXIT_FAILURE;
+    }
 
     // Set up the direction and pointing to test.
     double az = 45.0 * M_PI / 180.0;
@@ -37,31 +43,40 @@ int main(int argc, char *argv[]) {
     // https://github.com/JLBLine/polarisation_tests_for_FEE
     int parallactic = 1;
 
-    // Calculate the Jones matrix for this direction and pointing.
-    double *jones = calc_jones(beam, az, za, freq_hz, delays, amps, norm_to_zenith, parallactic);
+    // Calculate the Jones matrix for this direction and pointing. This Jones
+    // matrix is on the stack.
+    complex double jones[4];
+    // hyperbeam expects a pointer to doubles. Casting the pointer works fine.
+    if (calc_jones(beam, az, za, freq_hz, delays, amps, 16, norm_to_zenith, parallactic, (double *)&jones, error)) {
+        printf("Got an error when running calc_jones: %s\n", error);
+        return EXIT_FAILURE;
+    }
     printf("The returned Jones matrix:\n");
-    printf("[[%+.8f%+.8fi,", jones[0], jones[1]);
-    printf(" %+.8f%+.8fi]\n", jones[2], jones[3]);
-    printf(" [%+.8f%+.8fi,", jones[4], jones[5]);
-    printf(" %+.8f%+.8fi]]\n", jones[6], jones[7]);
+    printf("[[%+.8f%+.8fi,", creal(jones[0]), cimag(jones[0]));
+    printf(" %+.8f%+.8fi]\n", creal(jones[1]), cimag(jones[1]));
+    printf(" [%+.8f%+.8fi,", creal(jones[2]), cimag(jones[2]));
+    printf(" %+.8f%+.8fi]]\n", creal(jones[3]), cimag(jones[3]));
 
-    // Amps can have 32 elements to specify X and Y elements of the dipoles, but
-    // another function is needed to use this extra info. The first 16 elements
-    // are X elements, second 16 are Y elements.
+    // Amps can have 32 elements to specify X and Y elements of the dipoles. The
+    // first 16 elements are X elements, second 16 are Y elements.
     double amps_2[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
                          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
-    double *jones_2 = calc_jones_all_amps(beam, az, za, freq_hz, delays, amps_2, norm_to_zenith, parallactic);
+    // This Jones matrix is on the heap.
+    complex double *jones_2 = malloc(4 * sizeof(complex double));
+    if (calc_jones(beam, az, za, freq_hz, delays, amps_2, 32, norm_to_zenith, parallactic, (double *)jones_2, error)) {
+        printf("Got an error when running calc_jones_all_amps: %s\n", error);
+        return EXIT_FAILURE;
+    }
     // The resulting Jones matrix has different elements on the second row,
     // corresponding to the Y element; this is because we only altered the Y
     // amps.
     printf("The returned Jones matrix with altered Y amps:\n");
-    printf("[[%+.8f%+.8fi,", jones_2[0], jones_2[1]);
-    printf(" %+.8f%+.8fi]\n", jones_2[2], jones_2[3]);
-    printf(" [%+.8f%+.8fi,", jones_2[4], jones_2[5]);
-    printf(" %+.8f%+.8fi]]\n", jones_2[6], jones_2[7]);
+    printf("[[%+.8f%+.8fi,", creal(jones_2[0]), cimag(jones_2[0]));
+    printf(" %+.8f%+.8fi]\n", creal(jones_2[1]), cimag(jones_2[1]));
+    printf(" [%+.8f%+.8fi,", creal(jones_2[2]), cimag(jones_2[2]));
+    printf(" %+.8f%+.8fi]]\n", creal(jones_2[3]), cimag(jones_2[3]));
 
-    // Free the Jones matrices.
-    free(jones);
+    // Free the heap-allocated Jones matrix.
     free(jones_2);
     // Free the beam - we must use a special function to do this.
     free_fee_beam(beam);

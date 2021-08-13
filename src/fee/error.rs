@@ -9,7 +9,10 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 #[allow(clippy::upper_case_acronyms)]
 pub enum InitFEEBeamError {
-    #[error("One of HDF5 datasets started with 'X_'; what's wrong with your file?")]
+    #[error("Specified beam file '{0}' doesn't exist")]
+    BeamFileDoesntExist(String),
+
+    #[error("One of the HDF5 datasets started with 'X_'; what's wrong with your file?")]
     MissingDipole,
 
     #[error("No HDF5 datasets started with a 'X'; is there any data in the file?")]
@@ -35,7 +38,7 @@ pub enum InitFEEBeamError {
 
     /// An error associated with the hdf5 crate.
     #[error("HDF5 error: {0}")]
-    Hdf5Error(#[from] hdf5::Error),
+    Hdf5(#[from] hdf5::Error),
 }
 
 #[derive(Error, Debug)]

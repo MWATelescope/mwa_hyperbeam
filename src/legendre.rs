@@ -169,6 +169,8 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::{FRAC_1_SQRT_2, FRAC_PI_4};
+
     use super::*;
     use approx::*;
     use marlu::ndarray::prelude::*;
@@ -289,7 +291,7 @@ mod tests {
 
     #[test]
     fn p1sin_5_0785398160() {
-        let (p1sin_out, p1_out) = p1sin(5, 0.78539816);
+        let (p1sin_out, p1_out) = p1sin(5, FRAC_PI_4);
         for (i, &p) in p1sin_out.iter().enumerate() {
             match i {
                 0 | 2 => assert_abs_diff_eq!(p, -1.000000, epsilon = 1e-6),
@@ -304,7 +306,7 @@ mod tests {
         }
         for (i, &p) in p1_out.iter().enumerate() {
             match i {
-                1 => assert_abs_diff_eq!(p, -0.707107, epsilon = 1e-6),
+                1 => assert_abs_diff_eq!(p, -FRAC_1_SQRT_2, epsilon = 1e-6),
                 4 | 6 => assert_abs_diff_eq!(p, 1.500000, epsilon = 1e-6),
                 5 => assert_abs_diff_eq!(p, -1.500000, epsilon = 1e-6),
                 9 | 13 => assert_abs_diff_eq!(p, -5.303301, epsilon = 1e-6),
