@@ -26,7 +26,11 @@ freq = 167000000
 # info.
 delays = [0] * 16
 amps = [1.0] * 16
+# Should we normalise the beam response?
 norm_to_zenith = True
+# Should we apply the parallactic angle correction? Read more here:
+# https://github.com/JLBLine/polarisation_tests_for_FEE
+parallactic = True
 
 # Pass the values to hyperbeam and get a numpy array back. Each element is a
 # 4-element Jones matrix.
@@ -34,7 +38,8 @@ start_time = time.time()
 # beam.calc_jones is also available, but that makes a single Jones matrix at a
 # time, so one would need to iterate over az and za. calc_jones_array is done in
 # parallel with Rust (so it's fast).
-jones = beam.calc_jones_array(az, za, freq, delays, amps, norm_to_zenith)
+jones = beam.calc_jones_array(
+    az, za, freq, delays, amps, norm_to_zenith, parallactic)
 duration = time.time() - start_time
 print("Time to calculate {} directions: {:.3}s".format(n, duration))
 print("First Jones matrix:")
@@ -45,6 +50,7 @@ print(jones[0])
 # is also available.
 amps = [1.0] * 32
 amps[-1] = 0
-jones = beam.calc_jones_array_all_amps(az[:1], za[:1], freq, delays, amps, norm_to_zenith)
+jones = beam.calc_jones_array_all_amps(
+    az[:1], za[:1], freq, delays, amps, norm_to_zenith, parallactic)
 print("First Jones matrix with altered Y amps:")
 print(jones[0])

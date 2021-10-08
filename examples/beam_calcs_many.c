@@ -37,11 +37,15 @@ int main(int argc, char *argv[]) {
     unsigned delays[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
     double amps[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
     int freq_hz = 51200000;
-    int norm_to_zenith = 0;
+    // Should we normalise the beam response?
+    int norm_to_zenith = 1;
+    // Should we apply the parallactic angle correction? Read more here:
+    // https://github.com/JLBLine/polarisation_tests_for_FEE
+    int parallactic = 1;
 
     // Calculate the Jones matrices for all directions. Rust will do this in
     // parallel.
-    double *jones = calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps, norm_to_zenith);
+    double *jones = calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps, norm_to_zenith, parallactic);
     printf("The first Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", jones[0], jones[1]);
     printf(" %+.8f%+.8fi]\n", jones[2], jones[3]);
@@ -50,7 +54,8 @@ int main(int argc, char *argv[]) {
 
     double amps_2[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0};
-    double *jones_2 = calc_jones_array_all_amps(beam, num_directions, az, za, freq_hz, delays, amps_2, norm_to_zenith);
+    double *jones_2 =
+        calc_jones_array_all_amps(beam, num_directions, az, za, freq_hz, delays, amps_2, norm_to_zenith, parallactic);
     printf("The first Jones matrix with altered Y amps:\n");
     printf("[[%+.8f%+.8fi,", jones_2[0], jones_2[1]);
     printf(" %+.8f%+.8fi]\n", jones_2[2], jones_2[3]);
@@ -66,5 +71,5 @@ int main(int argc, char *argv[]) {
     // Free the beam - we must use a special function to do this.
     free_fee_beam(beam);
 
-    return 0;
+    return EXIT_SUCCESS;
 }

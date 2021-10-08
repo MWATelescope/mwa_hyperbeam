@@ -40,13 +40,17 @@ int main(int argc, char *argv[]) {
     unsigned delays[16] = {3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0};
     double amps[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1};
     int freq_hz = 51200000;
-    int norm_to_zenith = 0;
+    // Should we normalise the beam response?
+    int norm_to_zenith = 1;
+    // Should we apply the parallactic angle correction? Read more here:
+    // https://github.com/JLBLine/polarisation_tests_for_FEE
+    int parallactic = 1;
 
     // Calculate the Jones matrices for all directions.
     double **jones = malloc(num_directions * 8 * sizeof(double));
 #pragma omp parallel for
     for (int i = 0; i < num_directions; i++) {
-        double *j = calc_jones(beam, az[i], za[i], freq_hz, delays, amps, norm_to_zenith);
+        double *j = calc_jones(beam, az[i], za[i], freq_hz, delays, amps, norm_to_zenith, parallactic);
         jones[i] = j;
     }
     printf("The first Jones matrix:\n");
@@ -66,5 +70,5 @@ int main(int argc, char *argv[]) {
     // Free the beam - we must use a special function to do this.
     free_fee_beam(beam);
 
-    return 0;
+    return EXIT_SUCCESS;
 }

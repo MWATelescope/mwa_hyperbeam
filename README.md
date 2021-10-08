@@ -33,12 +33,18 @@ MWA_BEAM_FILE=/pawsey/mwa/mwa_full_embedded_element_pattern.h5`)
 other words, most languages. See Rust, C and Python examples of usage in the
 `examples` directory. A simple Python example is:
 
-    import mwa_hyperbeam
-    beam = mwa_hyperbeam.FEEBeam()
-    print(beam.calc_jones(0, 0.7, 167e6, [0]*16, [1]*16, True))
+    >>> import mwa_hyperbeam
+    >>> beam = mwa_hyperbeam.FEEBeam()
+    >>> help(beam.calc_jones)
+    Help on built-in function calc_jones:
 
-    [ 1.73003520e-05-1.53580286e-05j -2.23184781e-01-4.51051073e-02j
-     -1.51506097e-01-4.35034884e-02j -9.76099405e-06-1.21699926e-05j]
+    calc_jones(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic) method of builtins.FEEBeam instance
+        Calculate the Jones matrix for a single direction given a pointing.
+        `delays` must have 16 ints, and `amps` must have 16 floats.
+
+    >>> print(beam.calc_jones(0, 0.7, 167e6, [0]*16, [1]*16, True, True))
+    [-1.51506097e-01-4.35034884e-02j -9.76099405e-06-1.21699926e-05j
+      1.73003520e-05-1.53580286e-05j -2.23184781e-01-4.51051073e-02j]
 
 ## Installation
 ### Python PyPI

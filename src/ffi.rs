@@ -43,7 +43,10 @@ pub unsafe extern "C" fn new_fee_beam_from_env() -> *mut FEEBeam {
     Box::into_raw(Box::new(beam))
 }
 
-/// Get the beam response Jones matrix for the given direction and pointing.
+/// Get the beam response Jones matrix for the given direction and pointing. Can
+/// optionally re-define the X and Y polarisations and apply a parallactic-angle
+/// correction; see Jack's thorough investigation at
+/// https://github.com/JLBLine/polarisation_tests_for_FEE.
 ///
 /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
@@ -67,6 +70,8 @@ pub unsafe extern "C" fn new_fee_beam_from_env() -> *mut FEEBeam {
 /// `amps` - A pointer to a 16-element array of dipole gains for an MWA tile
 /// `norm_to_zenith` - A boolean indicating whether the beam response should be
 /// normalised with respect to zenith.
+/// `parallactic` - A boolean indicating whether the parallactic angle
+/// correction should be applied.
 ///
 /// # Returns
 ///
@@ -82,6 +87,7 @@ pub unsafe extern "C" fn calc_jones(
     delays: *const u32,
     amps: *const f64,
     norm_to_zenith: u8,
+    parallactic: u8,
 ) -> *mut f64 {
     let beam = &mut *fee_beam;
     let delays_s = std::slice::from_raw_parts(delays, 16);
@@ -91,23 +97,33 @@ pub unsafe extern "C" fn calc_jones(
         1 => true,
         _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
     };
+    let para_bool = match parallactic {
+        0 => false,
+        1 => true,
+        _ => panic!("A value other than 0 or 1 was used for parallactic"),
+    };
 
     // Using the passed-in beam, get the beam response (Jones matrix).
-    let jones = beam
-        .calc_jones(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
-        .unwrap();
+    let jones = if para_bool {
+        beam.calc_jones(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
+    } else {
+        beam.calc_jones_eng(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
+    }
+    .unwrap();
 
-    // Because `jones` is a Rust slice, it is on the stack. We cannot safely
-    // pass this memory across the FFI boundary, so we put `jones` onto the heap
-    // by putting it in a Box. By casting the array of Complex64 into f64, we
-    // assume that the memory layout of a Complex64 is the same as two f64s side
-    // by side.
+    // Because `jones` is a Rust array, it is on the stack and will be "freed"
+    // at the end of this function. To transfer ownership of the array we put
+    // `jones` onto the heap by putting it in a Box. By casting the array of
+    // Complex64 into f64, we assume that the memory layout of a Complex64 is
+    // the same as two f64s side by side.
     Box::into_raw(Box::new(jones)) as *mut f64
 }
 
 /// Get the beam response Jones matrix for several az/za directions for the
 /// given pointing. The Jones matrix elements for each direction are put into a
-/// single array.
+/// single array. Can optionally re-define the X and Y polarisations and apply a
+/// parallactic-angle correction; see Jack's thorough investigation at
+/// https://github.com/JLBLine/polarisation_tests_for_FEE.
 ///
 /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
@@ -128,6 +144,7 @@ pub unsafe extern "C" fn calc_jones_array(
     delays: *const u32,
     amps: *const f64,
     norm_to_zenith: u8,
+    parallactic: u8,
 ) -> *mut f64 {
     let beam = &mut *fee_beam;
     let az = std::slice::from_raw_parts(az_rad, num_azza as usize);
@@ -139,10 +156,18 @@ pub unsafe extern "C" fn calc_jones_array(
         1 => true,
         _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
     };
+    let para_bool = match parallactic {
+        0 => false,
+        1 => true,
+        _ => panic!("A value other than 0 or 1 was used for parallactic"),
+    };
 
-    let mut jones = beam
-        .calc_jones_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
-        .unwrap();
+    let mut jones = if para_bool {
+        beam.calc_jones_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
+    } else {
+        beam.calc_jones_eng_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
+    }
+    .unwrap();
     let ptr = jones.as_mut_ptr();
     std::mem::forget(jones);
     ptr as *mut f64
@@ -159,6 +184,7 @@ pub unsafe extern "C" fn calc_jones_all_amps(
     delays: *const u32,
     amps: *const f64,
     norm_to_zenith: u8,
+    parallactic: u8,
 ) -> *mut f64 {
     let beam = &mut *fee_beam;
     let delays_s = std::slice::from_raw_parts(delays, 16);
@@ -168,10 +194,18 @@ pub unsafe extern "C" fn calc_jones_all_amps(
         1 => true,
         _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
     };
+    let para_bool = match parallactic {
+        0 => false,
+        1 => true,
+        _ => panic!("A value other than 0 or 1 was used for parallactic"),
+    };
 
-    let jones = beam
-        .calc_jones(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
-        .unwrap();
+    let jones = if para_bool {
+        beam.calc_jones(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
+    } else {
+        beam.calc_jones_eng(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
+    }
+    .unwrap();
 
     Box::into_raw(Box::new(jones)) as *mut f64
 }
@@ -188,6 +222,7 @@ pub unsafe extern "C" fn calc_jones_array_all_amps(
     delays: *const u32,
     amps: *const f64,
     norm_to_zenith: u8,
+    parallactic: u8,
 ) -> *mut f64 {
     let beam = &mut *fee_beam;
     let az = std::slice::from_raw_parts(az_rad, num_azza as usize);
@@ -199,10 +234,19 @@ pub unsafe extern "C" fn calc_jones_array_all_amps(
         1 => true,
         _ => panic!("A value other than 0 or 1 was used for norm_to_zenith"),
     };
+    let para_bool = match parallactic {
+        0 => false,
+        1 => true,
+        _ => panic!("A value other than 0 or 1 was used for parallactic"),
+    };
 
-    let mut jones = beam
-        .calc_jones_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
-        .unwrap();
+    let mut jones = if para_bool {
+        beam.calc_jones_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
+    } else {
+        beam.calc_jones_eng_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
+    }
+    .unwrap();
+
     let ptr = jones.as_mut_ptr();
     std::mem::forget(jones);
     ptr as *mut f64
@@ -301,6 +345,7 @@ mod tests {
                 [0; 16].as_ptr(),
                 [1.0; 16].as_ptr(),
                 0,
+                0,
             );
             Array1::from(Vec::from_raw_parts(jones_ptr, 8, 8))
         };
@@ -328,6 +373,7 @@ mod tests {
                 51200000,
                 [0; 16].as_ptr(),
                 [1.0; 16].as_ptr(),
+                0,
                 0,
             );
             Array1::from(Vec::from_raw_parts(

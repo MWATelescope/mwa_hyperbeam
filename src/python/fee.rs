@@ -47,7 +47,7 @@ impl FEEBeam {
 
     /// Calculate the Jones matrix for a single direction given a pointing.
     /// `delays` must have 16 ints, and `amps` must have 16 floats.
-    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)"]
+    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)"]
     fn calc_jones(
         &mut self,
         az_rad: f64,
@@ -56,19 +56,31 @@ impl FEEBeam {
         delays: [u32; 16],
         amps: [f64; 16],
         norm_to_zenith: bool,
+        parallactic: bool,
     ) -> PyResult<Py<PyArray1<numpy::c64>>> {
-        let jones = self.beam.calc_jones(
-            az_rad,
-            za_rad,
-            // hyperbeam expects an int for the frequency. By specifying
-            // that Python should pass in a float, it also allows an int to
-            // be passed in (!?). Convert the float here in Rust for usage
-            // in hyperbeam.
-            freq_hz.round() as _,
-            &delays,
-            &amps,
-            norm_to_zenith,
-        )?;
+        let jones = if parallactic {
+            self.beam.calc_jones(
+                az_rad,
+                za_rad,
+                // hyperbeam expects an int for the frequency. By specifying
+                // that Python should pass in a float, it also allows an int to
+                // be passed in (!?). Convert the float here in Rust for usage
+                // in hyperbeam.
+                freq_hz.round() as _,
+                &delays,
+                &amps,
+                norm_to_zenith,
+            )
+        } else {
+            self.beam.calc_jones_eng(
+                az_rad,
+                za_rad,
+                freq_hz.round() as _,
+                &delays,
+                &amps,
+                norm_to_zenith,
+            )
+        }?;
         // Ensure that the numpy crate's c64 is being used.
         let jones_py: Vec<numpy::c64> = jones.iter().map(|c| numpy::c64::new(c.re, c.im)).collect();
 
@@ -81,7 +93,7 @@ impl FEEBeam {
     /// Each direction is calculated in parallel by Rust. The number of parallel
     /// threads used can be controlled by setting RAYON_NUM_THREADS. `delays`
     /// must have 16 ints, and `amps` must have 16 floats.
-    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)"]
+    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)"]
     fn calc_jones_array(
         &mut self,
         az_rad: Vec<f64>,
@@ -90,15 +102,27 @@ impl FEEBeam {
         delays: [u32; 16],
         amps: [f64; 16],
         norm_to_zenith: bool,
+        parallactic: bool,
     ) -> PyResult<Py<PyArray2<numpy::c64>>> {
-        let jones = self.beam.calc_jones_array(
-            &az_rad,
-            &za_rad,
-            freq_hz.round() as _,
-            &delays,
-            &amps,
-            norm_to_zenith,
-        )?;
+        let jones = if parallactic {
+            self.beam.calc_jones_array(
+                &az_rad,
+                &za_rad,
+                freq_hz.round() as _,
+                &delays,
+                &amps,
+                norm_to_zenith,
+            )
+        } else {
+            self.beam.calc_jones_eng_array(
+                &az_rad,
+                &za_rad,
+                freq_hz.round() as _,
+                &delays,
+                &amps,
+                norm_to_zenith,
+            )
+        }?;
         // Flatten the four-element arrays into a single vector.
         let jones: Vec<numpy::c64> = jones
             .into_iter()
@@ -123,7 +147,7 @@ impl FEEBeam {
 
     /// The same as "calc_jones", but amps has 32 values. The first 16 values
     /// are for X dipole elements, the second 16 for Y.
-    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)"]
+    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)"]
     fn calc_jones_all_amps(
         &mut self,
         az_rad: f64,
@@ -132,19 +156,35 @@ impl FEEBeam {
         delays: [u32; 16],
         amps: [f64; 32],
         norm_to_zenith: bool,
+        parallactic: bool,
     ) -> PyResult<Py<PyArray1<numpy::c64>>> {
-        let jones = self.beam.calc_jones(
-            az_rad,
-            za_rad,
-            // hyperbeam expects an int for the frequency. By specifying
-            // that Python should pass in a float, it also allows an int to
-            // be passed in (!?). Convert the float here in Rust for usage
-            // in hyperbeam.
-            freq_hz.round() as _,
-            &delays,
-            &amps,
-            norm_to_zenith,
-        )?;
+        let jones = if parallactic {
+            self.beam.calc_jones(
+                az_rad,
+                za_rad,
+                // hyperbeam expects an int for the frequency. By specifying
+                // that Python should pass in a float, it also allows an int to
+                // be passed in (!?). Convert the float here in Rust for usage
+                // in hyperbeam.
+                freq_hz.round() as _,
+                &delays,
+                &amps,
+                norm_to_zenith,
+            )
+        } else {
+            self.beam.calc_jones_eng(
+                az_rad,
+                za_rad,
+                // hyperbeam expects an int for the frequency. By specifying
+                // that Python should pass in a float, it also allows an int to
+                // be passed in (!?). Convert the float here in Rust for usage
+                // in hyperbeam.
+                freq_hz.round() as _,
+                &delays,
+                &amps,
+                norm_to_zenith,
+            )
+        }?;
         // Ensure that the numpy crate's c64 is being used.
         let jones_py: Vec<numpy::c64> = jones.iter().map(|c| numpy::c64::new(c.re, c.im)).collect();
 
@@ -155,7 +195,7 @@ impl FEEBeam {
 
     /// The same as "calc_jones_array", but amps has 32 values. The first 16
     /// values are for X dipole elements, the second 16 for Y.
-    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)"]
+    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)"]
     fn calc_jones_array_all_amps(
         &mut self,
         az_rad: Vec<f64>,
@@ -164,15 +204,27 @@ impl FEEBeam {
         delays: [u32; 16],
         amps: [f64; 32],
         norm_to_zenith: bool,
+        parallactic: bool,
     ) -> PyResult<Py<PyArray2<numpy::c64>>> {
-        let jones = self.beam.calc_jones_array(
-            &az_rad,
-            &za_rad,
-            freq_hz.round() as _,
-            &delays,
-            &amps,
-            norm_to_zenith,
-        )?;
+        let jones = if parallactic {
+            self.beam.calc_jones_array(
+                &az_rad,
+                &za_rad,
+                freq_hz.round() as _,
+                &delays,
+                &amps,
+                norm_to_zenith,
+            )
+        } else {
+            self.beam.calc_jones_eng_array(
+                &az_rad,
+                &za_rad,
+                freq_hz.round() as _,
+                &delays,
+                &amps,
+                norm_to_zenith,
+            )
+        }?;
         // Flatten the four-element arrays into a single vector.
         let jones: Vec<numpy::c64> = jones
             .into_iter()

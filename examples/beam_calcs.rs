@@ -12,6 +12,8 @@
 //!
 //! https://crates.io/crates/mwa_hyperbeam
 
+use std::f64::consts::PI;
+
 use mwa_hyperbeam::fee::FEEBeam;
 use structopt::*;
 
@@ -28,6 +30,10 @@ struct Opts {
     /// Calculate the Jones matrices in parallel.
     #[structopt(short, long)]
     parallel: bool,
+
+    /// Don't apply parallactic-angle correction.
+    #[structopt(short, long)]
+    no_parallactic: bool,
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -39,11 +45,11 @@ fn main() -> Result<(), anyhow::Error> {
     };
 
     // Set up the directions to test.
-    let mut az = Vec::with_capacity(opts.num_directions);
-    let mut za = Vec::with_capacity(opts.num_directions);
+    let mut azs = vec![];
+    let mut zas = vec![];
     for i in 0..opts.num_directions {
-        az.push(0.9 * std::f64::consts::PI * i as f64 / opts.num_directions as f64);
-        za.push(0.1 + 0.9 * std::f64::consts::PI / 2.0 * i as f64 / opts.num_directions as f64);
+        azs.push(0.9 * PI * i as f64 / opts.num_directions as f64);
+        zas.push(0.1 + 0.9 * PI / 2.0 * i as f64 / opts.num_directions as f64);
     }
     let freq_hz = 51200000;
     // Delays and amps correspond to dipoles in the "M&C order". See
@@ -55,17 +61,26 @@ fn main() -> Result<(), anyhow::Error> {
 
     // Call hyperbeam.
     let jones = if opts.parallel {
-        beam.calc_jones_array(&az, &za, freq_hz, &delays, &amps, norm_to_zenith)
-            .unwrap()
+        if opts.no_parallactic {
+            beam.calc_jones_eng_array(&azs, &zas, freq_hz, &delays, &amps, norm_to_zenith)
+                .unwrap()
+        } else {
+            beam.calc_jones_array(&azs, &zas, freq_hz, &delays, &amps, norm_to_zenith)
+                .unwrap()
+        }
     } else {
-        az.into_iter()
-            .zip(za.into_iter())
-            .map(|(a, z)| {
-                beam.calc_jones(a, z, freq_hz, &delays, &amps, norm_to_zenith)
+        let mut results = vec![];
+        for (az, za) in azs.into_iter().zip(zas.into_iter()) {
+            let j = if opts.no_parallactic {
+                beam.calc_jones_eng(az, za, freq_hz, &delays, &amps, norm_to_zenith)
                     .unwrap()
-            })
-            .collect::<Vec<_>>()
-            .into()
+            } else {
+                beam.calc_jones(az, za, freq_hz, &delays, &amps, norm_to_zenith)
+                    .unwrap()
+            };
+            results.push(j);
+        }
+        results
     };
     println!("The first Jones matrix:");
     for j in jones.iter() {

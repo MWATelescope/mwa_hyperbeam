@@ -31,10 +31,14 @@ int main(int argc, char *argv[]) {
     unsigned delays[16] = {3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0};
     double amps[16] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1};
     int freq_hz = 51200000;
-    int norm_to_zenith = 0;
+    // Should we normalise the beam response?
+    int norm_to_zenith = 1;
+    // Should we apply the parallactic angle correction? Read more here:
+    // https://github.com/JLBLine/polarisation_tests_for_FEE
+    int parallactic = 1;
 
     // Calculate the Jones matrix for this direction and pointing.
-    double *jones = calc_jones(beam, az, za, freq_hz, delays, amps, norm_to_zenith);
+    double *jones = calc_jones(beam, az, za, freq_hz, delays, amps, norm_to_zenith, parallactic);
     printf("The returned Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", jones[0], jones[1]);
     printf(" %+.8f%+.8fi]\n", jones[2], jones[3]);
@@ -46,7 +50,7 @@ int main(int argc, char *argv[]) {
     // are X elements, second 16 are Y elements.
     double amps_2[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
                          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
-    double *jones_2 = calc_jones_all_amps(beam, az, za, freq_hz, delays, amps_2, norm_to_zenith);
+    double *jones_2 = calc_jones_all_amps(beam, az, za, freq_hz, delays, amps_2, norm_to_zenith, parallactic);
     // The resulting Jones matrix has different elements on the second row,
     // corresponding to the Y element; this is because we only altered the Y
     // amps.
@@ -62,5 +66,5 @@ int main(int argc, char *argv[]) {
     // Free the beam - we must use a special function to do this.
     free_fee_beam(beam);
 
-    return 0;
+    return EXIT_SUCCESS;
 }
