@@ -284,7 +284,7 @@ pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
 mod tests {
     use super::*;
     use approx::*;
-    use ndarray::prelude::*;
+    use marlu::ndarray::prelude::*;
     use serial_test::serial;
 
     #[test]

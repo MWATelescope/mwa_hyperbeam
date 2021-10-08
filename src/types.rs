@@ -7,10 +7,6 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-pub(crate) use num::complex::Complex64 as c64;
-
-pub(crate) type Jones = [c64; 4];
-
 #[derive(Debug)]
 pub(crate) enum Pol {
     X,

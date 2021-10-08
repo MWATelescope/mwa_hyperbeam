@@ -4,7 +4,7 @@
 <img src="hyperbeam.png" height="200px" alt="hyperbeam logo">
 <br/>
 <a href="https://docs.rs/crate/mwa_hyperbeam"><img src="https://docs.rs/mwa_hyperbeam/badge.svg" alt="docs"></a>
-<img src="https://github.com/MWATelescope/mwa_hyperbeam/workflows/Tests/badge.svg" alt="Tests">
+<img src="https://github.com/MWATelescope/mwa_hyperbeam/workflows/Cross-platform%20tests/badge.svg" alt="Cross-platform%20tests">
 </div>
 
 Primary beam code for the Murchison Widefield Array (MWA) radio telescope.
@@ -53,8 +53,8 @@ a Python wheel for all versions of Python 3.6+, as well as shared and static
 objects for C-style linking. To get an idea of how to link `hyperbeam`, see the
 `beam_calcs.c` file in the examples directory.
 
-Because these `hyperbeam` objects have the HDF5 library compiled in, the HDF5
-license is also distributed.
+Because these `hyperbeam` objects have the HDF5 and ERFA libraries compiled in,
+their respective licenses are also distributed.
 
 ### From source
 #### Prerequisites
@@ -71,9 +71,20 @@ license is also distributed.
   ```
 
 - [hdf5](https://www.hdfgroup.org/hdf5)
-  - Optional; use the `hdf5-static` feature.
+  - Optional; use the `hdf5-static` or `all-static` features.
+    - Requires `CMake` version 3.10 or higher.
   - Ubuntu: `libhdf5-dev`
   - Arch: `hdf5`
+  - The C library dir can be specified manually with `HDF5_DIR`
+    - If this is not specified, `pkg-config` is used to find the library.
+
+- [ERFA](https://github.com/liberfa/erfa)
+  - Optional; use the `erfa-static` or `all-static` features.
+    - Requires a C compiler and `autoconf`.
+  - Ubuntu: `liberfa-dev`
+  - Arch: AUR package `erfa`
+  - The C library dir can be specified manually with `ERFA_LIB`
+    - If this is not specified, `pkg-config` is used to find the library.
 
 </details>
 
@@ -85,7 +96,8 @@ For usage with other languages, an include file will be in the `include`
 directory, along with C-compatible shared and static objects in the
 `target/release` directory.
 
-To make `hyperbeam` without a dependence on a system HDF5 library, give the
+#### Static dependencies
+To make `hyperbeam` without a dependence on a system `HDF5` library, give the
 `build` command a feature flag:
 
     cargo build --release --features=hdf5-static
@@ -93,6 +105,19 @@ To make `hyperbeam` without a dependence on a system HDF5 library, give the
 This will automatically compile the HDF5 source code and "bake" it into the
 `hyperbeam` products, meaning that HDF5 is not needed as a system dependency.
 `CMake` version 3.10 or higher is needed to build the HDF5 source.
+
+Similarly, `hyperbeam` requires `ERFA`. This can also be compiled automatically
+with a feature flag:
+
+    cargo build --release --features=erfa-static
+
+This can be combined with other features:
+
+    cargo build --release --features=hdf5-static,erfa-static
+
+To compile all C libraries statically:
+
+    cargo build --release --features=all-static
 
 #### Python
 To install `hyperbeam` to your currently-in-use virtualenv or conda environment,

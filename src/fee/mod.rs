@@ -11,7 +11,7 @@ mod types;
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::sync::Mutex;
 
-use ndarray::{Array1, Array2};
+use marlu::{c64, ndarray::Array2, rayon, Jones};
 use rayon::prelude::*;
 
 use crate::constants::*;
@@ -402,7 +402,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-    ) -> Result<Jones, FEEBeamError> {
+    ) -> Result<Jones<f64>, FEEBeamError> {
         // `delays` must have 16 elements...
         debug_assert_eq!(delays.len(), 16);
         // ... but `amps` may have either 16 or 32. 32 elements corresponds to
@@ -462,7 +462,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-    ) -> Result<Array1<Jones>, FEEBeamError> {
+    ) -> Result<Vec<Jones<f64>>, FEEBeamError> {
         // `delays` must have 16 elements...
         debug_assert_eq!(delays.len(), 16);
         // ... but `amps` may have either 16 or 32. 32 elements corresponds to
@@ -500,13 +500,12 @@ impl FEEBeam {
         let coeffs = self.coeff_cache.get(&hash).unwrap();
         let norm = norm_freq.and_then(|f| self.norm_cache.get(&f));
 
-        let mut out = Vec::with_capacity(az_rad.len());
-        az_rad
+        let out = az_rad
             .par_iter()
             .zip(za_rad.par_iter())
             .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm.as_deref()))
-            .collect_into_vec(&mut out);
-        Ok(Array1::from(out))
+            .collect();
+        Ok(out)
     }
 
     /// Empty the cached dipole coefficients and normalisation Jones matrices to
@@ -564,8 +563,8 @@ fn calc_jones_direct(
     az_rad: f64,
     za_rad: f64,
     coeffs: &DipoleCoefficients,
-    norm_matrix: Option<&Jones>,
-) -> Jones {
+    norm_matrix: Option<&Jones<f64>>,
+) -> Jones<f64> {
     // Convert azimuth to FEKO phi (East through North).
     let phi_rad = FRAC_PI_2 - az_rad;
     let (mut j00, mut j01) = calc_sigmas(phi_rad, za_rad, &coeffs.x);
@@ -576,10 +575,10 @@ fn calc_jones_direct(
         j10 /= norm[2];
         j11 /= norm[3];
     }
-    [j00, j01, j10, j11]
+    Jones::from([j00, j01, j10, j11])
 }
 
-fn calc_zenith_norm_jones(coeffs: &DipoleCoefficients) -> Jones {
+fn calc_zenith_norm_jones(coeffs: &DipoleCoefficients) -> Jones<f64> {
     // Azimuth angles at which Jones components are maximum.
     let max_phi = [0.0, -FRAC_PI_2, FRAC_PI_2, 0.0];
     let (j00, _) = calc_sigmas(max_phi[0], 0.0, &coeffs.x);
@@ -591,12 +590,13 @@ fn calc_zenith_norm_jones(coeffs: &DipoleCoefficients) -> Jones {
     // but, confusingly, the returned "Jones matrix" is all real in the C++.
     // This less ambiguous in Rust.
     let abs = |c: c64| c64::new(c.norm(), 0.0);
-    [abs(j00), abs(j01), abs(j10), abs(j11)]
+    Jones::from([abs(j00), abs(j01), abs(j10), abs(j11)])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::jones_test::TestJones;
     use approx::*;
     use ndarray::prelude::*;
     use serial_test::serial;
@@ -1104,16 +1104,18 @@ mod tests {
             &[1.0; 16],
             false,
         ) {
-            Ok(j) => Array1::from(j.to_vec()),
+            Ok(j) => j,
             Err(e) => panic!("{}", e),
         };
 
-        let expected = array![
+        let expected = Jones::from([
             c64::new(0.036179, 0.103586),
             c64::new(0.036651, 0.105508),
             c64::new(0.036362, 0.103868),
             c64::new(-0.036836, -0.105791),
-        ];
+        ]);
+        let jones = TestJones::from(jones);
+        let expected = TestJones::from(expected);
         assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
     }
 
@@ -1131,16 +1133,18 @@ mod tests {
             ],
             false,
         ) {
-            Ok(j) => Array1::from(j.to_vec()),
+            Ok(j) => j,
             Err(e) => panic!("{}", e),
         };
 
-        let expected = array![
+        let expected = Jones::from([
             c64::new(0.068028, 0.111395),
             c64::new(0.025212, 0.041493),
             c64::new(0.024792, 0.040577),
             c64::new(-0.069501, -0.113706),
-        ];
+        ]);
+        let jones = TestJones::from(jones);
+        let expected = TestJones::from(expected);
         assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
     }
 
@@ -1149,16 +1153,18 @@ mod tests {
     fn test_calc_jones_norm() {
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let jones = match beam.calc_jones(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true) {
-            Ok(j) => Array1::from(j.to_vec()),
+            Ok(j) => j,
             Err(e) => panic!("{}", e),
         };
 
-        let expected = array![
+        let expected = Jones::from([
             c64::new(0.0887949, 0.0220569),
             c64::new(0.891024, 0.2211),
             c64::new(0.887146, 0.216103),
             c64::new(-0.0896141, -0.021803),
-        ];
+        ]);
+        let jones = TestJones::from(jones);
+        let expected = TestJones::from(expected);
         assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
     }
 
@@ -1176,16 +1182,18 @@ mod tests {
             ],
             true,
         ) {
-            Ok(j) => Array1::from(j.to_vec()),
+            Ok(j) => j,
             Err(e) => panic!("{}", e),
         };
 
-        let expected = array![
+        let expected = Jones::from([
             c64::new(0.0704266, -0.0251082),
             c64::new(0.705241, -0.254518),
             c64::new(0.697787, -0.257219),
             c64::new(-0.0711516, 0.0264293),
-        ];
+        ]);
+        let jones = TestJones::from(jones);
+        let expected = TestJones::from(expected);
         assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
     }
 }

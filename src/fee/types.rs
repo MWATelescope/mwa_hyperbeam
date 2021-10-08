@@ -5,6 +5,7 @@
 //! Helper types for the FEE beam.
 
 use dashmap::DashMap;
+use marlu::{c64, Jones};
 
 use crate::types::*;
 
@@ -47,10 +48,10 @@ impl std::ops::Deref for CoeffCache {
 /// to normalise beam responses at various frequencies (i.e. frequency is the
 /// key of the `HashMap`).
 #[derive(Default)]
-pub(super) struct NormCache(DashMap<u32, Jones>);
+pub(super) struct NormCache(DashMap<u32, Jones<f64>>);
 
 impl std::ops::Deref for NormCache {
-    type Target = DashMap<u32, Jones>;
+    type Target = DashMap<u32, Jones<f64>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

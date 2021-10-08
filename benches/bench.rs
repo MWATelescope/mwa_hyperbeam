@@ -6,6 +6,7 @@
 //! the project's root directory.
 
 use criterion::*;
+use marlu::rayon;
 use rayon::prelude::*;
 
 use mwa_hyperbeam::fee::*;

@@ -171,7 +171,7 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
 mod tests {
     use super::*;
     use approx::*;
-    use ndarray::prelude::*;
+    use marlu::ndarray::prelude::*;
 
     #[test]
     fn test_legendre_single() {

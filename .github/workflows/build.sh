@@ -17,22 +17,23 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         export RUSTFLAGS="-C target-cpu=${level}"
 
         # Build python first
-        maturin build --release --cargo-extra-args='--features=python,hdf5-static' --strip
+        maturin build --release --cargo-extra-args='--features=python,all-static' --strip
 
         # Build C objects
-        cargo build --release --features hdf5-static
+        cargo build --release --features all-static
 
-        # Because we've compiled HDF5 into hyperbeam products, we legally must
-        # distribute the HDF5 license with the products.
+        # Because we've compiled HDF5 and ERFA into hyperbeam products, we
+        # legally must distribute their licenses with the products.
         curl https://raw.githubusercontent.com/HDFGroup/hdf5/develop/COPYING -o COPYING-hdf5
+        curl https://raw.githubusercontent.com/liberfa/erfa/master/LICENSE -o LICENSE-erfa
 
         # Create new release asset tarballs
         mv target/wheels/*.whl target/release/libmwa_hyperbeam.{a,so} include/mwa_hyperbeam.h .
         tar -acvf mwa_hyperbeam-$(git describe --tags)-Linux-C-library-${level}.tar.gz \
-            LICENSE COPYING-hdf5 README.md \
+            LICENSE COPYING-hdf5 LICENSE-erfa README.md \
             libmwa_hyperbeam.{a,so} mwa_hyperbeam.h
         tar -acvf mwa_hyperbeam-$(git describe --tags)-Linux-Python-${level}.tar.gz \
-            LICENSE COPYING-hdf5 README.md \
+            LICENSE COPYING-hdf5 LICENSE-erfa README.md \
             ./*.whl
     done
 elif [[ "$OSTYPE" == "darwin"* ]]; then
@@ -45,20 +46,21 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     pip3 install maturin
 
     # Build python first
-    maturin build --release --cargo-extra-args='--features=python,hdf5-static' --strip
+    maturin build --release --cargo-extra-args='--features=python,all-static' --strip
 
     # Build C objects
-    cargo build --release --features hdf5-static
+    cargo build --release --features all-static
 
-    # Because we've compiled HDF5 into hyperbeam products, we legally must
-    # distribute the HDF5 license with the products.
+    # Because we've compiled HDF5 and ERFA into hyperbeam products, we legally
+    # must distribute their licenses with the products.
     curl https://raw.githubusercontent.com/HDFGroup/hdf5/develop/COPYING -o COPYING-hdf5
+    curl https://raw.githubusercontent.com/liberfa/erfa/master/LICENSE -o LICENSE-erfa
 
     mv target/wheels/*.whl target/release/libmwa_hyperbeam.{a,dylib} include/mwa_hyperbeam.h .
     tar -acvf mwa_hyperbeam-$(git describe --tags)-MacOSX-C-library.tar.gz \
-        LICENSE COPYING-hdf5 README.md \
+        LICENSE COPYING-hdf5 LICENSE-erfa README.md \
         libmwa_hyperbeam.{a,dylib} mwa_hyperbeam.h
     tar -acvf mwa_hyperbeam-$(git describe --tags)-MacOSX-Python.tar.gz \
-        LICENSE COPYING-hdf5 README.md \
+        LICENSE COPYING-hdf5 LICENSE-erfa README.md \
         ./*.whl
 fi
