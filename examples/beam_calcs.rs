@@ -14,32 +14,43 @@
 
 use std::f64::consts::PI;
 
+use clap::Parser;
 use mwa_hyperbeam::fee::FEEBeam;
-use structopt::*;
 
-#[derive(StructOpt, Debug)]
-struct Opts {
+#[derive(Parser, Debug)]
+#[clap()]
+struct Args {
     /// Path to the HDF5 file.
-    #[structopt(short, long, parse(from_os_str))]
+    #[clap(short, long, parse(from_os_str))]
     hdf5_file: Option<std::path::PathBuf>,
 
     /// The number of directions to run.
-    #[structopt()]
+    #[clap()]
     num_directions: usize,
 
+    /// Use these delays when calculating the beam response. There must be 16
+    /// values.
+    #[clap(short, long, multiple_values(true))]
+    delays: Option<Vec<u32>>,
+
+    /// Use these dipole gains when calculating the beam response. There must be
+    /// 16 or 32 values.
+    #[clap(short, long, multiple_values(true))]
+    gains: Option<Vec<f64>>,
+
     /// Calculate the Jones matrices in parallel.
-    #[structopt(short, long)]
+    #[clap(short, long)]
     parallel: bool,
 
     /// Don't apply parallactic-angle correction.
-    #[structopt(short, long)]
+    #[clap(short, long)]
     no_parallactic: bool,
 }
 
 fn main() -> Result<(), anyhow::Error> {
-    let opts = Opts::from_args();
+    let args = Args::parse();
     // If we were given a file, use it. Otherwise, fall back on MWA_BEAM_FILE.
-    let beam = match opts.hdf5_file {
+    let beam = match args.hdf5_file {
         Some(f) => FEEBeam::new(f)?,
         None => FEEBeam::new_from_env()?,
     };
@@ -47,21 +58,23 @@ fn main() -> Result<(), anyhow::Error> {
     // Set up the directions to test.
     let mut azs = vec![];
     let mut zas = vec![];
-    for i in 0..opts.num_directions {
-        azs.push(0.9 * PI * i as f64 / opts.num_directions as f64);
-        zas.push(0.1 + 0.9 * PI / 2.0 * i as f64 / opts.num_directions as f64);
+    for i in 0..args.num_directions {
+        azs.push(0.9 * PI * i as f64 / args.num_directions as f64);
+        zas.push(0.1 + 0.9 * PI / 2.0 * i as f64 / args.num_directions as f64);
     }
     let freq_hz = 51200000;
     // Delays and amps correspond to dipoles in the "M&C order". See
     // https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139) for
     // more info.
-    let delays = vec![0; 16];
-    let amps = vec![1.0; 16];
+    let delays = args.delays.unwrap_or_else(|| vec![0; 16]);
+    assert_eq!(delays.len(), 16);
+    let amps = args.gains.unwrap_or_else(|| vec![1.0; 16]);
+    assert!(amps.len() == 16 || amps.len() == 32);
     let norm_to_zenith = false;
 
     // Call hyperbeam.
-    let jones = if opts.parallel {
-        if opts.no_parallactic {
+    let jones = if args.parallel {
+        if args.no_parallactic {
             beam.calc_jones_eng_array(&azs, &zas, freq_hz, &delays, &amps, norm_to_zenith)
                 .unwrap()
         } else {
@@ -71,7 +84,7 @@ fn main() -> Result<(), anyhow::Error> {
     } else {
         let mut results = vec![];
         for (az, za) in azs.into_iter().zip(zas.into_iter()) {
-            let j = if opts.no_parallactic {
+            let j = if args.no_parallactic {
                 beam.calc_jones_eng(az, za, freq_hz, &delays, &amps, norm_to_zenith)
                     .unwrap()
             } else {

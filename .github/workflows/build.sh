@@ -9,7 +9,7 @@ cp .github/workflows/releases-readme.md README.md
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
     # I don't know why, but I need to reinstall Rust. Probably something to do with
     # GitHub overriding env variables.
-    curl https://sh.rustup.rs -sSf | sh -s -- -y
+    curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
 
     # Build a release for each x86_64 microarchitecture level. v4 can't be
     # compiled on GitHub for some reason.

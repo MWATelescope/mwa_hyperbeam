@@ -4,8 +4,10 @@
 
 //! Helper types for the FEE beam.
 
-use dashmap::DashMap;
+use std::collections::HashMap;
+
 use marlu::{c64, Jones};
+use parking_lot::RwLock;
 
 use crate::types::CacheKey;
 
@@ -29,14 +31,13 @@ pub(super) struct BowtieCoefficients {
     pub(super) y: DipoleCoefficients,
 }
 
-/// [CoeffCache] is mostly just a `RwLock` around a `HashMap` (which is handled
-/// by [DashMap]). This allows multiple concurrent readers with the ability to
-/// halt all reading when writing.
+/// [CoeffCache] is just a `RwLock` around a `HashMap`. This allows multiple
+/// concurrent readers with the ability to halt all reading when writing.
 #[derive(Default)]
-pub(super) struct CoeffCache(DashMap<CacheKey, BowtieCoefficients>);
+pub(super) struct CoeffCache(RwLock<HashMap<CacheKey, BowtieCoefficients>>);
 
 impl std::ops::Deref for CoeffCache {
-    type Target = DashMap<CacheKey, BowtieCoefficients>;
+    type Target = RwLock<HashMap<CacheKey, BowtieCoefficients>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -47,10 +48,10 @@ impl std::ops::Deref for CoeffCache {
 /// to normalise beam responses at various frequencies (i.e. frequency is the
 /// key of the cache).
 #[derive(Default)]
-pub(super) struct NormCache(DashMap<u32, Jones<f64>>);
+pub(super) struct NormCache(RwLock<HashMap<u32, Jones<f64>>>);
 
 impl std::ops::Deref for NormCache {
-    type Target = DashMap<u32, Jones<f64>>;
+    type Target = RwLock<HashMap<u32, Jones<f64>>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0

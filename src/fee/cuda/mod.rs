@@ -29,17 +29,17 @@ cfg_if::cfg_if! {
 #[cfg(test)]
 mod tests;
 
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::hash_map::DefaultHasher;
 use std::convert::TryInto;
 use std::ffi::CString;
+use std::hash::{Hash, Hasher};
 
 use marlu::{
     c64,
     cuda::{cuda_status_to_error, DevicePointer},
-    ndarray, rayon, Jones,
+    ndarray, Jones,
 };
 use ndarray::prelude::*;
-use rayon::prelude::*;
 
 use super::{fix_amps, FEEBeam, FEEBeamError};
 use crate::types::CacheKey;
@@ -72,22 +72,29 @@ pub struct FEEBeamCUDA {
 
     /// The number of tiles used to generate the `FEECoeffs`. Also one of the indices
     /// used to make `(d_)coeff_map`.
-    pub(super) num_tiles: i32,
+    pub(super) num_unique_tiles: i32,
 
     /// The number of frequencies used to generate `FEECoeffs`. Also one of the
     /// indices used to make `(d_)coeff_map`.
-    pub(super) num_freqs: i32,
+    pub(super) num_unique_freqs: i32,
 
-    /// Coefficients map. This is used to access de-duplicated Jones matrices.
+    /// Tile map. This is used to access de-duplicated Jones matrices.
     /// Not using this would mean that Jones matrices have to be 1:1 with
     /// threads, and that potentially uses a huge amount of compute and memory!
-    coeff_map: Array2<(usize, usize)>,
+    tile_map: Vec<i32>,
 
-    /// Device pointer to the coefficients map. This is used to access
-    /// de-duplicated Jones matrices. Not using this would mean that Jones
-    /// matrices have to be 1:1 with threads, and that potentially uses a huge
-    /// amount of compute and memory!
-    d_coeff_map: DevicePointer<u64>,
+    /// Tile map. This is used to access de-duplicated Jones matrices.
+    /// Not using this would mean that Jones matrices have to be 1:1 with
+    /// threads, and that potentially uses a huge amount of compute and memory!
+    freq_map: Vec<i32>,
+
+    /// The device pointer to the `tile_map` (same as the host's memory
+    /// equivalent above).
+    d_tile_map: DevicePointer<i32>,
+
+    /// The device pointer to the `freq_map` (same as the host's memory
+    /// equivalent above).
+    d_freq_map: DevicePointer<i32>,
 
     /// Jones matrices for normalising the beam response. This array has the
     /// same shape as `coeff_map`. If this is `None`, then no normalisation is
@@ -122,67 +129,77 @@ impl FEEBeamCUDA {
         // amplitudes.
         debug_assert!(amps_array.dim().1 == 16 || amps_array.dim().1 == 32);
 
-        // Prepare the cache with all unique combinations of tiles and frequencies
-        let hash_results: Vec<Vec<Result<_, _>>> = delays_array
+        // Prepare the cache with all unique combinations of tiles and
+        // frequencies. Track all of the unique tiles and frequencies to allow
+        // de-duplication.
+        let mut unique_hashes = vec![];
+        let mut unique_tiles = vec![];
+        let mut unique_fee_freqs = vec![];
+        let mut tile_map = vec![];
+        let mut freq_map = vec![];
+        let mut i_tile = 0;
+        let mut i_freq = 0;
+        for (i, (delays, amps)) in delays_array
             .outer_iter()
-            .into_par_iter()
-            .zip(amps_array.outer_iter().into_par_iter())
+            .zip(amps_array.outer_iter())
             .enumerate()
-            .map(|(i_tile, (delays, amps))| {
-                // unwrap is safe as these collections are contiguous.
-                let delays = delays.as_slice().unwrap();
-                let full_amps = fix_amps(amps.as_slice().unwrap(), delays);
-                freqs_hz
+        {
+            // unwrap is safe as these collections are contiguous (outer iter).
+            let delays = delays.as_slice().unwrap();
+            let full_amps = fix_amps(amps.as_slice().unwrap(), delays);
+
+            let mut unique_tile_hasher = DefaultHasher::new();
+            delays.hash(&mut unique_tile_hasher);
+            // We can't hash f64 values, but we can hash their bits.
+            for amp in full_amps {
+                amp.to_bits().hash(&mut unique_tile_hasher);
+            }
+            let unique_tile_hash = unique_tile_hasher.finish();
+            let this_tile_index = if unique_tiles.contains(&unique_tile_hash) {
+                unique_tiles
                     .iter()
                     .enumerate()
-                    .map(|(i_freq, freq)| {
-                        // If we're normalising the beam responses, cache the
-                        // normalisation Jones matrices too.
-                        if norm_to_zenith {
-                            fee_beam.populate_norm_jones(*freq).and_then(|fee_freq| {
-                                fee_beam
-                                    .populate_modes(*freq, delays, &full_amps)
-                                    .map(|h| ((i_tile, i_freq, fee_freq), h))
-                            })
-                        } else {
-                            fee_beam
-                                .populate_modes(*freq, delays, &full_amps)
-                                .map(|h| ((i_tile, i_freq, 0), h))
-                        }
-                    })
-                    .collect::<Vec<Result<_, _>>>()
-            })
-            .collect();
+                    .find(|(_, t)| **t == unique_tile_hash)
+                    .unwrap()
+                    .0 as i32
+            } else {
+                unique_tiles.push(unique_tile_hash);
+                i_tile += 1;
+                i_tile - 1
+            };
+            tile_map.push(this_tile_index);
 
-        let mut unique_hash_set = HashSet::new();
-        let mut unique_tile_set = HashSet::new();
-        let mut unique_freq_set = HashMap::new();
-        let mut unique_hashes = vec![];
-        let mut row = 0;
-        let mut col = 0;
-        for hash_collection in hash_results {
-            for hash_result in hash_collection {
-                let ((i_tile, i_freq, fee_freq), hash) = hash_result?;
+            for freq in freqs_hz {
+                // If we're normalising the beam responses, cache the
+                // normalisation Jones matrices too.
+                if norm_to_zenith {
+                    fee_beam.get_norm_jones(*freq)?;
+                }
 
-                if !unique_hash_set.contains(&hash) {
-                    unique_hash_set.insert(hash);
-                    // Unique hash found. Have we seen this tile before?
-                    if !unique_tile_set.contains(&i_tile) {
-                        // Put it in the set and increment the unique row
-                        // dimension.
-                        unique_tile_set.insert(i_tile);
-                        row += 1;
-                    }
+                let _ = fee_beam.get_modes(*freq, delays, &full_amps)?;
 
-                    // Have we seen this frequency before?
-                    if let Entry::Vacant(e) = unique_freq_set.entry(i_freq) {
-                        // Put it in the set and increment the unique column
-                        // dimension.
-                        e.insert(col);
-                        col += 1;
-                    }
+                let fee_freq = fee_beam.find_closest_freq(*freq);
+                let hash = CacheKey::new(fee_freq, delays, &full_amps);
+                if !unique_hashes.contains(&(hash, fee_freq)) {
+                    unique_hashes.push((hash, fee_freq));
+                }
 
-                    unique_hashes.push((hash, (row - 1, unique_freq_set[&i_freq], fee_freq)));
+                // No need to do this code more than once; frequency redundancy
+                // applies to all tiles.
+                if i == 0 {
+                    let this_freq_index = if unique_fee_freqs.contains(&fee_freq) {
+                        unique_fee_freqs
+                            .iter()
+                            .enumerate()
+                            .find(|(_, f)| **f == fee_freq)
+                            .unwrap()
+                            .0 as i32
+                    } else {
+                        unique_fee_freqs.push(fee_freq);
+                        i_freq += 1;
+                        i_freq - 1
+                    };
+                    freq_map.push(this_freq_index);
                 }
             }
         }
@@ -214,8 +231,9 @@ impl FEEBeamCUDA {
                 .collect()
         };
 
-        unique_hashes.iter().for_each(|(hash, (_, _, fee_freq))| {
-            let coeffs = fee_beam.coeff_cache.get(hash).unwrap();
+        let num_coeffs = unique_hashes.len().try_into().unwrap();
+        unique_hashes.into_iter().for_each(|(hash, fee_freq)| {
+            let coeffs = &fee_beam.coeff_cache.read()[&hash];
             let x_offset = x_offsets
                 .last()
                 .and_then(|&o| x_lengths.last().map(|&l| l + o))
@@ -248,43 +266,9 @@ impl FEEBeamCUDA {
             y_offsets.push(y_offset);
 
             if norm_to_zenith {
-                norm_jones.push(*fee_beam.norm_cache.get(fee_freq).unwrap());
+                norm_jones.push(*fee_beam.norm_cache.read()[&fee_freq]);
             }
         });
-
-        let coeff_dedup_map: HashMap<CacheKey, (usize, usize)> = unique_hashes
-            .iter()
-            .map(|(hash, (tile_index, freq_index, _))| (*hash, (*tile_index, *freq_index)))
-            .collect();
-
-        // Now map each combination of frequency and tile parameters to its
-        // unique dipole coefficients. The mapping is an index into the 1D array
-        // `unique_hashes`, which corresponds exactly to `cuda_coeffs`.
-        let mut coeff_map = Array2::from_elem((delays_array.dim().0, freqs_hz.len()), (0, 0));
-        coeff_map
-            .outer_iter_mut()
-            .into_par_iter()
-            .zip(delays_array.outer_iter().into_par_iter())
-            .zip(amps_array.outer_iter().into_par_iter())
-            .try_for_each(|((mut freq_coeff_indices, delays), amps)| {
-                let delays = delays.as_slice().unwrap();
-                let full_amps = fix_amps(amps.as_slice().unwrap(), delays);
-                freq_coeff_indices
-                    .iter_mut()
-                    .zip(freqs_hz.iter())
-                    .try_for_each(|(freq_coeff_index, freq)| {
-                        match fee_beam.populate_modes(*freq, delays, &full_amps) {
-                            Ok(hash) => {
-                                *freq_coeff_index = coeff_dedup_map[&hash];
-                                Ok(())
-                            }
-                            Err(e) => Err(e),
-                        }
-                    })
-            })?;
-
-        let num_tiles = unique_tile_set.len().try_into().unwrap();
-        let num_freqs = unique_freq_set.len().try_into().unwrap();
 
         let x_q1_accum = DevicePointer::copy_to_device(&x_q1_accum)?;
         let x_q2_accum = DevicePointer::copy_to_device(&x_q2_accum)?;
@@ -304,13 +288,11 @@ impl FEEBeamCUDA {
         let y_lengths = DevicePointer::copy_to_device(&y_lengths)?;
         let y_offsets = DevicePointer::copy_to_device(&y_offsets)?;
 
-        // Put the map's tuple elements into a single int, while demoting
-        // the size of the ints; CUDA goes a little faster with "int"
-        // instead of "size_t". Overflowing ints? Well, that'd be a big
-        // problem, but there's almost certainly insufficient memory before
-        // that happens.
-        let coeff_map_ints = coeff_map.mapv(|(i_row, i_col)| ((i_row << 32) + i_col) as u64);
-        let d_coeff_map = DevicePointer::copy_to_device(coeff_map_ints.as_slice().unwrap())?;
+        let num_unique_tiles = unique_tiles.len().try_into().unwrap();
+        let num_unique_freqs = unique_fee_freqs.len().try_into().unwrap();
+
+        let d_tile_map = DevicePointer::copy_to_device(&tile_map)?;
+        let d_freq_map = DevicePointer::copy_to_device(&freq_map)?;
 
         let d_norm_jones = if norm_jones.is_empty() {
             None
@@ -352,12 +334,14 @@ impl FEEBeamCUDA {
             y_lengths,
             y_offsets,
 
-            num_coeffs: unique_hashes.len().try_into().unwrap(),
-            num_tiles,
-            num_freqs,
+            num_coeffs,
+            num_unique_tiles,
+            num_unique_freqs,
 
-            coeff_map,
-            d_coeff_map,
+            tile_map,
+            freq_map,
+            d_tile_map,
+            d_freq_map,
             d_norm_jones,
         })
     }
@@ -373,8 +357,8 @@ impl FEEBeamCUDA {
         unsafe {
             // Allocate a buffer on the device for results.
             let d_results = DevicePointer::malloc(
-                self.num_tiles as usize
-                    * self.num_freqs as usize
+                self.num_unique_tiles as usize
+                    * self.num_unique_freqs as usize
                     * az_rad.len()
                     * std::mem::size_of::<Jones<CudaFloat>>(),
             )?;
@@ -418,8 +402,8 @@ impl FEEBeamCUDA {
         let device_ptr = self.calc_jones_device(az_rad, za_rad, parallactic)?;
         let mut jones_results: Array3<Jones<CudaFloat>> = Array3::from_elem(
             (
-                self.num_tiles as usize,
-                self.num_freqs as usize,
+                self.num_unique_tiles as usize,
+                self.num_unique_freqs as usize,
                 az_rad.len(),
             ),
             Jones::default(),
@@ -432,18 +416,21 @@ impl FEEBeamCUDA {
 
         // Expand the results according to the map.
         let mut jones_expanded = Array3::from_elem(
-            (self.coeff_map.dim().0, self.coeff_map.dim().1, az_rad.len()),
+            (self.tile_map.len(), self.freq_map.len(), az_rad.len()),
             Jones::default(),
         );
         jones_expanded
             .outer_iter_mut()
-            .zip(self.coeff_map.outer_iter())
-            .for_each(|(mut jones_row, index_row)| {
-                jones_row.outer_iter_mut().zip(index_row.iter()).for_each(
-                    |(mut jones_col, &(i_row, i_col))| {
+            .zip(self.tile_map.iter())
+            .for_each(|(mut jones_row, &i_row)| {
+                let i_row: usize = i_row.try_into().unwrap();
+                jones_row
+                    .outer_iter_mut()
+                    .zip(self.freq_map.iter())
+                    .for_each(|(mut jones_col, &i_col)| {
+                        let i_col: usize = i_col.try_into().unwrap();
                         jones_col.assign(&jones_results.slice(s![i_row, i_col, ..]));
-                    },
-                )
+                    })
             });
         Ok(jones_expanded)
     }
@@ -471,15 +458,21 @@ impl FEEBeamCUDA {
         }
     }
 
-    /// Get a pointer to the device beam Jones map. This is necessary to access
+    /// Get a pointer to the device tile map. This is necessary to access
     /// de-duplicated beam Jones matrices on the device.
-    pub fn get_beam_jones_map(&self) -> *const u64 {
-        self.d_coeff_map.get()
+    pub fn get_tile_map(&self) -> *const i32 {
+        self.d_tile_map.get()
+    }
+
+    /// Get a pointer to the device freq map. This is necessary to access
+    /// de-duplicated beam Jones matrices on the device.
+    pub fn get_freq_map(&self) -> *const i32 {
+        self.d_freq_map.get()
     }
 
     /// Get the number of de-duplicated frequencies associated with this
     /// [FEEBeamCUDA].
     pub fn get_num_unique_freqs(&self) -> i32 {
-        self.num_freqs
+        self.num_unique_freqs
     }
 }

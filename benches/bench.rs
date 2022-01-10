@@ -24,11 +24,11 @@ fn fee(c: &mut Criterion) {
         let za = 80.0_f64.to_radians();
         let freq = 51200000;
         let delays = [0; 16];
-        let gains = [1.0; 16];
+        let amps = [1.0; 16];
         let norm_to_zenith = false;
         b.iter(|| {
             let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-            beam.calc_jones(az, za, freq, &delays, &gains, norm_to_zenith)
+            beam.calc_jones(az, za, freq, &delays, &amps, norm_to_zenith)
                 .unwrap();
         })
     });
@@ -38,11 +38,11 @@ fn fee(c: &mut Criterion) {
         let za = 80.0_f64.to_radians();
         let freq = 51200000;
         let delays = [0; 16];
-        let gains = [1.0; 16];
+        let amps = [1.0; 16];
         let norm_to_zenith = false;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         b.iter(|| {
-            beam.calc_jones(az, za, freq, &delays, &gains, norm_to_zenith)
+            beam.calc_jones(az, za, freq, &delays, &amps, norm_to_zenith)
                 .unwrap();
             beam.empty_cache();
         })
@@ -53,14 +53,14 @@ fn fee(c: &mut Criterion) {
         let za = 80.0_f64.to_radians();
         let freq = 51200000;
         let delays = [0; 16];
-        let gains = [1.0; 16];
+        let amps = [1.0; 16];
         let norm_to_zenith = false;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones(az, za, freq, &delays, &gains, norm_to_zenith)
+        beam.calc_jones(az, za, freq, &delays, &amps, norm_to_zenith)
             .unwrap();
         b.iter(|| {
-            beam.calc_jones(az, za, freq, &delays, &gains, norm_to_zenith)
+            beam.calc_jones(az, za, freq, &delays, &amps, norm_to_zenith)
                 .unwrap();
         })
     });
@@ -75,14 +75,14 @@ fn fee(c: &mut Criterion) {
         }
         let freq = 51200000;
         let delays = [0; 16];
-        let gains = [1.0; 16];
+        let amps = [1.0; 16];
         let norm_to_zenith = false;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones(az[0], za[0], freq, &delays, &gains, norm_to_zenith)
+        beam.calc_jones(az[0], za[0], freq, &delays, &amps, norm_to_zenith)
             .unwrap();
         b.iter(|| {
-            beam.calc_jones_array(&az, &za, freq, &delays, &gains, norm_to_zenith)
+            beam.calc_jones_array(&az, &za, freq, &delays, &amps, norm_to_zenith)
                 .unwrap();
         })
     });
@@ -99,17 +99,17 @@ fn fee(c: &mut Criterion) {
         }
         let freq = 51200000;
         let delays = [0; 16];
-        let gains = [1.0; 16];
+        let amps = [1.0; 16];
         let norm_to_zenith = false;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones(az[0], za[0], freq, &delays, &gains, norm_to_zenith)
+        beam.calc_jones(az[0], za[0], freq, &delays, &amps, norm_to_zenith)
             .unwrap();
         b.iter(|| {
             az.par_iter()
                 .zip(za.par_iter())
                 .map(|(&a, &z)| {
-                    beam.calc_jones(a, z, freq, &delays, &gains, norm_to_zenith)
+                    beam.calc_jones(a, z, freq, &delays, &amps, norm_to_zenith)
                         .unwrap()
                 })
                 .collect::<Vec<_>>();
@@ -217,24 +217,24 @@ fn fee(c: &mut Criterion) {
     // c.bench_function("calculating coefficients", |b| {
     //     let freq = 51200000;
     //     let delays = [0; 16];
-    //     let gains = [1.0; 16];
+    //     let amps = [1.0; 32];
+    //     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
     //     b.iter(|| {
-    //         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    //         beam.populate_modes(freq, &delays, &gains).unwrap();
+    //         beam.calc_modes(freq, &delays, &amps).unwrap();
     //     })
     // });
 
     // c.bench_function("getting coefficients from cache", |b| {
     //     let freq = 51200000;
     //     let delays = [0; 16];
-    //     let gains = [1.0; 16];
-    //     // Prime the cache.
+    //     let amps = [1.0; 32];
     //     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    //     beam.populate_modes(freq, &delays, &gains).unwrap();
+    //     // Prime the cache.
+    //     let _ = beam.get_modes(freq, &delays, &amps).unwrap();
     //     b.iter(|| {
     //         // By calling populate_modes before the loop we are benchmarking a
     //         // hot cache.
-    //         beam.populate_modes(freq, &delays, &gains).unwrap();
+    //         let _ = beam.get_modes(freq, &delays, &amps).unwrap();
     //     })
     // });
 }

@@ -52,8 +52,8 @@ typedef struct JONES {
     CUCOMPLEX j11;
 } JONES;
 
-__global__ void use_hyperbeam_values(JONES *d_jones, const uint64_t *d_map, int num_unique_fee_freqs, int num_tiles,
-                                     int num_freqs, int num_directions) {
+__global__ void use_hyperbeam_values(JONES *d_jones, const int *d_tile_map, const int *d_freq_map,
+                                     int num_unique_fee_freqs, int num_tiles, int num_freqs, int num_directions) {
     int i_tile = blockIdx.y;
     int i_freq = blockIdx.z;
     if (i_tile >= num_tiles)
@@ -66,9 +66,8 @@ __global__ void use_hyperbeam_values(JONES *d_jones, const uint64_t *d_map, int 
 
     // For *this tile* and *this frequency*, access the de-duplicated beam
     // response.
-    uint64_t i_map = d_map[i_tile * num_unique_fee_freqs + i_freq];
-    int i_row = i_map >> 32;
-    int i_col = i_map & 0xffffffff;
+    int i_row = d_tile_map[i_tile];
+    int i_col = d_freq_map[i_freq];
     JONES jones = d_jones[((num_directions * num_unique_fee_freqs * i_row) + num_directions * i_col) + i_dir];
 
     // To test that the right response is paired with the right tile, assert
@@ -175,7 +174,8 @@ int main(int argc, char *argv[]) {
     // interface with the values. This kernel prints messages if the values are
     // not what was expected. We need to have a couple of bits of metadata to
     // interface with the beam responses.
-    const uint64_t *d_beam_map = get_cuda_map(cuda_beam);
+    const int *d_tile_map = get_tile_map(cuda_beam);
+    const int *d_freq_map = get_freq_map(cuda_beam);
     int num_unique_fee_freqs = get_num_unique_fee_freqs(cuda_beam);
 
     dim3 gridDim, blockDim;
@@ -183,8 +183,8 @@ int main(int argc, char *argv[]) {
     gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
     gridDim.y = num_tiles; // The total number of tiles, not the unique count.
     gridDim.z = num_freqs; // The total number of freqs, not the unique count.
-    use_hyperbeam_values<<<gridDim, blockDim>>>(d_jones, d_beam_map, num_unique_fee_freqs, num_tiles, num_freqs,
-                                                num_directions);
+    use_hyperbeam_values<<<gridDim, blockDim>>>(d_jones, d_tile_map, d_freq_map, num_unique_fee_freqs, num_tiles,
+                                                num_freqs, num_directions);
     // Check that our kernel had no issues.
     cudaError_t cuda_err_code = cudaPeekAtLastError();
     if (cuda_err_code != cudaSuccess) {

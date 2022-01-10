@@ -3,8 +3,13 @@
 <div class="bg-gray-dark" align="center" style="background-color:#24292e">
 <img src="hyperbeam.png" height="200px" alt="hyperbeam logo">
 <br/>
-<a href="https://docs.rs/crate/mwa_hyperbeam"><img src="https://docs.rs/mwa_hyperbeam/badge.svg" alt="docs"></a>
-<img src="https://github.com/MWATelescope/mwa_hyperbeam/workflows/Cross-platform%20tests/badge.svg" alt="Cross-platform%20tests">
+<a href="https://crates.io/crates/mwa_hyperbeam">
+  <img src="https://img.shields.io/crates/v/mwa_hyperbeam?logo=rust" alt="crates.io"></a>
+<a href="https://docs.rs/crate/mwa_hyperbeam">
+  <img src="https://img.shields.io/docsrs/mwa_hyperbeam?logo=rust" alt="docs.rs"></a>
+<img src="https://img.shields.io/github/workflow/status/MWATelescope/mwa_hyperbeam/Cross-platform%20tests?label=Cross-platform%20tests&logo=github" alt="Cross-platform%20tests">
+<a href="https://codecov.io/gh/MWATelescope/mwa_hyperbeam">
+  <img src="https://codecov.io/gh/MWATelescope/mwa_hyperbeam/branch/main/graph/badge.svg?token=61JYU54DG2"/></a>
 </div>
 
 Primary beam code for the Murchison Widefield Array (MWA) radio telescope.
@@ -15,6 +20,10 @@ Sokolowski's](https://ui.adsabs.harvard.edu/abs/2017PASA...34...62S/abstract)
 Full Embedded Element (FEE) primary beam model of the MWA, a.k.a. "the 2016
 beam". This code should be used over all others. If there are soundness issues,
 please raise them here so everyone can benefit.
+
+See the
+[changelog](https://github.com/MWATelescope/mwa_hyperbeam/blob/main/CHANGELOG.md)
+for the latest changes to the code.
 
 ## Usage
 `hyperbeam` requires the MWA FEE HDF5 file. This can be obtained with:
@@ -48,9 +57,8 @@ other words, most languages. See Rust, C and Python examples of usage in the
 
 ### CUDA
 `hyperbeam` also can also be run on NVIDIA GPUs. To see an example of usage, see
-any of the examples with "_cuda" in the name. CUDA functionality is only
-provided with one of two Cargo features; see installing from source instructions
-below.
+any of the examples with "cuda" in the name. CUDA functionality is only provided
+with one of two Cargo features; see installing from source instructions below.
 
 ## Installation
 ### Python PyPI
@@ -76,10 +84,10 @@ their respective licenses are also distributed.
 
   `https://www.rust-lang.org/tools/install`
 
-  The Rust compiler must be at least version 1.47.0:
+  The Rust compiler must be at least version 1.56.0:
   ```bash
   $ rustc -V
-  rustc 1.47.0 (18bf6b4f0 2020-10-07)
+  rustc 1.57.0 (f1edd0429 2021-11-29)
   ```
 
 - [hdf5](https://www.hdfgroup.org/hdf5)
@@ -107,6 +115,26 @@ Clone the repo, and run:
 For usage with other languages, an include file will be in the `include`
 directory, along with C-compatible shared and static objects in the
 `target/release` directory.
+
+#### CUDA
+Are you running `hyperbeam` on a desktop NVIDIA GPU? Then you probably want to
+compile with single-precision floats:
+
+    cargo build --release --features=cuda-single
+
+Otherwise, go ahead with double-precision floats:
+
+    cargo build --release --features=cuda
+
+Desktop GPUs (e.g. NVIDIA GeForce RTX 2070) have significantly less
+double-precision compute capability than "data center" GPUs (e.g. NVIDIA V100).
+Allowing `hyperbeam` to switch on the float type allows the user to decide
+between the performance and precision compromise.
+
+`CUDA` can also be linked statically (although it seems to link statically by
+default regardless of this flag):
+
+    cargo build --release --features=cuda,cuda-static
 
 #### Static dependencies
 To make `hyperbeam` without a dependence on a system `HDF5` library, give the

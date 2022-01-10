@@ -1,0 +1,59 @@
+# Based on https://github.com/actions-rs/meta/blob/master/recipes/quickstart.md
+
+on: [push, pull_request]
+
+name: Generate Coverage report
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    container: mwatelescope/birli:latest
+    environment: CI
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+
+      - name: Install nightly toolchain
+        run: |
+          curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+          export PATH="${HOME}/.cargo/bin:${PATH}"
+          rustup toolchain install nightly --component llvm-tools-preview
+          rustup default nightly
+
+      - name: Install system and Cargo Packages
+        run: |
+          export PATH="${HOME}/.cargo/bin:${PATH}"
+          apt-get update
+          apt-get install -y lcov clang curl zip unzip libssl-dev jq libhdf5-dev liberfa-dev
+          cargo update
+          cargo install --force cargo-make cargo-binutils grcov
+        env:
+          DEBIAN_FRONTEND: noninteractive
+
+      - name: Get the HDF5 file
+        run: curl http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5
+
+      - name: Generate test lcov coverage into coverage/ dir
+        env:
+          LD_LIBRARY_PATH: /usr/local/lib/
+          CARGO_INCREMENTAL: 0
+          RUSTFLAGS: "-Zprofile -Ccodegen-units=1 -Copt-level=0 -Coverflow-checks=off -Zpanic_abort_tests -Cpanic=abort"
+          RUSTDOCFLAGS: "-Cpanic=abort"
+          LLVM_PROFILE_FILE: json5format-%m.profraw
+          MWA_BEAM_FILE: mwa_full_embedded_element_pattern.h5
+        run: |
+          mkdir -p coverage
+
+          export PATH="${HOME}/.cargo/bin:${PATH}"
+          cargo build
+          cargo test
+          zip -0 ccov.zip `find . \( -name "mwa_hyperbeam*.gc*" \) -print`
+          grcov ccov.zip -s . -t lcov --llvm --branch --ignore-not-existing --ignore "/*" --ignore src/jones_test.rs --excl-br-line "^.*((debug_)?assert(_eq|_ne|_abs_diff_(eq|ne))?!|#\[derive\()" -o coverage/coverage.lcov
+
+      - name: Upload reports to codecov.io
+        uses: codecov/codecov-action@v2
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

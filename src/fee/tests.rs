@@ -131,11 +131,9 @@ fn test_get_dataset() {
 #[serial]
 fn test_get_modes() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let hash = match beam.populate_modes(51200000, &[0; 16], &[1.0; 32]) {
-        Ok(h) => h,
-        Err(e) => panic!("{}", e),
-    };
-    let coeffs = beam.coeff_cache.get(&hash).unwrap();
+    let result = beam.get_modes(51200000, &[0; 16], &[1.0; 32]);
+    assert!(result.is_ok());
+    let coeffs = result.unwrap();
 
     // Values taken from the C++ code.
     // m_accum and n_accum are floats in the C++ code, but these appear to
@@ -312,21 +310,18 @@ fn test_get_modes() {
 }
 
 #[test]
-#[serial]
 fn test_get_modes2() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let hash = match beam.populate_modes(
+    let result = beam.get_modes(
         51200000,
         &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
         &[
             1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0,
             1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
         ],
-    ) {
-        Ok(h) => h,
-        Err(e) => panic!("{}", e),
-    };
-    let coeffs = beam.coeff_cache.get(&hash).unwrap();
+    );
+    assert!(result.is_ok());
+    let coeffs = result.unwrap();
 
     // Values taken from the C++ code.
     let x_m_expected = array![
@@ -501,7 +496,11 @@ fn test_get_modes2() {
 
     // Check that if the Y dipole gains are different, they don't match the
     // earlier values.
-    let hash = match beam.populate_modes(
+
+    // We need to drop the reference to the coefficients used before, otherwise
+    // we'll deadlock the cache.
+    drop(coeffs);
+    let result = beam.get_modes(
         51200000,
         &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
         &[
@@ -509,11 +508,9 @@ fn test_get_modes2() {
             // First value here
             10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
         ],
-    ) {
-        Ok(h) => h,
-        Err(e) => panic!("{}", e),
-    };
-    let coeffs = beam.coeff_cache.get(&hash).unwrap();
+    );
+    assert!(result.is_ok());
+    let coeffs = result.unwrap();
 
     // X values are the same.
     let x_q1_accum_arr = Array1::from(coeffs.x.q1_accum.clone());
@@ -578,17 +575,16 @@ fn test_get_modes2() {
 #[serial]
 fn test_calc_jones_eng() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let jones = match beam.calc_jones_eng(
+    let result = beam.calc_jones_eng(
         45.0_f64.to_radians(),
         10.0_f64.to_radians(),
         51200000,
         &[0; 16],
         &[1.0; 16],
         false,
-    ) {
-        Ok(j) => j,
-        Err(e) => panic!("{}", e),
-    };
+    );
+    assert!(result.is_ok());
+    let jones = result.unwrap();
 
     let expected = Jones::from([
         c64::new(0.036179, 0.103586),
@@ -605,7 +601,7 @@ fn test_calc_jones_eng() {
 #[serial]
 fn test_calc_jones_eng_2() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let jones = match beam.calc_jones_eng(
+    let result = beam.calc_jones_eng(
         70.0_f64.to_radians(),
         10.0_f64.to_radians(),
         51200000,
@@ -614,10 +610,9 @@ fn test_calc_jones_eng_2() {
             1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
         ],
         false,
-    ) {
-        Ok(j) => j,
-        Err(e) => panic!("{}", e),
-    };
+    );
+    assert!(result.is_ok());
+    let jones = result.unwrap();
 
     let expected = Jones::from([
         c64::new(0.068028, 0.111395),
@@ -634,10 +629,9 @@ fn test_calc_jones_eng_2() {
 #[serial]
 fn test_calc_jones_eng_norm() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let jones = match beam.calc_jones_eng(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true) {
-        Ok(j) => j,
-        Err(e) => panic!("{}", e),
-    };
+    let result = beam.calc_jones_eng(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true);
+    assert!(result.is_ok());
+    let jones = result.unwrap();
 
     let expected = Jones::from([
         c64::new(0.0887949, 0.0220569),
@@ -654,7 +648,7 @@ fn test_calc_jones_eng_norm() {
 #[serial]
 fn test_calc_jones_eng_norm_2() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let jones = match beam.calc_jones_eng(
+    let result = beam.calc_jones_eng(
         0.1_f64,
         0.1_f64,
         150000000,
@@ -663,10 +657,9 @@ fn test_calc_jones_eng_norm_2() {
             1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
         ],
         true,
-    ) {
-        Ok(j) => j,
-        Err(e) => panic!("{}", e),
-    };
+    );
+    assert!(result.is_ok());
+    let jones = result.unwrap();
 
     let expected = Jones::from([
         c64::new(0.0704266, -0.0251082),
@@ -683,17 +676,16 @@ fn test_calc_jones_eng_norm_2() {
 #[serial]
 fn test_calc_jones() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let jones = match beam.calc_jones(
+    let result = beam.calc_jones(
         45.0_f64.to_radians(),
         10.0_f64.to_radians(),
         51200000,
         &[0; 16],
         &[1.0; 16],
         false,
-    ) {
-        Ok(j) => j,
-        Err(e) => panic!("{}", e),
-    };
+    );
+    assert!(result.is_ok());
+    let jones = result.unwrap();
 
     let expected = Jones::from([
         c64::new(0.051673288904250436, 0.14798615369209014),
@@ -710,10 +702,9 @@ fn test_calc_jones() {
 #[serial]
 fn test_calc_jones_norm() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let jones = match beam.calc_jones(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true) {
-        Ok(j) => j,
-        Err(e) => panic!("{}", e),
-    };
+    let result = beam.calc_jones(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true);
+    assert!(result.is_ok());
+    let jones = result.unwrap();
 
     let expected = Jones::from([
         c64::new(0.8916497260404116, 0.21719761321518402),
@@ -724,4 +715,127 @@ fn test_calc_jones_norm() {
     let jones = TestJones::from(jones);
     let expected = TestJones::from(expected);
     assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
+}
+
+#[test]
+#[serial]
+fn test_calc_jones_array() {
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let result = beam.calc_jones(
+        45.0_f64.to_radians(),
+        10.0_f64.to_radians(),
+        51200000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+    );
+    assert!(result.is_ok());
+    let jones = result.unwrap();
+
+    let result = beam.calc_jones_array(
+        &[45.0_f64.to_radians()],
+        &[10.0_f64.to_radians()],
+        51200000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+    );
+    assert!(result.is_ok());
+    let jones_array = result.unwrap();
+
+    assert_eq!(jones_array.len(), 1);
+    let jones = TestJones::from(jones);
+    let jones_array = TestJones::from(jones_array[0]);
+    assert_eq!(jones, jones_array);
+}
+
+#[test]
+#[serial]
+fn test_empty_cache() {
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let result = beam.calc_jones(
+        45.0_f64.to_radians(),
+        10.0_f64.to_radians(),
+        51200000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+    );
+    assert!(result.is_ok());
+    result.unwrap();
+
+    assert!(!beam.coeff_cache.read().is_empty());
+    assert!(!beam.norm_cache.read().is_empty());
+
+    beam.empty_cache();
+    assert!(beam.coeff_cache.read().is_empty());
+    assert!(beam.norm_cache.read().is_empty());
+}
+
+// If the beam file is fine, then there should be frequencies inside it.
+#[test]
+#[serial]
+fn test_get_freqs() {
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    assert!(!beam.get_freqs().is_empty());
+}
+
+// Tests for coverage follow.
+
+#[test]
+#[serial]
+fn test_cache_is_used() {
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let result = beam.calc_jones(
+        45.0_f64.to_radians(),
+        10.0_f64.to_radians(),
+        51200000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+    );
+    assert!(result.is_ok());
+    result.unwrap();
+
+    let result = beam.calc_jones(
+        45.0_f64.to_radians(),
+        10.0_f64.to_radians(),
+        51200000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+    );
+    assert!(result.is_ok());
+    result.unwrap();
+}
+
+// Tests to expose errors follow.
+
+#[test]
+fn test_error_file_doesnt_exist() {
+    let file = "/unlikely/to/exist.h5";
+    let result = FEEBeam::new(file);
+    assert!(result.is_err());
+    match result {
+        Err(e) => assert_eq!(
+            e.to_string(),
+            format!("Specified beam file '{}' doesn't exist", file)
+        ),
+        _ => unreachable!(),
+    }
+}
+
+#[test]
+fn test_error_env_file_doesnt_exist() {
+    let file = "/unlikely/to/exist/again.h5";
+    std::env::set_var("MWA_BEAM_FILE", file);
+    let result = FEEBeam::new_from_env();
+    assert!(result.is_err());
+    match result {
+        Err(e) => assert_eq!(
+            e.to_string(),
+            format!("Specified beam file '{}' doesn't exist", file)
+        ),
+        _ => unreachable!(),
+    }
 }

@@ -1,10 +1,11 @@
 [package]
 name = "mwa_hyperbeam"
-version = "0.3.4"
+version = "0.4.0"
 authors = ["Christopher H. Jordan <christopherjordan87@gmail.com>",
            "Jack L. B. Line <jack.line@curtin.edu.au>",
            "Marcin Sokolowski <marcin.sokolowski@curtin.edu.au>"]
-edition = "2018"
+edition = "2021"
+rust-version = "1.56"
 license = "MPL-2.0"
 readme = "README.md"
 description = "Primary beam code for the Murchison Widefield Array (MWA) radio telescope."
@@ -30,28 +31,33 @@ cuda = ["marlu/cuda", "cc"]
 # Opt-out of double precision, use only single precision.
 cuda-single = ["cuda"]
 
+# Example-only dependencies
+examples = ["anyhow", "clap"]
+
 [profile.release]
 lto = true
 codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size reduction optimizations
 
 [dependencies]
 cfg-if = "1.0.*"
-dashmap = "4.0.*"
-hdf5 = "0.7.*"
+hdf5 = "0.8.*"
 marlu = { version = "0.3.*", default-features = false }
+parking_lot = "0.11.*"
 thiserror = "1.0.*"
 
-hdf5-sys = { version = "0.7.*", features = ["static", "threadsafe"], optional = true }
+hdf5-sys = { version = "0.8.*", features = ["static", "threadsafe"], optional = true }
 
-pyo3 = { version = "0.13.*", features = ["extension-module"], optional = true }
-numpy = { version = "0.13.0", optional = true }
+pyo3 = { version = "0.15.*", features = ["extension-module"], optional = true }
+numpy = { version = "0.15.*", optional = true }
+
+# Example-only dependencies.
+anyhow = { version = "1.0.*", optional = true }
+clap = { version = "3.0.*", features = ["derive"], optional = true }
 
 [dev-dependencies]
-anyhow = "1.0.*"
 approx = { version = "0.5.*", features = ["num-complex"] }
 criterion = "0.3.*"
 serial_test = "0.5.*"
-structopt = "0.3.*"
 
 ndarray = { version = ">=0.15.4,<0.16", features = ["approx-0_5"] }
 
@@ -75,7 +81,8 @@ harness = false
 
 [[example]]
 name = "beam_calcs"
+required-features = ["examples"]
 
 [[example]]
 name = "beam_calcs_cuda"
-required-features = ["cuda"]
+required-features = ["examples", "cuda"]

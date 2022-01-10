@@ -28,7 +28,7 @@ impl std::convert::From<InitFEEBeamError> for PyErr {
 
 /// A Python class interfacing with the hyperbeam code written in Rust.
 #[pyclass]
-#[text_signature = "(hdf5_file)"]
+#[pyo3(text_signature = "(hdf5_file)")]
 #[allow(clippy::upper_case_acronyms)]
 struct FEEBeam {
     beam: FEEBeamRust,
@@ -53,7 +53,7 @@ impl FEEBeam {
     /// If there are 16, then the dipole gains apply to both X and Y elements of
     /// dipoles. If there are 32, the first 16 amps are for the X elements, the
     /// next 16 the Y elements.
-    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)"]
+    #[pyo3(text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)")]
     #[allow(clippy::too_many_arguments)]
     fn calc_jones(
         &mut self,
@@ -100,7 +100,7 @@ impl FEEBeam {
     /// Each direction is calculated in parallel by Rust. The number of parallel
     /// threads used can be controlled by setting RAYON_NUM_THREADS. `delays`
     /// must have 16 ints, and `amps` must have 16 or 32 floats.
-    #[text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)"]
+    #[pyo3(text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)")]
     #[allow(clippy::too_many_arguments)]
     fn calc_jones_array(
         &mut self,
@@ -161,7 +161,7 @@ impl FEEBeam {
 
     /// Given a frequency in Hz, get the closest available frequency inside the
     /// HDF5 file.
-    #[text_signature = "(freq_hz)"]
+    #[pyo3(text_signature = "(freq_hz)")]
     fn closest_freq(&self, freq_hz: f64) -> u32 {
         self.beam.find_closest_freq(freq_hz.round() as _)
     }
@@ -175,7 +175,9 @@ impl FEEBeam {
     /// but `amps_array` can have 16 or 32 elements per row (see `calc_jones`
     /// for an explanation).
     #[cfg(feature = "cuda")]
-    #[text_signature = "(az_rad, za_rad, freq_hz, delays_array, amps_array, norm_to_zenith, parallactic)"]
+    #[pyo3(
+        text_signature = "(az_rad, za_rad, freq_hz, delays_array, amps_array, norm_to_zenith, parallactic)"
+    )]
     #[allow(clippy::too_many_arguments)]
     fn calc_jones_cuda(
         &mut self,

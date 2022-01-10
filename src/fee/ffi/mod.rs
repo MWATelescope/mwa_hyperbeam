@@ -628,7 +628,7 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
     0
 }
 
-/// Get a pointer to the device beam Jones map. This is necessary to access
+/// Get a pointer to the device tile map. This is necessary to access
 /// de-duplicated beam Jones matrices on the device.
 ///
 /// # Arguments
@@ -642,9 +642,28 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
 ///
 #[cfg(feature = "cuda")]
 #[no_mangle]
-pub unsafe extern "C" fn get_cuda_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const u64 {
+pub unsafe extern "C" fn get_tile_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const i32 {
     let beam = &mut *cuda_fee_beam;
-    beam.get_beam_jones_map()
+    beam.get_tile_map()
+}
+
+/// Get a pointer to the device freq map. This is necessary to access
+/// de-duplicated beam Jones matrices on the device.
+///
+/// # Arguments
+///
+/// `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+///
+/// # Returns
+///
+/// * A pointer to the device beam Jones map. The const annotation is
+///   deliberate; the caller does not own the map.
+///
+#[cfg(feature = "cuda")]
+#[no_mangle]
+pub unsafe extern "C" fn get_freq_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const i32 {
+    let beam = &mut *cuda_fee_beam;
+    beam.get_freq_map()
 }
 
 /// Get the number of de-duplicated frequencies associated with this
@@ -663,7 +682,7 @@ pub unsafe extern "C" fn get_cuda_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const
 #[no_mangle]
 pub unsafe extern "C" fn get_num_unique_fee_freqs(cuda_fee_beam: *mut FEEBeamCUDA) -> i32 {
     let beam = &mut *cuda_fee_beam;
-    beam.num_freqs
+    beam.num_unique_freqs
 }
 
 /// Free the memory associated with an `FEEBeamCUDA` beam.

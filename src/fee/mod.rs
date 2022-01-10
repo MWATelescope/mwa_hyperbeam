@@ -16,6 +16,7 @@ mod cuda;
 mod tests;
 
 pub use error::{FEEBeamError, InitFEEBeamError};
+use parking_lot::{MappedRwLockReadGuard, RwLockReadGuard};
 use types::*;
 
 #[cfg(feature = "cuda")]
@@ -56,7 +57,7 @@ impl FEEBeam {
     /// Given the path to the FEE beam file, create a new [FEEBeam] struct.
     pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, InitFEEBeamError> {
         // so that libhdf5 doesn't print errors to stdout
-        let _e = hdf5::silence_errors();
+        hdf5::silence_errors(true);
 
         // If the file doesn't exist, hdf5::File::open will handle it, but the
         // error message is horrendous.
@@ -204,44 +205,80 @@ impl FEEBeam {
         }
     }
 
-    /// Check that [DipoleCoefficients] are cached for the input parameters. If
-    /// they aren't, populate the cache. The returned hash is used to access the
-    /// populated cache.
+    /// Get [DipoleCoefficients] for the input parameters.
     ///
-    /// This function is intended to be used every time the cache is to be
-    /// accessed. By ensuring that the right coefficients are available at the
-    /// end of this function, the caller can then directly access the cache. The
-    /// only way to make Rust return the coefficients would be by keeping the
-    /// whole cache locked, which ruins concurrent performance.
+    /// This function is deliberately private; it uses a cache on [FEEBeam] as
+    /// calculating [DipoleCoefficients] is expensive, and it's easy to
+    /// accidentally stall the cache with locks. This function automatically
+    /// populates the cache with [DipoleCoefficients] and returns a reference to
+    /// them.
     ///
     /// Note that specified frequencies are "rounded" to frequencies that are
     /// defined the HDF5 file.
-    fn populate_modes(
+    fn get_modes(
         &self,
-        desired_freq: u32,
+        desired_freq_hz: u32,
         delays: &[u32],
         amps: &[f64; 32],
-    ) -> Result<CacheKey, FEEBeamError> {
-        let freq = self.find_closest_freq(desired_freq);
+    ) -> Result<MappedRwLockReadGuard<'_, BowtieCoefficients>, FEEBeamError> {
+        let fee_freq = self.find_closest_freq(desired_freq_hz);
 
         // Are the input settings already cached? Hash them to check.
-        let hash = CacheKey::new(freq, delays, amps);
+        let hash = CacheKey::new(fee_freq, delays, amps);
 
-        // If the cache for this hash exists, we can return the hash.
-        if self.coeff_cache.contains_key(&hash) {
-            return Ok(hash);
+        // If the cache for this hash is already populated, we can return the reference.
+        {
+            let cache = self.coeff_cache.read();
+            if cache.contains_key(&hash) {
+                return Ok(RwLockReadGuard::map(cache, |hm| &hm[&hash]));
+            }
         }
 
-        // If we hit this part of the code, the coefficients were not in the
-        // cache.
-        let modes = self.calc_modes(freq, delays, amps)?;
-        self.coeff_cache.insert(hash, modes);
-        Ok(hash)
+        // If we hit this part of the code, we need to populate the cache.
+        let m = self.calc_modes(fee_freq, delays, amps)?;
+        {
+            let mut locked_cache = self.coeff_cache.write();
+            locked_cache.insert(hash, m);
+        }
+        Ok(RwLockReadGuard::map(self.coeff_cache.read(), |hm| {
+            &hm[&hash]
+        }))
+    }
+
+    /// Get a [Jones] matrix for beam normalisation.
+    ///
+    /// This function is deliberately private and is intertwined with
+    /// `get_modes`; this function should always be called before `get_modes` to
+    /// prevent a deadlock. Beam normalisation Jones matrices are cached but
+    /// because [Jones] is [Copy], an owned copy is returned from the cache.
+    fn get_norm_jones(&self, desired_freq_hz: u32) -> Result<Jones<f64>, FEEBeamError> {
+        // Are the input settings already cached? Hash them to check.
+        let fee_freq = self.find_closest_freq(desired_freq_hz);
+
+        // If the cache for this hash is already populated, we can return the
+        // reference.
+        {
+            let cache = self.norm_cache.read();
+            if cache.contains_key(&fee_freq) {
+                return Ok(cache[&fee_freq]);
+            }
+        }
+
+        // If we hit this part of the code, we need to populate the modes cache.
+        let n = {
+            let norm_coeffs = self.get_modes(fee_freq, &[0; 16], &[1.0; 32])?;
+            calc_zenith_norm_jones(&norm_coeffs)
+        };
+        {
+            let mut locked_cache = self.norm_cache.write();
+            locked_cache.insert(fee_freq, n);
+        }
+        Ok(n)
     }
 
     /// Given the input parameters, calculate and return the X and Y
     /// coefficients ("modes"). As this function is relatively expensive, it
-    /// should only be called by `Self::populate_modes` to cache the outputs.
+    /// should only be called by `Self::get_modes` to cache the outputs.
     fn calc_modes(
         &self,
         freq: u32,
@@ -394,24 +431,6 @@ impl FEEBeam {
         })
     }
 
-    fn populate_norm_jones(&self, desired_freq: u32) -> Result<u32, FEEBeamError> {
-        let freq = self.find_closest_freq(desired_freq);
-
-        // If the cache for this freq exists, we can return it.
-        if self.norm_cache.contains_key(&freq) {
-            return Ok(freq);
-        }
-
-        // If we hit this part of the code, the normalisation Jones matrix was
-        // not in the cache.
-        let hash = self.populate_modes(freq, &[0; 16], &[1.0; 32])?;
-        let coeffs = self.coeff_cache.get(&hash).unwrap();
-        let jones = calc_zenith_norm_jones(&coeffs);
-        self.norm_cache.insert(freq, jones);
-
-        Ok(freq)
-    }
-
     /// Calculate the Jones matrix for a given direction and pointing. This
     /// matches the original specification of the FEE beam code (hence "eng", or
     /// "engineering"). Astronomers more likely want the `calc_jones` method
@@ -439,22 +458,17 @@ impl FEEBeam {
         // amplitudes.
         debug_assert!(amps.len() == 16 || amps.len() == 32);
 
-        let full_amps = fix_amps(amps, delays);
-
-        // Ensure the dipole coefficients for the provided parameters exist.
-        let hash = self.populate_modes(freq_hz, delays, &full_amps)?;
-
-        // If we're normalising the beam, get the normalisation frequency here.
-        let norm_freq = if norm_to_zenith {
-            Some(self.populate_norm_jones(freq_hz)?)
-        } else {
-            None
+        // If we're normalising the beam, get the normalisation Jones matrix here.
+        let norm_jones = match norm_to_zenith {
+            true => Some(self.get_norm_jones(freq_hz)?),
+            false => None,
         };
 
-        let coeffs = self.coeff_cache.get(&hash).unwrap();
-        let norm_jones = norm_freq.and_then(|f| self.norm_cache.get(&f));
+        // Populate the coefficients cache if it isn't already populated.
+        let full_amps = fix_amps(amps, delays);
+        let coeffs = self.get_modes(freq_hz, delays, &full_amps)?;
 
-        let jones = calc_jones_direct(az_rad, za_rad, &coeffs, norm_jones.as_deref());
+        let jones = calc_jones_direct(az_rad, za_rad, &coeffs, norm_jones);
         Ok(jones)
     }
 
@@ -488,26 +502,20 @@ impl FEEBeam {
         // amplitudes.
         debug_assert!(amps.len() == 16 || amps.len() == 32);
 
+        // Populate the coefficients cache if it isn't already populated.
         let full_amps = fix_amps(amps, delays);
+        let coeffs = self.get_modes(freq_hz, delays, &full_amps)?;
 
-        // Ensure the dipole coefficients for the provided parameters exist.
-        let hash = self.populate_modes(freq_hz, delays, &full_amps)?;
-
-        // If we're normalising the beam, get the normalisation Jones matrix
-        // here.
-        let norm_freq = if norm_to_zenith {
-            Some(self.populate_norm_jones(freq_hz)?)
-        } else {
-            None
+        // If we're normalising the beam, get the normalisation Jones matrix here.
+        let norm_jones = match norm_to_zenith {
+            true => Some(self.get_norm_jones(freq_hz)?),
+            false => None,
         };
-
-        let coeffs = self.coeff_cache.get(&hash).unwrap();
-        let norm = norm_freq.and_then(|f| self.norm_cache.get(&f));
 
         let out = az_rad
             .par_iter()
             .zip(za_rad.par_iter())
-            .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm.as_deref()))
+            .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm_jones))
             .collect();
         Ok(out)
     }
@@ -533,21 +541,9 @@ impl FEEBeam {
         amps: &[f64],
         norm_to_zenith: bool,
     ) -> Result<Jones<f64>, FEEBeamError> {
-        let j = self.calc_jones_eng(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)?;
+        let mut j = self.calc_jones_eng(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)?;
+        apply_parallactic_correction(az_rad, za_rad, &mut j);
 
-        // Re-order the polarisations.
-        let j = [-j[3], j[2], -j[1], j[0]];
-        // Parallactic-angle correction.
-        let para_angle = AzEl::new(az_rad, FRAC_PI_2 - za_rad)
-            .to_hadec_mwa()
-            .get_parallactic_angle_mwa();
-        let (s_rot, c_rot) = (para_angle + FRAC_PI_2).sin_cos();
-        let j = Jones::from([
-            j[0] * c_rot - j[1] * s_rot,
-            j[0] * s_rot + j[1] * c_rot,
-            j[2] * c_rot - j[3] * s_rot,
-            j[2] * s_rot + j[3] * c_rot,
-        ]);
         Ok(j)
     }
 
@@ -575,19 +571,40 @@ impl FEEBeam {
         amps: &[f64],
         norm_to_zenith: bool,
     ) -> Result<Vec<Jones<f64>>, FEEBeamError> {
-        let out: Vec<Result<Jones<f64>, FEEBeamError>> = az_rad
+        // `delays` must have 16 elements...
+        debug_assert_eq!(delays.len(), 16);
+        // ... but `amps` may have either 16 or 32. 32 elements corresponds to
+        // each element of each dipole; i.e. 16 X amplitudes followed by 16 Y
+        // amplitudes.
+        debug_assert!(amps.len() == 16 || amps.len() == 32);
+
+        // If we're normalising the beam, get the normalisation Jones matrix here.
+        let norm_jones = match norm_to_zenith {
+            true => Some(self.get_norm_jones(freq_hz)?),
+            false => None,
+        };
+
+        // Populate the coefficients cache if it isn't already populated.
+        let full_amps = fix_amps(amps, delays);
+        let coeffs = self.get_modes(freq_hz, delays, &full_amps)?;
+
+        let out = az_rad
             .par_iter()
             .zip(za_rad.par_iter())
-            .map(|(&az, &za)| self.calc_jones(az, za, freq_hz, delays, amps, norm_to_zenith))
+            .map(|(&az, &za)| {
+                let mut jones = calc_jones_direct(az, za, &coeffs, norm_jones);
+                apply_parallactic_correction(az, za, &mut jones);
+                jones
+            })
             .collect();
-        out.into_iter().collect()
+        Ok(out)
     }
 
     /// Empty the cached dipole coefficients and normalisation Jones matrices to
     /// recover memory.
     pub fn empty_cache(&self) {
-        self.coeff_cache.clear();
-        self.norm_cache.clear();
+        self.coeff_cache.write().clear();
+        self.norm_cache.write().clear();
     }
 
     /// Prepare a CUDA-capable device for beam-response computations given the
@@ -672,7 +689,7 @@ fn calc_jones_direct(
     az_rad: f64,
     za_rad: f64,
     coeffs: &BowtieCoefficients,
-    norm_matrix: Option<&Jones<f64>>,
+    norm_matrix: Option<Jones<f64>>,
 ) -> Jones<f64> {
     // Convert azimuth to FEKO phi (East through North).
     let phi_rad = FRAC_PI_2 - az_rad;
@@ -717,4 +734,23 @@ pub(super) fn fix_amps(amps: &[f64], delays: &[u32]) -> [f64; 32] {
             }
         });
     full_amps
+}
+
+/// Apply the parallactic angle correction to a beam-response Jones matrix
+/// (when also given its corresponding direction). This function also
+/// re-arranges the Jones matrix to conform with Jack's investigation.
+fn apply_parallactic_correction(az_rad: f64, za_rad: f64, jones: &mut Jones<f64>) {
+    // Re-order the polarisations.
+    let j = [-jones[3], jones[2], -jones[1], jones[0]];
+    // Parallactic-angle correction.
+    let para_angle = AzEl::new(az_rad, FRAC_PI_2 - za_rad)
+        .to_hadec_mwa()
+        .get_parallactic_angle_mwa();
+    let (s_rot, c_rot) = (para_angle + FRAC_PI_2).sin_cos();
+    *jones = Jones::from([
+        j[0] * c_rot - j[1] * s_rot,
+        j[0] * s_rot + j[1] * c_rot,
+        j[2] * c_rot - j[3] * s_rot,
+        j[2] * s_rot + j[3] * c_rot,
+    ]);
 }

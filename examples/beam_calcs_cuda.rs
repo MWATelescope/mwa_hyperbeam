@@ -14,9 +14,9 @@
 
 use std::f64::consts::PI;
 
+use clap::Parser;
 use marlu::{ndarray, Jones};
 use ndarray::prelude::*;
-use structopt::*;
 
 use mwa_hyperbeam::fee::FEEBeam;
 
@@ -25,26 +25,27 @@ type CudaFloat = f32;
 #[cfg(not(feature = "cuda-single"))]
 type CudaFloat = f64;
 
-#[derive(StructOpt, Debug)]
-struct Opts {
+#[derive(Parser, Debug)]
+#[clap()]
+struct Args {
     /// Path to the HDF5 file.
-    #[structopt(short, long, parse(from_os_str))]
+    #[clap(short, long, parse(from_os_str))]
     hdf5_file: Option<std::path::PathBuf>,
 
     /// The number of directions to run.
-    #[structopt()]
+    #[clap()]
     num_directions: usize,
 }
 
 fn main() -> Result<(), anyhow::Error> {
-    let opts = Opts::from_args();
-    if opts.num_directions == 0 {
+    let args = Args::parse();
+    if args.num_directions == 0 {
         eprintln!("num_directions cannot be 0.");
         std::process::exit(1);
     }
 
     // If we were given a file, use it. Otherwise, fall back on MWA_BEAM_FILE.
-    let beam = match opts.hdf5_file {
+    let beam = match args.hdf5_file {
         Some(f) => FEEBeam::new(f)?,
         None => FEEBeam::new_from_env()?,
     };
@@ -63,12 +64,12 @@ fn main() -> Result<(), anyhow::Error> {
         unsafe { beam.cuda_prepare(&freqs_hz, delays.view(), amps.view(), norm_to_zenith)? };
 
     // Set up the directions to test. The type depends on the CUDA precision.
-    let mut azs = Vec::with_capacity(opts.num_directions);
-    let mut zas = Vec::with_capacity(opts.num_directions);
-    for i in 0..opts.num_directions {
-        azs.push(0.4 + 0.3 * PI as CudaFloat * i as CudaFloat / opts.num_directions as CudaFloat);
+    let mut azs = Vec::with_capacity(args.num_directions);
+    let mut zas = Vec::with_capacity(args.num_directions);
+    for i in 0..args.num_directions {
+        azs.push(0.4 + 0.3 * PI as CudaFloat * i as CudaFloat / args.num_directions as CudaFloat);
         zas.push(
-            0.3 + 0.4 * PI as CudaFloat / 2.0 * i as CudaFloat / opts.num_directions as CudaFloat,
+            0.3 + 0.4 * PI as CudaFloat / 2.0 * i as CudaFloat / args.num_directions as CudaFloat,
         );
     }
     let parallactic_correction = true;
