@@ -2,35 +2,40 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! Code for allowing other languages to talk to this Rust library's FEE beam
-//! code. See the examples directory for usage.
+//! Code for allowing other languages to talk to this Rust library's analytic
+//! beam code. See the examples directory for usage.
 
 #[cfg(test)]
 mod tests;
 
-use std::{ffi::CStr, os::raw::c_char, panic, slice};
+use std::slice;
 
-use rayon::iter::Either;
-
-use super::FEEBeam;
+use super::{AnalyticBeam, AnalyticType};
 use crate::ffi::{ffi_error, update_last_error};
 
 cfg_if::cfg_if! {
     if #[cfg(any(feature = "cuda", feature = "hip"))] {
         use ndarray::prelude::*;
 
-        use super::FEEBeamGpu;
+        use super::AnalyticBeamGpu;
         use crate::gpu::{DevicePointer, GpuFloat};
     }
 }
 
-/// Create a new MWA FEE beam.
+/// Create a new MWA analytic beam.
 ///
 /// # Arguments
 ///
-/// * `hdf5_file` - the path to the MWA FEE beam file.
-/// * `fee_beam` - a double pointer to the `FEEBeam` struct which is set by this
-///   function. This struct must be freed by calling `free_fee_beam`.
+/// * `rts_style` - a boolean to indicate whether to use RTS-style beam
+///   responses. If this is true (a value of 1), RTS-style responses are
+///   generated. The default is to use mwa_pb-style responses.
+/// * `dipole_height_metres` - an optional pointer to a `double`. If this is not
+///   null, the pointer is dereferenced and used as the dipole height (units of
+///   metres). If it is null, then a default is used; the default depends on
+///   whether this beam object is mwa_pb- or RTS-style.
+/// * `analytic_beam` - a double pointer to the `AnalyticBeam` struct
+///   which is set by this function. This struct must be freed by calling
+///   `free_analytic_beam`.
 ///
 /// # Returns
 ///
@@ -40,90 +45,29 @@ cfg_if::cfg_if! {
 ///   with a string buffer with a length at least equal to the error length.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn new_fee_beam(
-    hdf5_file: *const c_char,
-    fee_beam: *mut *mut FEEBeam,
+pub unsafe extern "C" fn new_analytic_beam(
+    rts_style: u8,
+    dipole_height_metres: *const f64,
+    analytic_beam: *mut *mut AnalyticBeam,
 ) -> i32 {
-    panic::set_hook(Box::new(|pi| {
-        update_last_error(panic_message::panic_info_message(pi).to_string());
-    }));
-
-    let result = panic::catch_unwind(|| {
-        let path = match CStr::from_ptr(hdf5_file).to_str() {
-            Ok(p) => p,
-            Err(e) => {
-                update_last_error(e.to_string());
-                return Either::Left(2);
-            }
-        };
-        match FEEBeam::new(path) {
-            Ok(b) => Either::Right(b),
-            Err(e) => {
-                update_last_error(e.to_string());
-                Either::Left(1)
-            }
+    let analytic_type = match rts_style {
+        0 => AnalyticType::MwaPb,
+        1 => AnalyticType::Rts,
+        _ => {
+            update_last_error("A value other than 0 or 1 was used for rts_style".to_string());
+            return 1;
         }
-    });
-
-    let _ = panic::take_hook();
-
-    match result {
-        Ok(Either::Right(b)) => {
-            *fee_beam = Box::into_raw(Box::new(b));
-            0
-        }
-        Ok(Either::Left(e)) => e,
-        // For panics, the FFI error message is already updated.
-        Err(_) => -1,
-    }
+    };
+    let dipole_height_metres = dipole_height_metres.as_ref().copied();
+    let beam = AnalyticBeam::new_custom(
+        analytic_type,
+        dipole_height_metres.unwrap_or_else(|| analytic_type.get_default_dipole_height()),
+    );
+    *analytic_beam = Box::into_raw(Box::new(beam));
+    0
 }
 
-/// Create a new MWA FEE beam. Requires the HDF5 beam file path to be specified
-/// by the environment variable `MWA_BEAM_FILE`.
-///
-/// # Arguments
-///
-/// * `fee_beam` - a double pointer to the `FEEBeam` struct which is set by this
-///   function. This struct must be freed by calling `free_fee_beam`.
-///
-/// # Returns
-///
-/// * An exit code integer. If this is non-zero then an error occurred; the
-///   details can be obtained by (1) getting the length of the error string by
-///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
-///   with a string buffer with a length at least equal to the error length.
-///
-#[no_mangle]
-pub unsafe extern "C" fn new_fee_beam_from_env(fee_beam: *mut *mut FEEBeam) -> i32 {
-    panic::set_hook(Box::new(|pi| {
-        update_last_error(panic_message::panic_info_message(pi).to_string());
-    }));
-
-    let result = panic::catch_unwind(|| match FEEBeam::new_from_env() {
-        Ok(b) => Either::Right(b),
-        Err(e) => {
-            update_last_error(e.to_string());
-            Either::Left(1)
-        }
-    });
-
-    let _ = panic::take_hook();
-
-    match result {
-        Ok(Either::Right(b)) => {
-            *fee_beam = Box::into_raw(Box::new(b));
-            0
-        }
-        Ok(Either::Left(e)) => e,
-        // For panics, the FFI error message is already updated.
-        Err(_) => -1,
-    }
-}
-
-/// Get the beam response Jones matrix for the given direction and pointing. Can
-/// optionally re-define the X and Y polarisations and apply a parallactic-angle
-/// correction; see
-/// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
+/// Get the beam response Jones matrix for the given direction and pointing.
 ///
 /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
@@ -142,8 +86,8 @@ pub unsafe extern "C" fn new_fee_beam_from_env(fee_beam: *mut *mut FEEBeam) -> i
 ///
 /// # Arguments
 ///
-/// * `fee_beam` - A pointer to a `FEEBeam` struct created with the
-///   `new_fee_beam` function
+/// * `analytic_beam` - A pointer to a `AnalyticBeam` struct created with the
+///   `new_analytic_beam` function
 /// * `az_rad` - The azimuth direction to get the beam response (units of
 ///   radians)
 /// * `za_rad` - The zenith angle direction to get the beam response (units of
@@ -154,13 +98,9 @@ pub unsafe extern "C" fn new_fee_beam_from_env(fee_beam: *mut *mut FEEBeam) -> i
 /// * `amps` - A pointer to a 16- or 32-element array of dipole gains for an MWA
 ///   tile. The number of elements is indicated by `num_amps`.
 /// * `num_amps` - The number of dipole gains used (either 16 or 32).
+/// * `latitude_rad` - The telescope latitude to use in beam calculations.
 /// * `norm_to_zenith` - A boolean indicating whether the beam response should
 ///   be normalised with respect to zenith.
-/// * `latitude_rad` - A pointer to a telescope latitude to use for the
-///   parallactic-angle correction. If the pointer is null, no correction is
-///   done.
-/// * `iau_order` - A boolean indicating whether the Jones matrix should be
-///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
 /// * `jones` - A pointer to a buffer with at least `8 * sizeof(double)`
 ///   allocated. The Jones matrix beam response is written here.
 ///
@@ -172,17 +112,16 @@ pub unsafe extern "C" fn new_fee_beam_from_env(fee_beam: *mut *mut FEEBeam) -> i
 ///   with a string buffer with a length at least equal to the error length.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones(
-    fee_beam: *mut FEEBeam,
+pub unsafe extern "C" fn analytic_calc_jones(
+    analytic_beam: *mut AnalyticBeam,
     az_rad: f64,
     za_rad: f64,
     freq_hz: u32,
     delays: *const u32,
     amps: *const f64,
     num_amps: u32,
+    latitude_rad: f64,
     norm_to_zenith: u8,
-    latitude_rad: *const f64,
-    iau_order: u8,
     jones: *mut f64,
 ) -> i32 {
     match num_amps {
@@ -200,17 +139,8 @@ pub unsafe extern "C" fn calc_jones(
             return 1;
         }
     };
-    let latitude_rad = latitude_rad.as_ref().copied();
-    let iau_bool = match iau_order {
-        0 => false,
-        1 => true,
-        _ => {
-            update_last_error("A value other than 0 or 1 was used for iau_order".to_string());
-            return 1;
-        }
-    };
 
-    let beam = &*fee_beam;
+    let beam = &*analytic_beam;
     let delays_s = slice::from_raw_parts(delays, 16);
     let amps_s = slice::from_raw_parts(amps, num_amps as usize);
 
@@ -221,9 +151,8 @@ pub unsafe extern "C" fn calc_jones(
         freq_hz,
         delays_s,
         amps_s,
-        norm_bool,
         latitude_rad,
-        iau_bool,
+        norm_bool,
     ) {
         Ok(j) => {
             let jones_buf = slice::from_raw_parts_mut(jones, 8);
@@ -241,10 +170,7 @@ pub unsafe extern "C" fn calc_jones(
 
 /// Get the beam response Jones matrix for several az/za directions for the
 /// given pointing. The Jones matrix elements for each direction are put into a
-/// single array (made available with the output pointer `jones`). Can
-/// optionally re-define the X and Y polarisations and apply a parallactic-angle
-/// correction; see
-/// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
+/// single array (made available with the output pointer `jones`).
 ///
 /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
@@ -259,8 +185,8 @@ pub unsafe extern "C" fn calc_jones(
 ///
 /// # Arguments
 ///
-/// * `fee_beam` - A pointer to a `FEEBeam` struct created with the
-///   `new_fee_beam` function
+/// * `analytic_beam` - A pointer to a `AnalyticBeam` struct created with the
+///   `new_analytic_beam` function
 /// * `num_azza` - The number of directions within `az_rad` and `za_rad`
 /// * `az_rad` - The azimuth direction to get the beam response (units of
 ///   radians)
@@ -272,13 +198,9 @@ pub unsafe extern "C" fn calc_jones(
 /// * `amps` - A pointer to a 16- or 32-element array of dipole gains for an MWA
 ///   tile. The number of elements is indicated by `num_amps`.
 /// * `num_amps` - The number of dipole gains used (either 16 or 32).
+/// * `latitude_rad` - The telescope latitude to use in beam calculations.
 /// * `norm_to_zenith` - A boolean indicating whether the beam response should
 ///   be normalised with respect to zenith.
-/// * `latitude_rad` - A pointer to a telescope latitude to use for the
-///   parallactic-angle correction. If the pointer is null, no correction is
-///   done.
-/// * `iau_order` - A boolean indicating whether the Jones matrix should be
-///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
 /// * `jones` - A pointer to a buffer with at least `8 * num_azza *
 ///   sizeof(double)` bytes allocated. The Jones matrix beam responses are
 ///   written here.
@@ -291,8 +213,8 @@ pub unsafe extern "C" fn calc_jones(
 ///   with a string buffer with a length at least equal to the error length.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones_array(
-    fee_beam: *mut FEEBeam,
+pub unsafe extern "C" fn analytic_calc_jones_array(
+    analytic_beam: *mut AnalyticBeam,
     num_azza: u32,
     az_rad: *const f64,
     za_rad: *const f64,
@@ -300,9 +222,8 @@ pub unsafe extern "C" fn calc_jones_array(
     delays: *const u32,
     amps: *const f64,
     num_amps: u32,
+    latitude_rad: f64,
     norm_to_zenith: u8,
-    latitude_rad: *const f64,
-    iau_order: u8,
     jones: *mut f64,
 ) -> i32 {
     match num_amps {
@@ -320,17 +241,8 @@ pub unsafe extern "C" fn calc_jones_array(
             return 1;
         }
     };
-    let latitude_rad = latitude_rad.as_ref().copied();
-    let iau_bool = match iau_order {
-        0 => false,
-        1 => true,
-        _ => {
-            update_last_error("A value other than 0 or 1 was used for iau_order".to_string());
-            return 1;
-        }
-    };
 
-    let beam = &*fee_beam;
+    let beam = &*analytic_beam;
     let az = slice::from_raw_parts(az_rad, num_azza as usize);
     let za = slice::from_raw_parts(za_rad, num_azza as usize);
     let delays_s = slice::from_raw_parts(delays, 16);
@@ -343,71 +255,30 @@ pub unsafe extern "C" fn calc_jones_array(
         freq_hz,
         delays_s,
         amps_s,
-        norm_bool,
         latitude_rad,
-        iau_bool,
-        results_s,
+        norm_bool,
+        results_s
     ));
     0
 }
 
-/// Get the available frequencies inside the HDF5 file.
+/// Free the memory associated with an `AnalyticBeam`.
 ///
 /// # Arguments
 ///
-/// * `fee_beam` - the pointer to the `FEEBeam` struct.
-/// * `freqs_ptr` - a double pointer to the FEE beam frequencies. The `const`
-///   annotation is deliberate; the caller does not own the frequencies.
-/// * `num_freqs` - a pointer to a `size_t` whose contents are set.
+/// * `analytic_beam` - the pointer to the `AnalyticBeam` struct.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn get_fee_beam_freqs(
-    fee_beam: *mut FEEBeam,
-    freqs_ptr: *mut *const u32,
-    num_freqs: &mut usize,
-) {
-    let beam = &*fee_beam;
-    let freqs = beam.get_freqs();
-    *freqs_ptr = freqs.as_ptr();
-    *num_freqs = freqs.len();
+pub unsafe extern "C" fn free_analytic_beam(analytic_beam: *mut AnalyticBeam) {
+    drop(Box::from_raw(analytic_beam));
 }
 
-/// Given a frequency in Hz, get the closest available frequency inside the HDF5
-/// file.
+/// Get a `AnalyticBeamGpu` struct, which is used to calculate beam responses on
+/// a GPU (CUDA- or HIP-capable device).
 ///
 /// # Arguments
 ///
-/// * `fee_beam` - the pointer to the `FEEBeam` struct.
-///
-/// # Returns
-///
-/// * The closest frequency to the specified frequency in Hz.
-///
-#[no_mangle]
-pub unsafe extern "C" fn closest_freq(fee_beam: *mut FEEBeam, freq: u32) -> u32 {
-    let beam = &*fee_beam;
-    beam.find_closest_freq(freq)
-}
-
-/// Free the memory associated with an `FEEBeam`.
-///
-/// # Arguments
-///
-/// * `fee_beam` - the pointer to the `FEEBeam` struct.
-///
-#[no_mangle]
-pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
-    drop(Box::from_raw(fee_beam));
-}
-
-/// Get a `FEEBeamGpu` struct, which is used to calculate beam responses on a
-/// GPU (CUDA- or HIP-capable device).
-///
-/// # Arguments
-///
-/// * `fee_beam` - a pointer to a previously set `FEEBeam` struct.
-/// * `freqs_hz` - a pointer to an array of frequencies (units of Hz) at which
-///   the beam responses will be calculated.
+/// * `analytic_beam` - a pointer to a previously set `AnalyticBeam` struct.
 /// * `delays` - a pointer to two-dimensional array of dipole delays. There must
 ///   be 16 delays per row; each row corresponds to a tile.
 /// * `amps` - a pointer to two-dimensional array of dipole amplitudes. There
@@ -420,9 +291,9 @@ pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
 ///   more explanation.
 /// * `norm_to_zenith` - A boolean indicating whether the beam responses should
 ///   be normalised with respect to zenith.
-/// * `gpu_fee_beam` - a double pointer to the `FEEBeamGpu` struct which is set
-///   by this function. This struct must be freed by calling
-///   `free_gpu_fee_beam`.
+/// * `gpu_analytic_beam` - a double pointer to the `AnalyticBeamGpu` struct
+///   which is set by this function. This struct must be freed by calling
+///   `free_gpu_analytic_beam`.
 ///
 /// # Returns
 ///
@@ -433,16 +304,13 @@ pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn new_gpu_fee_beam(
-    fee_beam: *mut FEEBeam,
-    freqs_hz: *const u32,
+pub unsafe extern "C" fn new_gpu_analytic_beam(
+    analytic_beam: *mut AnalyticBeam,
     delays: *const u32,
     amps: *const f64,
-    num_freqs: u32,
-    num_tiles: u32,
-    num_amps: u32,
-    norm_to_zenith: u8,
-    gpu_fee_beam: *mut *mut FEEBeamGpu,
+    num_tiles: i32,
+    num_amps: i32,
+    gpu_analytic_beam: *mut *mut AnalyticBeamGpu,
 ) -> i32 {
     match num_amps {
         16 | 32 => (),
@@ -451,7 +319,71 @@ pub unsafe extern "C" fn new_gpu_fee_beam(
             return 1;
         }
     };
-    let norm_bool = match norm_to_zenith {
+
+    // Turn the pointers into slices.
+    let amps = ArrayView2::from_shape_ptr((num_tiles as usize, num_amps as usize), amps);
+    let delays = ArrayView2::from_shape_ptr((num_tiles as usize, 16), delays);
+
+    let beam = &mut *analytic_beam;
+    let gpu_beam = ffi_error!(beam.gpu_prepare(delays, amps));
+    *gpu_analytic_beam = Box::into_raw(Box::new(gpu_beam));
+    0
+}
+
+/// Get beam response Jones matrices for the given directions, using a GPU. The
+/// Jones matrix elements for each direction are put into a host-memory buffer
+/// `jones`.
+///
+/// # Arguments
+///
+/// * `gpu_beam` - A pointer to a `AnalyticBeamGpu` struct created with the
+///   `new_gpu_analytic_beam` function
+/// * `az_rad` - The azimuth directions to get the beam response (units of
+///   radians)
+/// * `za_rad` - The zenith angle directions to get the beam response (units of
+///   radians)
+/// * `jones` - A pointer to a buffer with at least `num_unique_tiles *
+///   num_freqs * num_azza * 8 * sizeof(FLOAT)` bytes allocated.
+///   `FLOAT` is either `float` or `double`, depending on how `hyperbeam` was
+///   compiled. The Jones matrix beam responses are written here. This should be
+///   set up with the `get_num_unique_tiles` function; see the examples for
+///   more help.
+///
+/// # Returns
+///
+/// * An exit code integer. If this is non-zero then an error occurred; the
+///   details can be obtained by (1) getting the length of the error string by
+///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
+///   with a string buffer with a length at least equal to the error length.
+///
+#[cfg(any(feature = "cuda", feature = "hip"))]
+#[no_mangle]
+pub unsafe extern "C" fn analytic_calc_jones_gpu(
+    gpu_analytic_beam: *mut AnalyticBeamGpu,
+    num_azza: u32,
+    az_rad: *const GpuFloat,
+    za_rad: *const GpuFloat,
+    num_freqs: u32,
+    freqs_hz: *const u32,
+    latitude_rad: GpuFloat,
+    norm_to_zenith: u8,
+    jones: *mut GpuFloat,
+) -> i32 {
+    let num_azza_usize = match num_azza.try_into() {
+        Ok(n) => n,
+        Err(_) => {
+            update_last_error("num_azza couldn't be converted to a usize".to_string());
+            return 1;
+        }
+    };
+    let num_freqs_usize = match num_freqs.try_into() {
+        Ok(n) => n,
+        Err(_) => {
+            update_last_error("num_freqs couldn't be converted to a usize".to_string());
+            return 1;
+        }
+    };
+    let norm_to_zenith = match norm_to_zenith {
         0 => false,
         1 => true,
         _ => {
@@ -461,111 +393,40 @@ pub unsafe extern "C" fn new_gpu_fee_beam(
     };
 
     // Turn the pointers into slices and/or arrays.
-    let freqs = slice::from_raw_parts(freqs_hz, num_freqs as usize);
-    let amps = ArrayView2::from_shape_ptr((num_tiles as usize, num_amps as usize), amps);
-    let delays = ArrayView2::from_shape_ptr((num_tiles as usize, 16), delays);
-
-    let beam = &*fee_beam;
-    let gpu_beam = ffi_error!(beam.gpu_prepare(freqs, delays, amps, norm_bool));
-    *gpu_fee_beam = Box::into_raw(Box::new(gpu_beam));
-    0
-}
-
-/// Get beam response Jones matrices for the given directions, using a GPU. The
-/// Jones matrix elements for each direction are put into a host-memory buffer
-/// `jones`. Can optionally re-define the X and Y polarisations and apply a
-/// parallactic-angle correction; see
-/// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
-///
-/// # Arguments
-///
-/// * `gpu_fee_beam` - A pointer to a `FEEBeamGpu` struct created with the
-///   `new_gpu_fee_beam` function
-/// * `az_rad` - The azimuth directions to get the beam response (units of
-///   radians)
-/// * `za_rad` - The zenith angle directions to get the beam response (units of
-///   radians)
-/// * `latitude_rad` - A pointer to a telescope latitude to use for the
-///   parallactic-angle correction. If the pointer is null, no correction is
-///   done.
-/// * `iau_order` - A boolean indicating whether the Jones matrix should be
-///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
-/// * `jones` - A pointer to a buffer with at least `num_unique_tiles *
-///   num_unique_fee_freqs * num_azza * 8 * sizeof(FLOAT)` bytes allocated.
-///   `FLOAT` is either `float` or `double`, depending on how `hyperbeam` was
-///   compiled. The Jones matrix beam responses are written here. This should be
-///   set up with the `get_num_unique_tiles` and `get_num_unique_fee_freqs`
-///   functions; see the examples for more help.
-///
-/// # Returns
-///
-/// * An exit code integer. If this is non-zero then an error occurred; the
-///   details can be obtained by (1) getting the length of the error string by
-///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
-///   with a string buffer with a length at least equal to the error length.
-///
-#[cfg(any(feature = "cuda", feature = "hip"))]
-#[no_mangle]
-pub unsafe extern "C" fn calc_jones_gpu(
-    gpu_fee_beam: *mut FEEBeamGpu,
-    num_azza: u32,
-    az_rad: *const GpuFloat,
-    za_rad: *const GpuFloat,
-    latitude_rad: *const f64,
-    iau_order: u8,
-    jones: *mut GpuFloat,
-) -> i32 {
-    let iau_bool = match iau_order {
-        0 => false,
-        1 => true,
-        _ => {
-            update_last_error("A value other than 0 or 1 was used for iau_order".to_string());
-            return 1;
-        }
-    };
-
-    // Turn the pointers into slices and/or arrays.
-    let beam = &*gpu_fee_beam;
-    let az = slice::from_raw_parts(az_rad, num_azza as usize);
-    let za = slice::from_raw_parts(za_rad, num_azza as usize);
+    let beam = &mut *gpu_analytic_beam;
+    let az = slice::from_raw_parts(az_rad, num_azza_usize);
+    let za = slice::from_raw_parts(za_rad, num_azza_usize);
+    let freqs = slice::from_raw_parts(freqs_hz, num_freqs_usize);
     let results = ArrayViewMut3::from_shape_ptr(
         (
             beam.num_unique_tiles as usize,
-            beam.num_unique_freqs as usize,
-            num_azza as usize,
+            num_freqs_usize,
+            num_azza_usize,
         ),
         jones.cast(),
     );
-    let latitude_rad = latitude_rad.as_ref().copied();
-    ffi_error!(beam.calc_jones_pair_inner(az, za, latitude_rad, iau_bool, results));
+    ffi_error!(beam.calc_jones_pair_inner(az, za, freqs, latitude_rad, norm_to_zenith, results));
     0
 }
 
 /// Get beam response Jones matrices for the given directions, using a GPU. The
 /// Jones matrix elements for each direction are left on the device (the device
-/// pointer is communicated via `d_jones`). Can optionally re-define the X and Y
-/// polarisations and apply a parallactic-angle correction; see
-/// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
+/// pointer is communicated via `d_jones`).
 ///
 /// # Arguments
 ///
-/// * `gpu_fee_beam` - A pointer to a `FEEBeamGpu` struct created with the
-///   `new_gpu_fee_beam` function
+/// * `gpu_analytic_beam` - A pointer to a `AnalyticBeamGpu` struct created with
+///   the `new_gpu_analytic_beam` function
 /// * `az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
 ///   radians)
-/// * `latitude_rad` - A pointer to a telescope latitude to use for the
-///   parallactic-angle correction. If the pointer is null, no correction is
-///   done.
-/// * `iau_order` - A boolean indicating whether the Jones matrix should be
-///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
 /// * `d_jones` - A pointer to a device buffer with at least `8 *
-///   num_unique_tiles * num_unique_fee_freqs * num_azza * sizeof(FLOAT)` bytes
+///   num_unique_tiles * num_freqs * num_azza * sizeof(FLOAT)` bytes
 ///   allocated. `FLOAT` is either `float` or `double`, depending on how
 ///   `hyperbeam` was compiled. The Jones matrix beam responses are written
-///   here. This should be set up with the `get_num_unique_tiles` and
-///   `get_num_unique_fee_freqs` functions; see the examples for more help.
+///   here. This should be set up with the `get_num_unique_tiles` function; see
+///   the examples for more help.
 ///
 /// # Returns
 ///
@@ -576,39 +437,65 @@ pub unsafe extern "C" fn calc_jones_gpu(
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones_gpu_device(
-    gpu_fee_beam: *mut FEEBeamGpu,
+pub unsafe extern "C" fn analytic_calc_jones_gpu_device(
+    gpu_analytic_beam: *mut AnalyticBeamGpu,
     num_azza: i32,
     az_rad: *const GpuFloat,
     za_rad: *const GpuFloat,
-    latitude_rad: *const f64,
-    iau_order: u8,
+    num_freqs: i32,
+    freqs_hz: *const u32,
+    latitude_rad: GpuFloat,
+    norm_to_zenith: u8,
     d_jones: *mut GpuFloat,
 ) -> i32 {
-    let iau_bool = match iau_order {
+    let num_azza_usize = if num_azza < 0 {
+        update_last_error("num_azza was less than 0; it must be positive".to_string());
+        return 1;
+    } else {
+        match num_azza.try_into() {
+            Ok(n) => n,
+            Err(_) => {
+                update_last_error("num_azza couldn't be converted to a usize".to_string());
+                return 1;
+            }
+        }
+    };
+    let num_freqs_usize = if num_freqs < 0 {
+        update_last_error("num_freqs was less than 0; it must be positive".to_string());
+        return 1;
+    } else {
+        match num_freqs.try_into() {
+            Ok(n) => n,
+            Err(_) => {
+                update_last_error("num_freqs couldn't be converted to a usize".to_string());
+                return 1;
+            }
+        }
+    };
+    let norm_to_zenith = match norm_to_zenith {
         0 => false,
         1 => true,
         _ => {
-            update_last_error("A value other than 0 or 1 was used for iau_order".to_string());
+            update_last_error("A value other than 0 or 1 was used for norm_to_zenith".to_string());
             return 1;
         }
     };
 
-    let beam = &*gpu_fee_beam;
-    let az = slice::from_raw_parts(az_rad, num_azza as usize);
-    let za = slice::from_raw_parts(za_rad, num_azza as usize);
+    let beam = &*gpu_analytic_beam;
+    let az = slice::from_raw_parts(az_rad, num_azza_usize);
+    let za = slice::from_raw_parts(za_rad, num_azza_usize);
+    let freqs = slice::from_raw_parts(freqs_hz, num_freqs_usize);
     let d_az = ffi_error!(DevicePointer::copy_to_device(az));
     let d_za = ffi_error!(DevicePointer::copy_to_device(za));
-    let d_latitude_rad = ffi_error!(latitude_rad
-        .as_ref()
-        .map(|f| DevicePointer::copy_to_device(&[*f as GpuFloat]))
-        .transpose());
+    let d_freqs = ffi_error!(DevicePointer::copy_to_device(freqs));
     ffi_error!(beam.calc_jones_device_pair_inner(
         d_az.get(),
         d_za.get(),
         num_azza,
-        d_latitude_rad.map(|p| p.get()).unwrap_or(std::ptr::null()),
-        iau_bool,
+        d_freqs.get(),
+        num_freqs,
+        latitude_rad,
+        norm_to_zenith,
         d_jones.cast()
     ));
     0
@@ -620,23 +507,18 @@ pub unsafe extern "C" fn calc_jones_gpu_device(
 ///
 /// # Arguments
 ///
-/// * `gpu_fee_beam` - A pointer to a `FEEBeamGpu` struct created with the
-///   `new_gpu_fee_beam` function
+/// * `gpu_analytic_beam` - A pointer to a `AnalyticBeamGpu` struct created with
+///   the `new_gpu_analytic_beam` function
 /// * `d_az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `d_za_rad` - The zenith angle directions to get the beam response (units
 ///   of radians)
-/// * `latitude_rad` - A pointer to a telescope latitude to use for the
-///   parallactic-angle correction. If the pointer is null, no correction is
-///   done.
-/// * `iau_order` - A boolean indicating whether the Jones matrix should be
-///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
 /// * `d_jones` - A pointer to a device buffer with at least `8 *
-///   num_unique_tiles * num_unique_fee_freqs * num_azza * sizeof(FLOAT)` bytes
+///   num_unique_tiles * num_freqs * num_azza * sizeof(FLOAT)` bytes
 ///   allocated. `FLOAT` is either `float` or `double`, depending on how
 ///   `hyperbeam` was compiled. The Jones matrix beam responses are written
-///   here. This should be set up with the `get_num_unique_tiles` and
-///   `get_num_unique_fee_freqs` functions; see the examples for more help.
+///   here. This should be set up with the `get_num_unique_tiles` function; see
+///   the examples for more help.
 ///
 /// # Returns
 ///
@@ -647,34 +529,67 @@ pub unsafe extern "C" fn calc_jones_gpu_device(
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones_gpu_device_inner(
-    gpu_fee_beam: *mut FEEBeamGpu,
+pub unsafe extern "C" fn analytic_calc_jones_gpu_device_inner(
+    gpu_analytic_beam: *mut AnalyticBeamGpu,
     num_azza: i32,
     d_az_rad: *const GpuFloat,
     d_za_rad: *const GpuFloat,
-    d_latitude_rad: *const GpuFloat,
-    iau_order: u8,
+    num_freqs: i32,
+    d_freqs_hz: *const u32,
+    latitude_rad: GpuFloat,
+    norm_to_zenith: u8,
     d_jones: *mut GpuFloat,
 ) -> i32 {
-    let iau_bool = match iau_order {
+    if num_azza < 0 {
+        update_last_error("num_azza was less than 0; it must be positive".to_string());
+        return 1;
+    };
+    if num_freqs < 0 {
+        update_last_error("num_freqs was less than 0; it must be positive".to_string());
+        return 1;
+    };
+    let norm_to_zenith = match norm_to_zenith {
         0 => false,
         1 => true,
         _ => {
-            update_last_error("A value other than 0 or 1 was used for iau_order".to_string());
+            update_last_error("A value other than 0 or 1 was used for norm_to_zenith".to_string());
             return 1;
         }
     };
 
-    let beam = &*gpu_fee_beam;
+    let beam = &*gpu_analytic_beam;
     ffi_error!(beam.calc_jones_device_pair_inner(
         d_az_rad,
         d_za_rad,
         num_azza,
-        d_latitude_rad,
-        iau_bool,
+        d_freqs_hz,
+        num_freqs,
+        latitude_rad,
+        norm_to_zenith,
         d_jones.cast()
     ));
     0
+}
+
+/// Get a pointer to the tile map. This is necessary to access de-duplicated
+/// beam Jones matrices.
+///
+/// # Arguments
+///
+/// * `gpu_analytic_beam` - the pointer to the `AnalyticBeamGpu` struct.
+///
+/// # Returns
+///
+/// * A pointer to the tile map. The const annotation is deliberate; the caller
+///   does not own the map.
+///
+#[cfg(any(feature = "cuda", feature = "hip"))]
+#[no_mangle]
+pub unsafe extern "C" fn get_analytic_tile_map(
+    gpu_analytic_beam: *mut AnalyticBeamGpu,
+) -> *const i32 {
+    let beam = &*gpu_analytic_beam;
+    beam.get_tile_map()
 }
 
 /// Get a pointer to the device tile map. This is necessary to access
@@ -682,83 +597,49 @@ pub unsafe extern "C" fn calc_jones_gpu_device_inner(
 ///
 /// # Arguments
 ///
-/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
+/// * `gpu_analytic_beam` - the pointer to the `AnalyticBeamGpu` struct.
 ///
 /// # Returns
 ///
-/// * A pointer to the device beam Jones map. The const annotation is
-///   deliberate; the caller does not own the map.
+/// * A pointer to the device tile map. The const annotation is deliberate; the
+///   caller does not own the map.
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn get_tile_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i32 {
-    let beam = &*gpu_fee_beam;
-    beam.get_tile_map()
+pub unsafe extern "C" fn get_analytic_device_tile_map(
+    gpu_analytic_beam: *mut AnalyticBeamGpu,
+) -> *const i32 {
+    let beam = &*gpu_analytic_beam;
+    beam.get_device_tile_map()
 }
 
-/// Get a pointer to the device freq map. This is necessary to access
-/// de-duplicated beam Jones matrices on the device.
+/// Get the number of de-duplicated tiles associated with this `AnalyticBeamGpu`.
 ///
 /// # Arguments
 ///
-/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
+/// * `gpu_analytic_beam` - the pointer to the `AnalyticBeamGpu` struct.
 ///
 /// # Returns
 ///
-/// * A pointer to the device beam Jones map. The const annotation is
-///   deliberate; the caller does not own the map.
+/// * The number of de-duplicated tiles associated with this `AnalyticBeamGpu`.
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn get_freq_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i32 {
-    let beam = &*gpu_fee_beam;
-    beam.get_freq_map()
-}
-
-/// Get the number of de-duplicated tiles associated with this `FEEBeamGpu`.
-///
-/// # Arguments
-///
-/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
-///
-/// # Returns
-///
-/// * The number of de-duplicated tiles associated with this `FEEBeamGpu`.
-///
-#[cfg(any(feature = "cuda", feature = "hip"))]
-#[no_mangle]
-pub unsafe extern "C" fn get_num_unique_tiles(gpu_fee_beam: *mut FEEBeamGpu) -> i32 {
-    let beam = &*gpu_fee_beam;
+pub unsafe extern "C" fn get_num_unique_analytic_tiles(
+    gpu_analytic_beam: *mut AnalyticBeamGpu,
+) -> i32 {
+    let beam = &*gpu_analytic_beam;
     beam.num_unique_tiles
 }
 
-/// Get the number of de-duplicated frequencies associated with this
-/// `FEEBeamGpu`.
+/// Free the memory associated with an `AnalyticBeamGpu` beam.
 ///
 /// # Arguments
 ///
-/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
-///
-/// # Returns
-///
-/// * The number of de-duplicated frequencies associated with this
-///   `FEEBeamGpu`.
+/// * `gpu_analytic_beam` - the pointer to the `AnalyticBeamGpu` struct.
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn get_num_unique_fee_freqs(gpu_fee_beam: *mut FEEBeamGpu) -> i32 {
-    let beam = &*gpu_fee_beam;
-    beam.num_unique_freqs
-}
-
-/// Free the memory associated with an `FEEBeamGpu` beam.
-///
-/// # Arguments
-///
-/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
-///
-#[cfg(any(feature = "cuda", feature = "hip"))]
-#[no_mangle]
-pub unsafe extern "C" fn free_gpu_fee_beam(fee_beam: *mut FEEBeamGpu) {
-    drop(Box::from_raw(fee_beam));
+pub unsafe extern "C" fn free_gpu_analytic_beam(analytic_beam: *mut AnalyticBeamGpu) {
+    drop(Box::from_raw(analytic_beam));
 }

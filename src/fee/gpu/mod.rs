@@ -153,13 +153,12 @@ impl FEEBeamGpu {
                 amp.to_bits().hash(&mut unique_tile_hasher);
             }
             let unique_tile_hash = unique_tile_hasher.finish();
-            let this_tile_index = if unique_tiles.contains(&unique_tile_hash) {
-                unique_tiles
-                    .iter()
-                    .enumerate()
-                    .find(|(_, t)| **t == unique_tile_hash)
-                    .unwrap()
-                    .0 as i32
+            let this_tile_index = if let Some((index, _)) = unique_tiles
+                .iter()
+                .enumerate()
+                .find(|(_, t)| **t == unique_tile_hash)
+            {
+                index.try_into().expect("smaller than i32::MAX")
             } else {
                 unique_tiles.push(unique_tile_hash);
                 i_tile += 1;
@@ -167,16 +166,16 @@ impl FEEBeamGpu {
             };
             tile_map.push(this_tile_index);
 
-            for freq in freqs_hz {
+            for &freq in freqs_hz {
                 // If we're normalising the beam responses, cache the
                 // normalisation Jones matrices too.
                 if norm_to_zenith {
-                    fee_beam.get_norm_jones(*freq)?;
+                    fee_beam.get_norm_jones(freq)?;
                 }
 
-                drop(fee_beam.get_modes(*freq, &delays, &full_amps)?);
+                drop(fee_beam.get_modes(freq, &delays, &full_amps)?);
 
-                let fee_freq = fee_beam.find_closest_freq(*freq);
+                let fee_freq = fee_beam.find_closest_freq(freq);
                 let hash = CacheKey::new(fee_freq, &delays, &full_amps);
                 if !unique_hashes.contains(&(hash, fee_freq)) {
                     unique_hashes.push((hash, fee_freq));
@@ -185,13 +184,12 @@ impl FEEBeamGpu {
                 // No need to do this code more than once; frequency redundancy
                 // applies to all tiles.
                 if i == 0 {
-                    let this_freq_index = if unique_fee_freqs.contains(&fee_freq) {
-                        unique_fee_freqs
-                            .iter()
-                            .enumerate()
-                            .find(|(_, f)| **f == fee_freq)
-                            .unwrap()
-                            .0 as i32
+                    let this_freq_index = if let Some((index, _)) = unique_fee_freqs
+                        .iter()
+                        .enumerate()
+                        .find(|(_, f)| **f == fee_freq)
+                    {
+                        index.try_into().expect("smaller than i32::MAX")
                     } else {
                         unique_fee_freqs.push(fee_freq);
                         i_freq += 1;

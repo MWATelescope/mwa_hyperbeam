@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! Tests for CUDA FEE beam code.
+//! Tests for GPU FEE beam code.
 
 use approx::{assert_abs_diff_eq, assert_abs_diff_ne};
 use marlu::constants::MWA_LAT_RAD;

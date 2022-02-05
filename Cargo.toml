@@ -1,6 +1,6 @@
 [package]
 name = "mwa_hyperbeam"
-version = "0.6.0"
+version = "0.6.1"
 authors = [
     "Christopher H. Jordan <christopherjordan87@gmail.com>",
     "Jack L. B. Line <jack.line@curtin.edu.au>",
@@ -90,6 +90,14 @@ required-features = ["cuda"]
 
 [[example]]
 name = "fee_hip"
+required-features = ["hip"]
+
+[[example]]
+name = "analytic_cuda"
+required-features = ["cuda"]
+
+[[example]]
+name = "analytic_hip"
 required-features = ["hip"]
 
 [patch.crates-io]

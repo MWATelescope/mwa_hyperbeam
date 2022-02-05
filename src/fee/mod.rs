@@ -7,13 +7,11 @@
 
 mod error;
 mod ffi;
-mod types;
-
 #[cfg(any(feature = "cuda", feature = "hip"))]
 mod gpu;
-
 #[cfg(test)]
 mod tests;
+mod types;
 
 pub use error::{FEEBeamError, InitFEEBeamError};
 use types::*;
@@ -636,7 +634,8 @@ impl FEEBeam {
 
     /// Calculate the Jones matrices for many directions given a pointing. This
     /// is basically a wrapper around `calc_jones` that efficiently calculates
-    /// the Jones matrices in parallel.
+    /// the Jones matrices in parallel. The number of parallel threads used can
+    /// be controlled by setting `RAYON_NUM_THREADS`.
     ///
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see

@@ -11,6 +11,7 @@ use ndarray::prelude::*;
 use serial_test::serial;
 
 use super::*;
+use crate::ffi::{hb_last_error_length, hb_last_error_message};
 
 #[cfg(any(feature = "cuda", feature = "hip"))]
 use marlu::Jones;

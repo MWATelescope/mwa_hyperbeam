@@ -62,6 +62,15 @@ fn main() {
                             "get_num_unique_tiles".to_string(),
                             "get_num_unique_fee_freqs".to_string(),
                             "free_gpu_fee_beam".to_string(),
+                            "AnalyticBeamGpu".to_string(),
+                            "new_gpu_analytic_beam".to_string(),
+                            "analytic_calc_jones_gpu".to_string(),
+                            "analytic_calc_jones_gpu_device".to_string(),
+                            "analytic_calc_jones_gpu_device_inner".to_string(),
+                            "get_analytic_tile_map".to_string(),
+                            "get_analytic_device_tile_map".to_string(),
+                            "get_num_unique_analytic_tiles".to_string(),
+                            "free_gpu_analytic_beam".to_string(),
                         ],
                         ..Default::default()
                     };
@@ -166,11 +175,14 @@ mod gpu {
             cuda_target
                 .cuda(true)
                 .cudart("shared") // We handle linking cudart statically
+                .include("src/gpu_common/")
                 .include("src/fee/gpu/")
-                .file("src/fee/gpu/fee.cu");
+                .file("src/fee/gpu/fee.cu")
+                .include("src/analytic/gpu/")
+                .file("src/analytic/gpu/analytic.cu");
             // If $CXX is not set but $CUDA_PATH is, search for
             // $CUDA_PATH/bin/g++ and if it exists, set that as $CXX.
-            if !env::var_os("CXX").is_some() {
+            if env::var_os("CXX").is_none() {
                 // Unlike above, we care about $CUDA_PATH being unicode.
                 if let Ok(cuda_path) = env::var("CUDA_PATH") {
                     // Look for the g++ that CUDA wants.
@@ -217,7 +229,9 @@ mod gpu {
             hip_target
                 .compiler(compiler)
                 .include(hip_path.join("include/hip"))
-                .file("src/fee/gpu/fee.cu");
+                .include("src/gpu_common/")
+                .file("src/fee/gpu/fee.cu")
+                .file("src/analytic/gpu/analytic.cu");
 
             hip_target
         };

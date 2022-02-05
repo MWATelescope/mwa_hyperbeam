@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2023-10-31
+### Added
+- The "analytic" MWA beam
+  - There are (unfortunately) two flavours -- "RTS" and "mwa_pb". Both are
+    supported.
+
 ## [0.6.0] - 2023-09-14
 ### Added
 - Support for compiling GPU code with HIP

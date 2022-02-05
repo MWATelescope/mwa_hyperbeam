@@ -70,18 +70,24 @@ jobs:
             gcc -O3 examples/fee.c -o fee -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
             gcc -O3 examples/fee_parallel.c -o fee_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
             gcc -O3 -fopenmp examples/fee_parallel_omp.c -o fee_parallel_omp -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            gcc -O3 examples/get_freqs.c -o get_freqs -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            gcc -O3 examples/fee_get_freqs.c -o fee_get_freqs -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            gcc -O3 examples/analytic.c -o analytic -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            gcc -O3 examples/analytic_parallel.c -o analytic_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
           else
             /usr/local/bin/gcc-12 -O3 examples/fee.c -o fee -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
             /usr/local/bin/gcc-12 -O3 examples/fee_parallel.c -o fee_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
             /usr/local/bin/gcc-12 -O3 -fopenmp examples/fee_parallel_omp.c -o fee_parallel_omp -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            /usr/local/bin/gcc-12 -O3 examples/get_freqs.c -o get_freqs -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            /usr/local/bin/gcc-12 -O3 examples/fee_get_freqs.c -o fee_get_freqs -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            /usr/local/bin/gcc-12 -O3 examples/analytic.c -o analytic -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            /usr/local/bin/gcc-12 -O3 examples/analytic_parallel.c -o analytic_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
           fi
           echo "*** Running C examples ***"
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee mwa_full_embedded_element_pattern.h5
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee_parallel mwa_full_embedded_element_pattern.h5
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee_parallel_omp mwa_full_embedded_element_pattern.h5
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./get_freqs mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee_get_freqs mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./analytic
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./analytic_parallel
 
       - name: Run Python example
         run: |
@@ -90,8 +96,9 @@ jobs:
           pip install numpy maturin
           echo "*** Compiling Python hyperbeam ***"
           maturin develop -b pyo3 --features=python
-          echo "*** Running Python example ***"
+          echo "*** Running Python examples ***"
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./examples/fee.py mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./examples/analytic.py
 
       - name: CUDA examples
         if: runner.os == 'Linux'
@@ -105,21 +112,33 @@ jobs:
 
           # Examples may fail because there's no GPU
           cargo run --features=cuda --example fee_cuda 10
+          cargo run --features=cuda --example analytic_cuda 10
           cargo run --features=cuda,gpu-single --example fee_cuda 10
+          cargo run --features=cuda,gpu-single --example analytic_cuda 10
 
           cargo build --release --features=cuda
           gcc -O3 examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5
           nvcc -O3 examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5
+          gcc -O3 examples/analytic_gpu.c -o analytic_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./analytic_cuda
+          nvcc -O3 examples/analytic_cuda_device.cu -o analytic_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./analytic_cuda_device
 
           cargo build --release --features=cuda,gpu-single
           gcc -O3 -D SINGLE examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5
           nvcc -O3 -D SINGLE examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5
+          gcc -O3 -D SINGLE examples/analytic_gpu.c -o analytic_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./analytic_cuda
+          nvcc -O3 -D SINGLE examples/analytic_cuda_device.cu -o analytic_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./analytic_cuda_device
 
           maturin develop -b pyo3 --features=python,cuda
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/analytic_gpu.py
           maturin develop -b pyo3 --features=python,cuda,gpu-single
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/analytic_gpu.py

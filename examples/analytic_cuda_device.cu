@@ -18,9 +18,10 @@
 //
 // Compile and run this file with something like:
 
-// nvcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./fee_cuda_device.cu -o fee_cuda_device
+// nvcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./analytic_cuda_device.cu -o
+// analytic_cuda_device
 //
-// LD_LIBRARY_PATH=../target/release ./fee_cuda_device ../mwa_full_embedded_element_pattern.h5
+// LD_LIBRARY_PATH=../target/release ./analytic_cuda_device
 
 #include <math.h>
 #include <stdio.h>
@@ -64,8 +65,8 @@ void handle_hyperbeam_error(char file[], int line_num, const char function_name[
     exit(EXIT_FAILURE);
 }
 
-__global__ void use_hyperbeam_values(JONES *d_jones, const int *d_tile_map, const int *d_freq_map,
-                                     int num_unique_fee_freqs, int num_tiles, int num_freqs, int num_directions) {
+__global__ void use_hyperbeam_values(JONES *d_jones, const int *d_tile_map, int num_tiles, int num_freqs,
+                                     int num_directions) {
     int i_tile = blockIdx.y;
     int i_freq = blockIdx.z;
     if (i_tile >= num_tiles)
@@ -79,23 +80,15 @@ __global__ void use_hyperbeam_values(JONES *d_jones, const int *d_tile_map, cons
     // For *this tile* and *this frequency*, access the de-duplicated beam
     // response.
     int i_row = d_tile_map[i_tile];
-    int i_col = d_freq_map[i_freq];
-    JONES jones = d_jones[((num_directions * num_unique_fee_freqs * i_row) + num_directions * i_col) + i_dir];
+    JONES jones = d_jones[((num_directions * num_freqs * i_row) + num_directions * i_freq) + i_dir];
 
     // To test that the right response is paired with the right tile, assert
     // here.
     if (i_tile == 0 || i_tile == 1) {
         // Tiles 0 and 1 should have non-zero responses.
-        if (FABS(jones.j00.x) < 1e-6 && FABS(jones.j00.y) < 1e-6) {
-            printf("uh oh, bad example for tile 0/1\n");
-        }
-        if (FABS(jones.j01.x) < 1e-6 && FABS(jones.j01.y) < 1e-6) {
-            printf("uh oh, bad example for tile 0/1\n");
-        }
-        if (FABS(jones.j10.x) < 1e-6 && FABS(jones.j10.y) < 1e-6) {
-            printf("uh oh, bad example for tile 0/1\n");
-        }
-        if (FABS(jones.j11.x) < 1e-6 && FABS(jones.j11.y) < 1e-6) {
+        if (FABS(jones.j00.x) < 1e-8 && FABS(jones.j00.y) < 1e-8 && FABS(jones.j01.x) < 1e-8 &&
+            FABS(jones.j01.y) < 1e-8 && FABS(jones.j10.x) < 1e-8 && FABS(jones.j10.y) < 1e-8 &&
+            FABS(jones.j11.x) < 1e-8 && FABS(jones.j11.y) < 1e-8) {
             printf("uh oh, bad example for tile 0/1\n");
         }
     } else {
@@ -116,15 +109,12 @@ __global__ void use_hyperbeam_values(JONES *d_jones, const int *d_tile_map, cons
 }
 
 int main(int argc, char *argv[]) {
-    if (argc == 1) {
-        fprintf(stderr, "Expected one argument - the path to the HDF5 file.\n");
-        exit(1);
-    }
-
     // Get a new beam object from hyperbeam.
-    FEEBeam *beam;
-    if (new_fee_beam(argv[1], &beam))
-        handle_hyperbeam_error(__FILE__, __LINE__, "new_fee_beam");
+    AnalyticBeam *beam;
+    char rts_style = 1;                  // 1 or RTS style, 0 for mwa_pb
+    double *dipole_height_metres = NULL; // Point to a valid float if you want a custom height
+    if (new_analytic_beam(rts_style, dipole_height_metres, &beam))
+        handle_hyperbeam_error(__FILE__, __LINE__, "new_analytic_beam");
 
     // Set up our telescope array. Here, we are using three tiles, but there are
     // two distinct types (one has all dipoles active, the other they're all
@@ -152,13 +142,10 @@ int main(int argc, char *argv[]) {
     // Should we normalise the beam response?
     int norm_to_zenith = 1;
 
-    // Should the beam-response Jones matrix be in the IAU polarisation order?
-    int iau_order = 1;
-
-    // Now get a new CUDA FEE beam object.
-    FEEBeamGpu *gpu_beam;
-    if (new_gpu_fee_beam(beam, freqs_hz, delays, dip_amps, num_freqs, num_tiles, num_amps, norm_to_zenith, &gpu_beam))
-        handle_hyperbeam_error(__FILE__, __LINE__, "new_gpu_fee_beam");
+    // Now get a new CUDA analytic beam object.
+    AnalyticBeamGpu *gpu_beam;
+    if (new_gpu_analytic_beam(beam, delays, dip_amps, num_tiles, num_amps, &gpu_beam))
+        handle_hyperbeam_error(__FILE__, __LINE__, "new_gpu_analytic_beam");
 
     // Set up the directions to get the beam responses.
     size_t num_directions = 100000;
@@ -168,9 +155,7 @@ int main(int argc, char *argv[]) {
         az[i] = (-170.0 + i * 340.0 / num_directions) * M_PI / 180.0;
         za[i] = (10.0 + i * 70.0 / num_directions) * M_PI / 180.0;
     }
-    // Should we apply the parallactic angle correction? If so, use this
-    // latitude for the MWA. Read more here:
-    // https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf
+    // MWA latitude
     double latitude_rad = -0.4660608448386394;
 
     // Allocate our device memory for the beam responses.
@@ -178,28 +163,26 @@ int main(int argc, char *argv[]) {
     // We need the number of unique tiles and unique frequencies. hyperbeam
     // de-duplicates tiles and frequencies to go faster. Cast the returned ints
     // into size_t just in case we're hitting big numbers.
-    size_t num_unique_tiles = (size_t)get_num_unique_tiles(gpu_beam);
-    size_t num_unique_fee_freqs = (size_t)get_num_unique_fee_freqs(gpu_beam);
-    cudaMalloc(&d_jones, num_unique_tiles * num_unique_fee_freqs * num_directions * sizeof(JONES));
+    size_t num_unique_tiles = (size_t)get_num_unique_analytic_tiles(gpu_beam);
+    cudaMalloc(&d_jones, num_unique_tiles * num_freqs * num_directions * sizeof(JONES));
     // hyperbeam expects a pointer to our FLOAT macro. Casting the pointer works
     // fine.
-    if (calc_jones_gpu_device(gpu_beam, num_directions, az, za, &latitude_rad, iau_order, (FLOAT *)d_jones))
-        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_gpu_device");
+    if (analytic_calc_jones_gpu_device(gpu_beam, num_directions, az, za, num_freqs, freqs_hz, latitude_rad,
+                                       norm_to_zenith, (FLOAT *)d_jones))
+        handle_hyperbeam_error(__FILE__, __LINE__, "analytic_calc_jones_gpu_device");
 
     // The beam responses are now on the device. Let's launch our own kernel and
     // interface with the values. This kernel prints messages if the values are
-    // not what was expected. We need to have a couple of bits of metadata to
-    // interface with the beam responses.
-    const int *d_tile_map = get_tile_map(gpu_beam);
-    const int *d_freq_map = get_freq_map(gpu_beam);
+    // not what was expected. We need to have the tile map to interface with the
+    // beam responses.
+    const int *d_tile_map = get_analytic_device_tile_map(gpu_beam);
 
     dim3 gridDim, blockDim;
     blockDim.x = 128;
     gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
     gridDim.y = num_tiles; // The total number of tiles, not the unique count.
     gridDim.z = num_freqs; // The total number of freqs, not the unique count.
-    use_hyperbeam_values<<<gridDim, blockDim>>>(d_jones, d_tile_map, d_freq_map, num_unique_fee_freqs, num_tiles,
-                                                num_freqs, num_directions);
+    use_hyperbeam_values<<<gridDim, blockDim>>>(d_jones, d_tile_map, num_tiles, num_freqs, num_directions);
     // Check that our kernel had no issues.
     cudaError_t cuda_err_code = cudaGetLastError();
     if (cuda_err_code != cudaSuccess) {
@@ -208,8 +191,8 @@ int main(int argc, char *argv[]) {
     }
 
     // // Copy the values to host and inspect them. N.B. There are Jones matrices
-    // // for each *unique* tile (2), *unique* FEE frequency (2) and direction.
-    // size_t s = 2 * 2 * num_directions * sizeof(JONES);
+    // // for each *unique* tile (2), each frequency and direction.
+    // size_t s = 2 * num_freqs * num_directions * sizeof(JONES);
     // JONES *host_jones = (JONES *)malloc(s);
     // cudaMemcpy(host_jones, d_jones, s, cudaMemcpyDeviceToHost);
     // for (int i = 0; i < s / sizeof(JONES); i++) {
@@ -223,8 +206,8 @@ int main(int argc, char *argv[]) {
     // Free the device memory.
     cudaFree(d_jones);
     // Free the beam objects - we must use special functions to do this.
-    free_gpu_fee_beam(gpu_beam);
-    free_fee_beam(beam);
+    free_gpu_analytic_beam(gpu_beam);
+    free_analytic_beam(beam);
 
     printf("If there aren't any messages above, then all worked as expected.\n");
 

@@ -1,80 +1,6 @@
 #pragma once
 
-#include <stdlib.h>
-
-#ifdef SINGLE
-#define FLOAT  float
-#define SINCOS sincosf
-#define COS    cosf
-#define FABS   fabsf
-#define ATAN2  atan2f
-#define SQRT   sqrtf
-#else
-#define FLOAT  double
-#define SINCOS sincos
-#define COS    cos
-#define FABS   fabs
-#define ATAN2  atan2
-#define SQRT   sqrt
-#endif // SINGLE
-
-// HIP-specific defines.
-#if __HIPCC__
-#define gpuMalloc             hipMalloc
-#define gpuFree               hipFree
-#define gpuMemcpy             hipMemcpy
-#define gpuMemcpyHostToDevice hipMemcpyHostToDevice
-#define gpuGetErrorString     hipGetErrorString
-#define gpuGetLastError       hipGetLastError
-#define gpuDeviceSynchronize  hipDeviceSynchronize
-#define gpuError_t            hipError_t
-#define gpuSuccess            hipSuccess
-
-#ifdef SINGLE
-#define CADD         hipCaddf
-#define CSUB         hipCsubf
-#define CMUL         hipCmulf
-#define CDIV         hipCdivf
-#define COMPLEX      hipFloatComplex
-#define MAKE_COMPLEX make_hipFloatComplex
-#else
-#define CADD         hipCadd
-#define CSUB         hipCsub
-#define CMUL         hipCmul
-#define CDIV         hipCdiv
-#define COMPLEX      hipDoubleComplex
-#define MAKE_COMPLEX make_hipDoubleComplex
-#endif // SINGLE
-
-// CUDA-specific defines.
-#elif __CUDACC__
-#define gpuMalloc             cudaMalloc
-#define gpuFree               cudaFree
-#define gpuMemcpy             cudaMemcpy
-#define gpuMemcpyHostToDevice cudaMemcpyHostToDevice
-#define gpuGetErrorString     cudaGetErrorString
-#define gpuGetLastError       cudaGetLastError
-#define gpuDeviceSynchronize  cudaDeviceSynchronize
-#define gpuError_t            cudaError_t
-#define gpuSuccess            cudaSuccess
-#define warpSize              32
-
-#ifdef SINGLE
-#define CADD         cuCaddf
-#define CSUB         cuCsubf
-#define CMUL         cuCmulf
-#define CDIV         cuCdivf
-#define COMPLEX      cuFloatComplex
-#define MAKE_COMPLEX make_cuFloatComplex
-#else
-#define CADD         cuCadd
-#define CSUB         cuCsub
-#define CMUL         cuCmul
-#define CDIV         cuCdiv
-#define COMPLEX      cuDoubleComplex
-#define MAKE_COMPLEX make_cuDoubleComplex
-#endif // SINGLE
-#endif // __HIPCC__
+#include "gpu_common.cuh"
 
 #ifdef __cplusplus
 extern "C" {
@@ -102,26 +28,6 @@ typedef struct FEECoeffs {
     const unsigned char n_max;
 } FEECoeffs;
 
-/**
- * (HA, Dec.) coordinates. Both have units of radians.
- */
-typedef struct HADec {
-    /// Hour Angle [radians]
-    FLOAT ha;
-    /// Declination [radians]
-    FLOAT dec;
-} HADec;
-
-/**
- * (Azimuth, Zenith Angle) coordinates. Both have units of radians.
- */
-typedef struct AzZA {
-    /// Azimuth [radians]
-    FLOAT az;
-    /// Zenith Angle [radians]
-    FLOAT za;
-} AzZA;
-
 const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
                            int num_coeffs, const void *d_norm_jones, const FLOAT *d_latitude_rad,
                            const int iau_reorder, void *d_results);
@@ -134,22 +40,11 @@ const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_direc
 // a macro.
 #ifndef BINDGEN
 
-#include <math.h>
-#include <stdio.h>
-
-#ifdef __CUDACC__
-#include <cuComplex.h>
-#elif __HIPCC__
-#include <hip/hip_complex.h>
-#include <hip/hip_runtime.h>
-#endif
-
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
 
 const int NMAX = 31;
-const FLOAT M_2PI = 2.0 * M_PI;
 
 /* The following C++ program gives the factorial values:
 
@@ -268,101 +163,21 @@ __device__ const double FACTORIAL[100] = {
     933262154439441532520836312969247551723442539131008266742244198127778943717420325831801796076713498268781712437125578348809015437262107613541171778746843136.0,
 };
 
-typedef struct FEEJones {
-    COMPLEX j00;
-    COMPLEX j01;
-    COMPLEX j10;
-    COMPLEX j11;
-} FEEJones;
-
-inline __device__ COMPLEX operator*(COMPLEX a, FLOAT b) { return MAKE_COMPLEX(a.x * b, a.y * b); }
-
-inline __device__ void operator+=(COMPLEX &a, COMPLEX b) {
-    a.x += b.x;
-    a.y += b.y;
-}
-
-// Convert a (azimuth, elevation) to HADec, given a location (latitude).
-//
-// This code is adapted from ERFA. The copyright notice associated with ERFA and
-// the original code is at the bottom of this file.
-inline __device__ HADec azel_to_hadec(FLOAT azimuth_rad, FLOAT elevation_rad, FLOAT latitude_rad) {
-    /* Useful trig functions. */
-    FLOAT sa, ca, se, ce, sp, cp;
-    SINCOS(azimuth_rad, &sa, &ca);
-    SINCOS(elevation_rad, &se, &ce);
-    SINCOS(latitude_rad, &sp, &cp);
-
-    /* HA,Dec unit vector. */
-    FLOAT x = -ca * ce * sp + se * cp;
-    FLOAT y = -sa * ce;
-    FLOAT z = ca * ce * cp + se * sp;
-
-    /* To spherical. */
-    FLOAT r = SQRT(x * x + y * y);
-    HADec hadec;
-    hadec.ha = (r != 0.0) ? ATAN2(y, x) : 0.0;
-    hadec.dec = ATAN2(z, r);
-
-    return hadec;
-}
-
-// Convert a HADec to AzZA, given a location (latitude).
-//
-// This code is adapted from ERFA. The copyright notice associated with ERFA and
-// the original code is at the bottom of this file.
-inline __device__ AzZA hadec_to_azza(FLOAT hour_angle_rad, FLOAT dec_rad, FLOAT latitude_rad) {
-    /* Useful trig functions. */
-    FLOAT sh, ch, sd, cd, sp, cp;
-    SINCOS(hour_angle_rad, &sh, &ch);
-    SINCOS(dec_rad, &sd, &cd);
-    SINCOS(latitude_rad, &sp, &cp);
-
-    /* Az,Alt unit vector. */
-    FLOAT x = -ch * cd * sp + sd * cp;
-    FLOAT y = -sh * cd;
-    FLOAT z = ch * cd * cp + sd * sp;
-
-    /* To spherical. */
-    FLOAT r = SQRT(x * x + y * y);
-    FLOAT a = (r != 0.0) ? ATAN2(y, x) : 0.0;
-    AzZA azza;
-    azza.az = (a < 0.0) ? a + M_2PI : a;
-    azza.za = M_PI_2 - ATAN2(z, r);
-
-    return azza;
-}
-
-// Get the parallactic angle from a HADec position, given a location (latitude).
-//
-// This code is adapted from ERFA. The copyright notice associated with ERFA and
-// the original code is at the bottom of this file.
-inline __device__ FLOAT get_parallactic_angle(HADec hadec, FLOAT latitude_rad) {
-    FLOAT s_phi, c_phi, s_ha, c_ha, s_dec, c_dec, cqsz, sqsz;
-    SINCOS(latitude_rad, &s_phi, &c_phi);
-    SINCOS(hadec.ha, &s_ha, &c_ha);
-    SINCOS(hadec.dec, &s_dec, &c_dec);
-
-    sqsz = c_phi * s_ha;
-    cqsz = s_phi * c_dec - c_phi * s_dec * c_ha;
-    return ((sqsz != 0.0 || cqsz != 0.0) ? ATAN2(sqsz, cqsz) : 0.0);
-}
-
 // Apply the parallactic-angle correction. If `iau_order` is true then the beam
 // response is [NS-NS NS-EW EW-NS EW-EW], otherwise [EW-EW EW-NS NS-EW NS-NS].
-inline __device__ void apply_pa_correction(FEEJones *jm, FLOAT pa, int iau_order) {
+inline __device__ void apply_pa_correction(JONES *jm, FLOAT pa, int iau_order) {
     FLOAT s_rot, c_rot;
     SINCOS(pa, &s_rot, &c_rot);
 
     if (iau_order == 1) {
-        *jm = FEEJones{
+        *jm = JONES{
             .j00 = CADD(jm->j10 * -c_rot, jm->j11 * s_rot),
             .j01 = CADD(jm->j10 * -s_rot, jm->j11 * -c_rot),
             .j10 = CADD(jm->j00 * -c_rot, jm->j01 * s_rot),
             .j11 = CADD(jm->j00 * -s_rot, jm->j01 * -c_rot),
         };
     } else {
-        *jm = FEEJones{
+        *jm = JONES{
             .j00 = CADD(jm->j00 * -s_rot, jm->j01 * -c_rot),
             .j01 = CADD(jm->j00 * -c_rot, jm->j01 * s_rot),
             .j10 = CADD(jm->j10 * -s_rot, jm->j11 * -c_rot),
@@ -498,7 +313,7 @@ inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT the
                                                 const COMPLEX *q2_accum, const int8_t *m_accum, const int8_t *n_accum,
                                                 const int8_t *m_signs, const int8_t *m_abs_m, const int coeff_length,
                                                 const FLOAT *P1sin_arr, const FLOAT *P1_arr, const char pol,
-                                                FEEJones *jm) {
+                                                JONES *jm) {
     const FLOAT u = COS(theta);
     COMPLEX sigma_P = MAKE_COMPLEX(0.0, 0.0);
     COMPLEX sigma_T = MAKE_COMPLEX(0.0, 0.0);
@@ -551,8 +366,8 @@ inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT the
  * blockIdx.x * blockDim.x + threadIdx.x corresponds to direction.
  */
 __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT *zas, const int num_directions,
-                           const FEEJones *norm_jones, const FLOAT *latitude_rad, const int iau_order,
-                           FEEJones *fee_jones) {
+                           const JONES *norm_jones, const FLOAT *latitude_rad, const int iau_order,
+                           JONES *fee_jones) {
     for (int i_direction = blockIdx.x * blockDim.x + threadIdx.x; i_direction < num_directions;
          i_direction += gridDim.x * blockDim.x) {
         const FLOAT az = azs[i_direction];
@@ -566,7 +381,7 @@ __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT
 
         const int x_offset = coeffs.x_offsets[blockIdx.y];
         const int y_offset = coeffs.y_offsets[blockIdx.y];
-        FEEJones jm;
+        JONES jm;
         jones_calc_sigmas_device(phi, za, (const COMPLEX *)coeffs.x_q1_accum + x_offset,
                                  (const COMPLEX *)coeffs.x_q2_accum + x_offset, coeffs.x_m_accum + x_offset,
                                  coeffs.x_n_accum + x_offset, coeffs.x_m_signs + x_offset, coeffs.x_m_abs_m + x_offset,
@@ -577,7 +392,7 @@ __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT
                                  coeffs.y_lengths[blockIdx.y], P1sin_arr, P1_arr, 'y', &jm);
 
         if (norm_jones != NULL) {
-            FEEJones norm = norm_jones[blockIdx.y];
+            JONES norm = norm_jones[blockIdx.y];
             jm.j00 = CDIV(jm.j00, norm.j00);
             jm.j01 = CDIV(jm.j01, norm.j01);
             jm.j10 = CDIV(jm.j10, norm.j10);
@@ -602,8 +417,8 @@ extern "C" const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, in
     blockDim.x = warpSize;
     gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
     gridDim.y = num_coeffs;
-    fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (FEEJones *)d_norm_jones,
-                                      d_latitude_rad, iau_order, (FEEJones *)d_results);
+    fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (JONES *)d_norm_jones,
+                                      d_latitude_rad, iau_order, (JONES *)d_results);
 
     gpuError_t error_id;
 #ifdef DEBUG
@@ -625,66 +440,3 @@ extern "C" const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, in
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus
-
-/*----------------------------------------------------------------------
-**
-**
-**  Copyright (C) 2013-2021, NumFOCUS Foundation.
-**  All rights reserved.
-**
-**  This library is derived, with permission, from the International
-**  Astronomical Union's "Standards of Fundamental Astronomy" library,
-**  available from http://www.iausofa.org.
-**
-**  The ERFA version is intended to retain identical functionality to
-**  the SOFA library, but made distinct through different function and
-**  file names, as set out in the SOFA license conditions.  The SOFA
-**  original has a role as a reference standard for the IAU and IERS,
-**  and consequently redistribution is permitted only in its unaltered
-**  state.  The ERFA version is not subject to this restriction and
-**  therefore can be included in distributions which do not support the
-**  concept of "read only" software.
-**
-**  Although the intent is to replicate the SOFA API (other than
-**  replacement of prefix names) and results (with the exception of
-**  bugs;  any that are discovered will be fixed), SOFA is not
-**  responsible for any errors found in this version of the library.
-**
-**  If you wish to acknowledge the SOFA heritage, please acknowledge
-**  that you are using a library derived from SOFA, rather than SOFA
-**  itself.
-**
-**
-**  TERMS AND CONDITIONS
-**
-**  Redistribution and use in source and binary forms, with or without
-**  modification, are permitted provided that the following conditions
-**  are met:
-**
-**  1 Redistributions of source code must retain the above copyright
-**    notice, this list of conditions and the following disclaimer.
-**
-**  2 Redistributions in binary form must reproduce the above copyright
-**    notice, this list of conditions and the following disclaimer in
-**    the documentation and/or other materials provided with the
-**    distribution.
-**
-**  3 Neither the name of the Standards Of Fundamental Astronomy Board,
-**    the International Astronomical Union nor the names of its
-**    contributors may be used to endorse or promote products derived
-**    from this software without specific prior written permission.
-**
-**  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-**  "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-**  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
-**  FOR A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE
-**  COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-**  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-**  BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-**  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-**  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-**  LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
-**  ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-**  POSSIBILITY OF SUCH DAMAGE.
-**
-*/

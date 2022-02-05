@@ -17,3 +17,6 @@ pub(crate) const J_POWER_TABLE: [c64; 4] = [
     c64::new(-1.0, 0.0),
     c64::new(0.0, -1.0),
 ];
+
+/// MWA dipole separation \[metres\]
+pub(crate) const MWA_DPL_SEP: f64 = 1.100;

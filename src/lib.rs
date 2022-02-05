@@ -4,9 +4,11 @@
 
 //! Primary beam code for the Murchison Widefield Array.
 
+pub mod analytic;
 mod constants;
 mod factorial;
 pub mod fee;
+mod ffi;
 mod legendre;
 mod types;
 
