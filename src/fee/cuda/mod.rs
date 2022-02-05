@@ -10,8 +10,6 @@
 // This is needed only because tests inside bindgen-produced files (cuda_*.rs)
 // trigger the warning.
 #![allow(deref_nullptr)]
-// Link hyperbeam_cu produced by build.rs
-#![link(name = "hyperbeam_cu", kind = "static")]
 
 // Include Rust bindings to the CUDA code and set a compile-time variable type
 // (this makes things a lot cleaner than having a #[cfg(...)] on many struct
