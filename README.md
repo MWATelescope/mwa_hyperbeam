@@ -131,8 +131,7 @@ double-precision compute capability than "data center" GPUs (e.g. NVIDIA V100).
 Allowing `hyperbeam` to switch on the float type allows the user to decide
 between the performance and precision compromise.
 
-`CUDA` can also be linked statically (although it seems to link statically by
-default regardless of this flag):
+`CUDA` can also be linked statically:
 
     cargo build --release --features=cuda,cuda-static
 

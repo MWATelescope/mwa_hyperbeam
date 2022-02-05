@@ -65,7 +65,7 @@ fn main() {
         let mut cuda_target = cc::Build::new();
         cuda_target
             .cuda(true)
-            .flag("-cudart=static")
+            .cudart("shared") // We handle linking cudart statically
             .include("src/fee/cuda/")
             .file("src/fee/cuda/fee.cu");
         // Loop over each arch and sm
