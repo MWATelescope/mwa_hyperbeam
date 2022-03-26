@@ -1,7 +1,7 @@
 ---
 name: Release
 
-# Do this on every push
+# Do this on every tagged commit
 on:
   push:
     tags:
@@ -9,81 +9,99 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
 
 jobs:
   build-linux-release:
     name: Build release for Linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        python-version: ['3.7', '3.8', '3.9', '3.10']
 
     steps:
-    - name: Checkout sources
-      uses: actions/checkout@v2
-      with:
-        fetch-depth: 0
+      - name: Checkout sources
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
 
-    - name: Build hyperbeam
-      uses: docker://chjordan/maturin:latest
-      with:
-        entrypoint: /bin/bash
-        args: .github/workflows/build.sh
+      - name: Install dependencies
+        run: |
+          sudo apt update -y
+          sudo apt install -y \
+            tzdata \
+            build-essential \
+            pkg-config \
+            cmake \
+            curl \
+            git \
+            ;
+        env:
+          DEBIAN_FRONTEND: noninteractive
 
-    - name: Upload tarball
-      uses: actions/upload-artifact@v2
-      with:
-        name: linux.tar.gz
-        path: "*.tar.gz"
-        if-no-files-found: error
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
+
+      - name: Install CUDA
+        uses: Jimver/cuda-toolkit@v0.2.5
+        with:
+          cuda: '11.2.0'
+
+      - name: Build and Tar
+        run: ./.github/workflows/build.sh
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v2
+        with:
+          name: linux.tar.gz
+          path: "*.tar.gz"
+          if-no-files-found: error
 
   build-macos-release:
     name: Build release for MacOS
     runs-on: macos-latest
+    strategy:
+      matrix:
+        python-version: ['3.7', '3.8', '3.9', '3.10']
 
     steps:
-    - name: Checkout sources
-      uses: actions/checkout@v2
-      with:
-        fetch-depth: 0
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-    - name: Install stable toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
 
-    - name: Add Python 3.6
-      uses: actions/setup-python@v2
-      with:
-        python-version: "3.6"
-        architecture: "x64"
+      - name: Set up Python
+        uses: actions/setup-python@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+          architecture: x64
 
-    - name: Add Python 3.7
-      uses: actions/setup-python@v2
-      with:
-        python-version: "3.7"
-        architecture: "x64"
+      - name: Build and Tar
+        run: ./.github/workflows/build.sh
 
-    - name: Add Python 3.8
-      uses: actions/setup-python@v2
-      with:
-        python-version: "3.8"
-        architecture: "x64"
-
-    - name: Add Python 3.9
-      uses: actions/setup-python@v2
-      with:
-        python-version: "3.9"
-        architecture: "x64"
-
-    - name: Build hyperbeam
-      run: .github/workflows/build.sh
-
-    - name: Upload tarball
-      uses: actions/upload-artifact@v2
-      with:
-        name: macos.tar.gz
-        path: "*.tar.gz"
-        if-no-files-found: error
+      - name: Upload tarball
+        uses: actions/upload-artifact@v2
+        with:
+          name: macos.tar.gz
+          path: "*.tar.gz"
+          if-no-files-found: error
 
   create-release:
     name: Create a new release

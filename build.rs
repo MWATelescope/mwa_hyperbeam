@@ -23,7 +23,7 @@ fn main() {
     #[cfg(feature = "cuda")]
     {
         const DEFAULT_CUDA_ARCHES: &[u16] = &[60, 70, 80];
-        const DEFAULT_CUDA_SMS: &[u16] = &[60, 70, 75, 86];
+        const DEFAULT_CUDA_SMS: &[u16] = &[60, 61, 70, 75, 80, 86];
 
         // Attempt to read HYPERBEAM_CUDA_COMPUTE. HYPERDRIVE_CUDA_COMPUTE can
         // be used instead, too.
