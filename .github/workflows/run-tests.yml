@@ -42,5 +42,9 @@ jobs:
     - name: Run cargo check, fmt, clippy
       run: cargo make ci
 
+    - name: No CUDA references in CPU-only header
+      run: |
+        ! grep -i cuda include/mwa_hyperbeam.h
+
     - name: Run tests
       run: cargo make test
