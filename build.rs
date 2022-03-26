@@ -101,6 +101,27 @@ fn main() {
     match env::var("DOCS_RS").as_deref() {
         Ok("1") => (),
         _ => {
+            // Exclude CUDA things if CUDA isn't enabled.
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "cuda")] {
+                    let export = cbindgen::ExportConfig::default();
+                } else {
+                    let export = cbindgen::ExportConfig {
+                        exclude: vec![
+                            "FEEBeamCUDA".to_string(),
+                            "new_cuda_fee_beam".to_string(),
+                            "calc_jones_cuda".to_string(),
+                            "calc_jones_cuda_device".to_string(),
+                            "get_tile_map".to_string(),
+                            "get_freq_map".to_string(),
+                            "get_num_unique_fee_freqs".to_string(),
+                            "free_cuda_fee_beam".to_string(),
+                        ],
+                        ..Default::default()
+                    };
+                }
+            }
+
             // Rename an internal-only name depending on the CUDA precision.
             #[cfg(feature = "cuda-single")]
             let c_type = "float";
@@ -111,6 +132,7 @@ fn main() {
                 .with_config(cbindgen::Config {
                     cpp_compat: true,
                     pragma_once: true,
+                    export,
                     ..Default::default()
                 })
                 .with_crate(crate_dir)

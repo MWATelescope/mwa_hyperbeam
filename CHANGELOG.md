@@ -8,6 +8,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 ### Fixed
+- CUDA function prototypes were being included in the C header, even if no CUDA
+  feature was enabled.
 - The CUDA library libcudart was always statically linked by mistake. It is now
   linked statically only if the cargo feature "cuda-static" is used, or one of
   the PKG_CONFIG environment variables is set.
