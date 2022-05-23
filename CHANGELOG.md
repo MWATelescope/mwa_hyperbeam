@@ -7,6 +7,9 @@ and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Function documentation is now more consistent and hopefully more readable.
+
 ### Fixed
 - CUDA compilation on ozstar failed because of an arithmetic operation between
   two different types. Compilation has succeeded elsewhere, such as on Ubuntu,

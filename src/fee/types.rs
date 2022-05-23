@@ -31,8 +31,9 @@ pub(super) struct BowtieCoefficients {
     pub(super) y: DipoleCoefficients,
 }
 
-/// [CoeffCache] is just a `RwLock` around a `HashMap`. This allows multiple
-/// concurrent readers with the ability to halt all reading when writing.
+/// [`CoeffCache`] is just a [`RwLock`] around a [`HashMap`]. This allows
+/// multiple concurrent readers with the ability to halt all reading when
+/// writing.
 #[derive(Default)]
 pub(super) struct CoeffCache(RwLock<HashMap<CacheKey, BowtieCoefficients>>);
 
@@ -44,9 +45,9 @@ impl std::ops::Deref for CoeffCache {
     }
 }
 
-/// [NormCache] is very similar to [CoeffCache]. It stores Jones matrices used
-/// to normalise beam responses at various frequencies (i.e. frequency is the
-/// key of the cache).
+/// [`NormCache`] is very similar to [`CoeffCache`]. It stores Jones matrices
+/// used to normalise beam responses at various frequencies (i.e. frequency is
+/// the key of the cache).
 #[derive(Default)]
 pub(super) struct NormCache(RwLock<HashMap<u32, Jones<f64>>>);
 

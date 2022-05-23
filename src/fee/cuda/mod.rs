@@ -39,7 +39,9 @@ use ndarray::prelude::*;
 use super::{fix_amps, FEEBeam, FEEBeamError};
 use crate::types::CacheKey;
 
-/// Device pointers to coefficients for FEE beam calculations.
+/// A CUDA beam object ready to calculate beam responses. It uses the
+/// information supplied to the [`FEEBeamCUDA::new`] function; frequencies,
+/// dipole gains and delays and whether we're normalising responses.
 #[derive(Debug)]
 pub struct FEEBeamCUDA {
     x_q1_accum: DevicePointer<CudaFloat>,
@@ -67,12 +69,12 @@ pub struct FEEBeamCUDA {
     /// The number of unique tile coefficients.
     pub(super) num_coeffs: i32,
 
-    /// The number of tiles used to generate the `FEECoeffs`. Also one of the indices
-    /// used to make `(d_)coeff_map`.
+    /// The number of tiles used to generate the [`FEECoeffs`]. Also one of the
+    /// indices used to make `(d_)coeff_map`.
     pub(super) num_unique_tiles: i32,
 
-    /// The number of frequencies used to generate `FEECoeffs`. Also one of the
-    /// indices used to make `(d_)coeff_map`.
+    /// The number of frequencies used to generate [`FEECoeffs`]. Also one of
+    /// the indices used to make `(d_)coeff_map`.
     pub(super) num_unique_freqs: i32,
 
     /// Tile map. This is used to access de-duplicated Jones matrices.
@@ -397,7 +399,7 @@ impl FEEBeamCUDA {
     /// copy them to the host, and free the device memory. The returned array is
     /// "expanded"; tile and frequency de-duplication is undone to give an array
     /// with the same number of tiles and frequencies as was specified when this
-    /// [FEEBeamCUDA] was created.
+    /// [`FEEBeamCUDA`] was created.
     pub fn calc_jones(
         &self,
         az_rad: &[CudaFloat],
@@ -465,20 +467,22 @@ impl FEEBeamCUDA {
         }
     }
 
-    /// Get a pointer to the device tile map. This is necessary to access
-    /// de-duplicated beam Jones matrices on the device.
+    /// Get a pointer to the device tile map associated with this
+    /// [`FEEBeamCUDA`]. This is necessary to access de-duplicated beam Jones
+    /// matrices on the device.
     pub fn get_tile_map(&self) -> *const i32 {
         self.d_tile_map.get()
     }
 
-    /// Get a pointer to the device freq map. This is necessary to access
-    /// de-duplicated beam Jones matrices on the device.
+    /// Get a pointer to the device freq map associated with this
+    /// [`FEEBeamCUDA`]. This is necessary to access de-duplicated beam Jones
+    /// matrices on the device.
     pub fn get_freq_map(&self) -> *const i32 {
         self.d_freq_map.get()
     }
 
     /// Get the number of de-duplicated frequencies associated with this
-    /// [FEEBeamCUDA].
+    /// [`FEEBeamCUDA`].
     pub fn get_num_unique_freqs(&self) -> i32 {
         self.num_unique_freqs
     }

@@ -38,7 +38,7 @@ struct FEEBeam {
 impl FEEBeam {
     /// Create a new `FEEBeam` object. This object is used for all beam
     /// calculations. If the path to the beam HDF5 file is not given, then the
-    /// MWA_BEAM_FILE environment variable is used.
+    /// `MWA_BEAM_FILE` environment variable is used.
     #[new]
     fn new(hdf5_file: Option<PyObject>) -> PyResult<Self> {
         let strct = match hdf5_file {
@@ -98,7 +98,7 @@ impl FEEBeam {
 
     /// Calculate the Jones matrices for multiple directions given a pointing.
     /// Each direction is calculated in parallel by Rust. The number of parallel
-    /// threads used can be controlled by setting RAYON_NUM_THREADS. `delays`
+    /// threads used can be controlled by setting `RAYON_NUM_THREADS`. `delays`
     /// must have 16 ints, and `amps` must have 16 or 32 floats.
     #[pyo3(text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)")]
     #[allow(clippy::too_many_arguments)]

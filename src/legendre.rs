@@ -8,11 +8,11 @@
 ///
 /// # Arguments
 ///
-/// `n` - the maximum first index of the Legendre function, which must be at
-/// least 0.
-/// `m` - the second index of the Legendre function, which must be at least 0,
-/// and no greater than N.
-/// `x` - the points at which the function is to be evaluated.
+/// * `n` - the maximum first index of the Legendre function, which must be at
+///   least 0.
+/// * `m` - the second index of the Legendre function, which must be at least 0,
+///   and no greater than N.
+/// * `x` - the points at which the function is to be evaluated.
 ///
 // This code is a re-write of the C code here:
 // https://people.sc.fsu.edu/~jburkardt/c_src/legendre_polynomial/legendre_polynomial.html

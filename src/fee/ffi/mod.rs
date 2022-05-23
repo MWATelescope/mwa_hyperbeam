@@ -51,12 +51,12 @@ unsafe fn string_to_error_string(error: &str, error_str: *mut c_char) {
 ///
 /// # Arguments
 ///
-/// `hdf5_file` - the path to the MWA FEE beam file.
-/// `fee_beam` - a double pointer to the `FEEBeam` struct which is set by this
-/// function. This struct must be freed by calling `free_fee_beam`.
-/// `error_str` - a pointer to a character array which is set by this function
-/// if an error occurs. If this pointer is null, no error message can be
-/// reported if an error occurs.
+/// * `hdf5_file` - the path to the MWA FEE beam file.
+/// * `fee_beam` - a double pointer to the `FEEBeam` struct which is set by this
+///   function. This struct must be freed by calling `free_fee_beam`.
+/// * `error_str` - a pointer to a character array which is set by this function
+///   if an error occurs. If this pointer is null, no error message can be
+///   reported if an error occurs.
 ///
 /// # Returns
 ///
@@ -88,15 +88,15 @@ pub unsafe extern "C" fn new_fee_beam(
 }
 
 /// Create a new MWA FEE beam. Requires the HDF5 beam file path to be specified
-/// by the environment variable MWA_BEAM_FILE.
+/// by the environment variable `MWA_BEAM_FILE`.
 ///
 /// # Arguments
 ///
-/// `fee_beam` - a double pointer to the `FEEBeam` struct which is set by this
-/// function. This struct must be freed by calling `free_fee_beam`.
-/// `error_str` - a pointer to a character array which is set by this function
-/// if an error occurs. If this pointer is null, no error message can be
-/// reported if an error occurs.
+/// * `fee_beam` - a double pointer to the `FEEBeam` struct which is set by this
+///   function. This struct must be freed by calling `free_fee_beam`.
+/// * `error_str` - a pointer to a character array which is set by this function
+///   if an error occurs. If this pointer is null, no error message can be
+///   reported if an error occurs.
 ///
 /// # Returns
 ///
@@ -122,13 +122,13 @@ pub unsafe extern "C" fn new_fee_beam_from_env(
 /// Get the beam response Jones matrix for the given direction and pointing. Can
 /// optionally re-define the X and Y polarisations and apply a parallactic-angle
 /// correction; see Jack's thorough investigation at
-/// https://github.com/JLBLine/polarisation_tests_for_FEE.
+/// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
 ///
 /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
 /// order; see
-/// https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139). `amps`
-/// being dipole gains (usually 1 or 0), not digital gains.
+/// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>).
+/// `amps` being dipole gains (usually 1 or 0), not digital gains.
 ///
 /// 16 or 32 elements can be supplied for `amps`. If there are 16, then the
 /// dipole gains apply to both X and Y elements of dipoles. If there are 32, the
@@ -141,26 +141,27 @@ pub unsafe extern "C" fn new_fee_beam_from_env(
 ///
 /// # Arguments
 ///
-/// `fee_beam` - A pointer to a `FEEBeam` struct created with the `new_fee_beam`
-/// function
-/// `az_rad` - The azimuth direction to get the beam response (units of
-/// radians)
-/// `za_rad` - The zenith angle direction to get the beam response (units of
-/// radians)
-/// `freq_hz` - The frequency used for the beam response in Hertz
-/// `delays` - A pointer to a 16-element array of dipole delays for an MWA tile
-/// `amps` - A pointer to a 16- or 32-element array of dipole gains for an MWA
-/// tile. The number of elements is indicated by `num_amps`.
-/// `num_amps` - The number of dipole gains used (either 16 or 32).
-/// `norm_to_zenith` - A boolean indicating whether the beam response should be
-/// normalised with respect to zenith.
-/// `parallactic` - A boolean indicating whether the parallactic angle
-/// correction should be applied.
-/// `jones` - A pointer to a buffer with at least 8 doubles available. The Jones
-/// matrix beam response is written here.
-/// `error_str` - a pointer to a character array which is set by this function
-/// if an error occurs. If this pointer is null, no error message can be
-/// reported if an error occurs.
+/// * `fee_beam` - A pointer to a `FEEBeam` struct created with the
+///   `new_fee_beam` function
+/// * `az_rad` - The azimuth direction to get the beam response (units of
+///   radians)
+/// * `za_rad` - The zenith angle direction to get the beam response (units of
+///   radians)
+/// * `freq_hz` - The frequency used for the beam response in Hertz
+/// * `delays` - A pointer to a 16-element array of dipole delays for an MWA
+///   tile
+/// * `amps` - A pointer to a 16- or 32-element array of dipole gains for an MWA
+///   tile. The number of elements is indicated by `num_amps`.
+/// * `num_amps` - The number of dipole gains used (either 16 or 32).
+/// * `norm_to_zenith` - A boolean indicating whether the beam response should
+///   be normalised with respect to zenith.
+/// * `parallactic` - A boolean indicating whether the parallactic angle
+///   correction should be applied.
+/// * `jones` - A pointer to a buffer with at least 8 doubles available. The
+///   Jones matrix beam response is written here.
+/// * `error_str` - a pointer to a character array which is set by this function
+///   if an error occurs. If this pointer is null, no error message can be
+///   reported if an error occurs.
 ///
 /// # Returns
 ///
@@ -250,13 +251,13 @@ pub unsafe extern "C" fn calc_jones(
 /// single array (made available with the output pointer `jones`). Can
 /// optionally re-define the X and Y polarisations and apply a parallactic-angle
 /// correction; see Jack's thorough investigation at
-/// https://github.com/JLBLine/polarisation_tests_for_FEE.
+/// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
 ///
 /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
 /// order; see
-/// https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139). `amps`
-/// being dipole gains (usually 1 or 0), not digital gains.
+/// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>).
+/// `amps` being dipole gains (usually 1 or 0), not digital gains.
 ///
 /// As there are 8 doubles per Jones matrix, there are 8 * `num_azza` doubles in
 /// the array. Rust will calculate the Jones matrices in parallel. See the
@@ -264,28 +265,29 @@ pub unsafe extern "C" fn calc_jones(
 ///
 /// # Arguments
 ///
-/// `fee_beam` - A pointer to a `FEEBeam` struct created with the `new_fee_beam`
-/// function
-/// `num_azza` - The number of directions within `az_rad` and `za_rad`
-/// `az_rad` - The azimuth direction to get the beam response (units of
-/// radians)
-/// `za_rad` - The zenith angle direction to get the beam response (units of
-/// radians)
-/// `freq_hz` - The frequency used for the beam response in Hertz
-/// `delays` - A pointer to a 16-element array of dipole delays for an MWA tile
-/// `amps` - A pointer to a 16- or 32-element array of dipole gains for an MWA
-/// tile. The number of elements is indicated by `num_amps`.
-/// `num_amps` - The number of dipole gains used (either 16 or 32).
-/// `norm_to_zenith` - A boolean indicating whether the beam response should be
-/// normalised with respect to zenith.
-/// `parallactic` - A boolean indicating whether the parallactic angle
-/// correction should be applied.
-/// `jones` - A double pointer to a buffer with at least 8 * num_azza *
-/// sizeof(double) bytes available. The Jones matrix beam responses are written
-/// here.
-/// `error_str` - a pointer to a character array which is set by this function
-/// if an error occurs. If this pointer is null, no error message can be
-/// reported if an error occurs.
+/// * `fee_beam` - A pointer to a `FEEBeam` struct created with the
+///   `new_fee_beam` function
+/// * `num_azza` - The number of directions within `az_rad` and `za_rad`
+/// * `az_rad` - The azimuth direction to get the beam response (units of
+///   radians)
+/// * `za_rad` - The zenith angle direction to get the beam response (units of
+///   radians)
+/// * `freq_hz` - The frequency used for the beam response in Hertz
+/// * `delays` - A pointer to a 16-element array of dipole delays for an MWA
+///   tile
+/// * `amps` - A pointer to a 16- or 32-element array of dipole gains for an MWA
+///   tile. The number of elements is indicated by `num_amps`.
+/// * `num_amps` - The number of dipole gains used (either 16 or 32).
+/// * `norm_to_zenith` - A boolean indicating whether the beam response should
+///   be normalised with respect to zenith.
+/// * `parallactic` - A boolean indicating whether the parallactic angle
+///   correction should be applied.
+/// * `jones` - A double pointer to a buffer with at least 8 * num_azza *
+///   sizeof(double) bytes available. The Jones matrix beam responses are
+///   written here.
+/// * `error_str` - a pointer to a character array which is set by this function
+///   if an error occurs. If this pointer is null, no error message can be
+///   reported if an error occurs.
 ///
 /// # Returns
 ///
@@ -368,10 +370,10 @@ pub unsafe extern "C" fn calc_jones_array(
 ///
 /// # Arguments
 ///
-/// `fee_beam` - the pointer to the `FEEBeam` struct.
-/// `freqs_ptr` - a double pointer to the FEE beam frequencies. The `const`
-/// annotation is deliberate; the caller does not own the frequencies.
-/// `num_freqs` - a pointer to a `size_t` whose contents are set.
+/// * `fee_beam` - the pointer to the `FEEBeam` struct.
+/// * `freqs_ptr` - a double pointer to the FEE beam frequencies. The `const`
+///   annotation is deliberate; the caller does not own the frequencies.
+/// * `num_freqs` - a pointer to a `size_t` whose contents are set.
 ///
 #[no_mangle]
 pub unsafe extern "C" fn get_fee_beam_freqs(
@@ -391,7 +393,7 @@ pub unsafe extern "C" fn get_fee_beam_freqs(
 ///
 /// # Arguments
 ///
-/// `fee_beam` - the pointer to the `FEEBeam` struct.
+/// * `fee_beam` - the pointer to the `FEEBeam` struct.
 ///
 /// # Returns
 ///
@@ -407,7 +409,7 @@ pub unsafe extern "C" fn closest_freq(fee_beam: *mut FEEBeam, freq: u32) -> u32 
 ///
 /// # Arguments
 ///
-/// `fee_beam` - the pointer to the `FEEBeam` struct.
+/// * `fee_beam` - the pointer to the `FEEBeam` struct.
 ///
 #[no_mangle]
 pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
@@ -419,25 +421,27 @@ pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
 ///
 /// # Arguments
 ///
-/// `fee_beam` - a pointer to a previously set `FEEBeam` struct.
-/// `freqs_hz` - a pointer to an array of frequencies (units of Hz) at which the
-/// beam responses will be calculated.
-/// `delays` - a pointer to two-dimensional array of dipole delays. There must
-/// be 16 delays per row; each row corresponds to a tile.
-/// `amps` - a pointer to two-dimensional array of dipole amplitudes. There must
-/// be 16 or 32 amps per row; each row corresponds to a tile. The number of amps
-/// per row is specified by `num_amps`.
-/// `num_freqs` - the number of frequencies in the array pointed to by `freqs_hz`.
-/// `num_tiles` - the number of tiles in both `delays` and `amps`.
-/// `num_amps` - either 16 or 32. See the documentation for `calc_jones` for
-/// more explanation.
-/// `norm_to_zenith` - A boolean indicating whether the beam responses should be
-/// normalised with respect to zenith.
-/// `cuda_fee_beam` - a double pointer to the `FEEBeamCUDA` struct which is set
-/// by this function. This struct must be freed by calling `free_cuda_fee_beam`.
-/// `error_str` - a pointer to a character array which is set by this function
-/// if an error occurs. If this pointer is null, no error message can be
-/// reported if an error occurs.
+/// * `fee_beam` - a pointer to a previously set `FEEBeam` struct.
+/// * `freqs_hz` - a pointer to an array of frequencies (units of Hz) at which
+///   the beam responses will be calculated.
+/// * `delays` - a pointer to two-dimensional array of dipole delays. There must
+///   be 16 delays per row; each row corresponds to a tile.
+/// * `amps` - a pointer to two-dimensional array of dipole amplitudes. There
+///   must be 16 or 32 amps per row; each row corresponds to a tile. The number
+///   of amps per row is specified by `num_amps`.
+/// * `num_freqs` - the number of frequencies in the array pointed to by
+///   `freqs_hz`.
+/// * `num_tiles` - the number of tiles in both `delays` and `amps`.
+/// * `num_amps` - either 16 or 32. See the documentation for `calc_jones` for
+///   more explanation.
+/// * `norm_to_zenith` - A boolean indicating whether the beam responses should
+///   be normalised with respect to zenith.
+/// * `cuda_fee_beam` - a double pointer to the `FEEBeamCUDA` struct which is
+///   set by this function. This struct must be freed by calling
+///   `free_cuda_fee_beam`.
+/// * `error_str` - a pointer to a character array which is set by this function
+///   if an error occurs. If this pointer is null, no error message can be
+///   reported if an error occurs.
 ///
 /// # Returns
 ///
@@ -501,23 +505,23 @@ pub unsafe extern "C" fn new_cuda_fee_beam(
 /// available with the output pointer `jones`). Can optionally re-define the X
 /// and Y polarisations and apply a parallactic-angle correction; see Jack's
 /// thorough investigation at
-/// https://github.com/JLBLine/polarisation_tests_for_FEE.
+/// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
 ///
 /// # Arguments
 ///
-/// `cuda_fee_beam` - A pointer to a `FEEBeamCUDA` struct created with the
-/// `new_cuda_fee_beam` function
-/// `az_rad` - The azimuth directions to get the beam response (units of
-/// radians)
-/// `za_rad` - The zenith angle directions to get the beam response (units of
-/// radians)
-/// `parallactic` - A boolean indicating whether the parallactic angle
-/// correction should be applied.
-/// `jones` - A double pointer to a buffer with resulting beam-response Jones
-/// matrices.
-/// `error_str` - a pointer to a character array which is set by this function
-/// if an error occurs. If this pointer is null, no error message can be
-/// reported if an error occurs.
+/// * `cuda_fee_beam` - A pointer to a `FEEBeamCUDA` struct created with the
+///   `new_cuda_fee_beam` function
+/// * `az_rad` - The azimuth directions to get the beam response (units of
+///   radians)
+/// * `za_rad` - The zenith angle directions to get the beam response (units of
+///   radians)
+/// * `parallactic` - A boolean indicating whether the parallactic angle
+///   correction should be applied.
+/// * `jones` - A double pointer to a buffer with resulting beam-response Jones
+///   matrices.
+/// * `error_str` - a pointer to a character array which is set by this function
+///   if an error occurs. If this pointer is null, no error message can be
+///   reported if an error occurs.
 ///
 /// # Returns
 ///
@@ -567,23 +571,23 @@ pub unsafe extern "C" fn calc_jones_cuda(
 /// Jones matrix elements for each direction are left on the device (the device
 /// pointer is communicated via `d_jones`). Can optionally re-define the X and Y
 /// polarisations and apply a parallactic-angle correction; see Jack's thorough
-/// investigation at https://github.com/JLBLine/polarisation_tests_for_FEE.
+/// investigation at <https://github.com/JLBLine/polarisation_tests_for_FEE>.
 ///
 /// # Arguments
 ///
-/// `cuda_fee_beam` - A pointer to a `FEEBeamCUDA` struct created with the
-/// `new_cuda_fee_beam` function
-/// `az_rad` - The azimuth directions to get the beam response (units of
-/// radians)
-/// `za_rad` - The zenith angle directions to get the beam response (units of
-/// radians)
-/// `parallactic` - A boolean indicating whether the parallactic angle
-/// correction should be applied.
-/// `d_jones` - A double pointer to a device buffer with resulting beam-response
-/// Jones matrices.
-/// `error_str` - a pointer to a character array which is set by this function
-/// if an error occurs. If this pointer is null, no error message can be
-/// reported if an error occurs.
+/// * `cuda_fee_beam` - A pointer to a `FEEBeamCUDA` struct created with the
+///   `new_cuda_fee_beam` function
+/// * `az_rad` - The azimuth directions to get the beam response (units of
+///   radians)
+/// * `za_rad` - The zenith angle directions to get the beam response (units of
+///   radians)
+/// * `parallactic` - A boolean indicating whether the parallactic angle
+///   correction should be applied.
+/// * `d_jones` - A double pointer to a device buffer with resulting
+///   beam-response Jones matrices.
+/// * `error_str` - a pointer to a character array which is set by this function
+///   if an error occurs. If this pointer is null, no error message can be
+///   reported if an error occurs.
 ///
 /// # Returns
 ///
@@ -633,7 +637,7 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
 ///
 /// # Arguments
 ///
-/// `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+/// * `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
 ///
 /// # Returns
 ///
@@ -652,7 +656,7 @@ pub unsafe extern "C" fn get_tile_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const
 ///
 /// # Arguments
 ///
-/// `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+/// * `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
 ///
 /// # Returns
 ///
@@ -671,7 +675,7 @@ pub unsafe extern "C" fn get_freq_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const
 ///
 /// # Arguments
 ///
-/// `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+/// * `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
 ///
 /// # Returns
 ///
@@ -689,7 +693,7 @@ pub unsafe extern "C" fn get_num_unique_fee_freqs(cuda_fee_beam: *mut FEEBeamCUD
 ///
 /// # Arguments
 ///
-/// `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+/// * `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
 ///
 #[cfg(feature = "cuda")]
 #[no_mangle]

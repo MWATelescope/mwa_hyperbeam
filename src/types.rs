@@ -32,11 +32,11 @@ impl std::fmt::Display for Pol {
 pub(crate) struct CacheKey(u64);
 
 impl CacheKey {
-    /// Create a new [CacheKey].
+    /// Create a new [`CacheKey`].
     ///
     /// It hashes the input parameters for a unique hash. If these parameters
     /// are re-used, the same hash will be generated, and we can use the cache
-    /// that these [CacheKey]s guard.
+    /// that these [`CacheKey`]s guard.
     pub(crate) fn new(freq: u32, delays: &[u32], amps: &[f64; 32]) -> Self {
         let mut hasher = DefaultHasher::new();
         freq.hash(&mut hasher);

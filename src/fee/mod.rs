@@ -37,8 +37,8 @@ use crate::types::{CacheKey, Pol};
 /// The main struct to be used for calculating Jones matrices.
 #[allow(clippy::upper_case_acronyms)]
 pub struct FEEBeam {
-    /// The [hdf5::File] struct associated with the opened HDF5 file. It is
-    /// behind a [Mutex] to prevent parallel usage of the file.
+    /// The [`hdf5::File`] struct associated with the opened HDF5 file. It is
+    /// behind a [`Mutex`] to prevent parallel usage of the file.
     hdf5_file: Mutex<hdf5::File>,
     /// An ascendingly-sorted vector of frequencies available in the HDF5 file.
     freqs: Vec<u32>,
@@ -54,7 +54,7 @@ pub struct FEEBeam {
 }
 
 impl FEEBeam {
-    /// Given the path to the FEE beam file, create a new [FEEBeam] struct.
+    /// Given the path to an FEE beam file, create a new [`FEEBeam`] struct.
     pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, InitFEEBeamError> {
         // so that libhdf5 doesn't print errors to stdout
         hdf5::silence_errors(true);
@@ -141,7 +141,7 @@ impl FEEBeam {
         })
     }
 
-    /// Create a new [FEEBeam] struct from the `MWA_BEAM_FILE` environment
+    /// Create a new [`FEEBeam`] struct from the `MWA_BEAM_FILE` environment
     /// variable.
     pub fn new_from_env() -> Result<Self, InitFEEBeamError> {
         match std::env::var("MWA_BEAM_FILE") {
@@ -151,7 +151,7 @@ impl FEEBeam {
     }
 
     /// Get the frequencies defined in the HDF5 file that was used to create
-    /// this [FEEBeam]. They are ascendingly sorted.
+    /// this [`FEEBeam`]. They are ascendingly sorted.
     pub fn get_freqs(&self) -> &[u32] {
         &self.freqs
     }
@@ -205,13 +205,13 @@ impl FEEBeam {
         }
     }
 
-    /// Get [DipoleCoefficients] for the input parameters.
+    /// Get [`DipoleCoefficients`] for the input parameters.
     ///
-    /// This function is deliberately private; it uses a cache on [FEEBeam] as
-    /// calculating [DipoleCoefficients] is expensive, and it's easy to
+    /// This function is deliberately private; it uses a cache on [`FEEBeam`] as
+    /// calculating [`DipoleCoefficients`] is expensive, and it's easy to
     /// accidentally stall the cache with locks. This function automatically
-    /// populates the cache with [DipoleCoefficients] and returns a reference to
-    /// them.
+    /// populates the cache with [`DipoleCoefficients`] and returns a reference
+    /// to them.
     ///
     /// Note that specified frequencies are "rounded" to frequencies that are
     /// defined the HDF5 file.
@@ -245,12 +245,12 @@ impl FEEBeam {
         }))
     }
 
-    /// Get a [Jones] matrix for beam normalisation.
+    /// Get a [`Jones`] matrix for beam normalisation.
     ///
     /// This function is deliberately private and is intertwined with
     /// `get_modes`; this function should always be called before `get_modes` to
     /// prevent a deadlock. Beam normalisation Jones matrices are cached but
-    /// because [Jones] is [Copy], an owned copy is returned from the cache.
+    /// because [`Jones`] is [`Copy`], an owned copy is returned from the cache.
     fn get_norm_jones(&self, desired_freq_hz: u32) -> Result<Jones<f64>, FEEBeamError> {
         // Are the input settings already cached? Hash them to check.
         let fee_freq = self.find_closest_freq(desired_freq_hz);
@@ -522,7 +522,7 @@ impl FEEBeam {
 
     /// Calculate the Jones matrix for a given direction and pointing. Compared
     /// to the original specification of the FEE beam code, this method has
-    /// re-defined the X and Y polarisations and applys a parallactic-angle
+    /// re-defined the X and Y polarisations and applies a parallactic-angle
     /// correction; see Jack's thorough investigation at
     /// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
     ///
@@ -549,7 +549,7 @@ impl FEEBeam {
 
     /// Calculate the Jones matrices for many directions given a pointing.
     /// Compared to the original specification of the FEE beam code, this method
-    /// has re-defined the X and Y polarisations and applys a parallactic-angle
+    /// has re-defined the X and Y polarisations and applies a parallactic-angle
     /// correction; see Jack's thorough investigation at
     /// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
     ///
