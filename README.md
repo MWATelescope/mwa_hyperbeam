@@ -71,7 +71,8 @@ Have a look at the [GitHub
 releases](https://github.com/MWATelescope/mwa_hyperbeam/releases) page. There is
 a Python wheel for all versions of Python 3.6+, as well as shared and static
 objects for C-style linking. To get an idea of how to link `hyperbeam`, see the
-`beam_calcs.c` file in the examples directory.
+`fee.c` file in the [examples
+directory](https://github.com/MWATelescope/mwa_hyperbeam/tree/main/examples).
 
 Because these `hyperbeam` objects have the HDF5 and ERFA libraries compiled in,
 their respective licenses are also distributed.

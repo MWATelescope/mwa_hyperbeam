@@ -3,8 +3,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 // Build and run with something like:
-// gcc -O3 -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./beam_calcs.c -o beam_calcs
-// LD_LIBRARY_PATH=../target/release ./beam_calcs ../mwa_full_embedded_element_pattern.h5
+// gcc -O3 -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./fee.c -o fee
+// LD_LIBRARY_PATH=../target/release ./fee ../mwa_full_embedded_element_pattern.h5
 
 #include <complex.h>
 #include <math.h>
@@ -13,19 +13,29 @@
 
 #include "mwa_hyperbeam.h"
 
+void handle_hyperbeam_error(char file[], int line_num, const char function_name[]) {
+    int err_length = hb_last_error_length();
+    char *err = malloc(err_length * sizeof(char));
+    int err_status = hb_last_error_message(err, err_length);
+    if (err_status == -1) {
+        printf("Something really bad happened!\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("File %s:%d: hyperbeam error in %s: %s\n", file, line_num, function_name, err);
+
+    exit(EXIT_FAILURE);
+}
+
 int main(int argc, char *argv[]) {
     if (argc == 1) {
         fprintf(stderr, "Expected one argument - the path to the HDF5 file.\n");
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     // Get a new beam object from hyperbeam.
     FEEBeam *beam;
-    char error[200];
-    if (new_fee_beam(argv[1], &beam, error)) {
-        printf("Got an error when trying to make an FEEBeam: %s\n", error);
-        return EXIT_FAILURE;
-    }
+    if (new_fee_beam(argv[1], &beam))
+        handle_hyperbeam_error(__FILE__, __LINE__, "new_fee_beam");
 
     // Set up the direction and pointing to test.
     double az = 45.0 * M_PI / 180.0;
@@ -47,26 +57,24 @@ int main(int argc, char *argv[]) {
     // matrix is on the stack.
     complex double jones[4];
     // hyperbeam expects a pointer to doubles. Casting the pointer works fine.
-    if (calc_jones(beam, az, za, freq_hz, delays, amps, 16, norm_to_zenith, parallactic, (double *)&jones, error)) {
-        printf("Got an error when running calc_jones: %s\n", error);
-        return EXIT_FAILURE;
-    }
+    if (calc_jones(beam, az, za, freq_hz, delays, amps, 16, norm_to_zenith, parallactic, (double *)&jones))
+        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones");
+
     printf("The returned Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", creal(jones[0]), cimag(jones[0]));
     printf(" %+.8f%+.8fi]\n", creal(jones[1]), cimag(jones[1]));
     printf(" [%+.8f%+.8fi,", creal(jones[2]), cimag(jones[2]));
     printf(" %+.8f%+.8fi]]\n", creal(jones[3]), cimag(jones[3]));
 
-    // Amps can have 32 elements to specify X and Y elements of the dipoles. The
-    // first 16 elements are X elements, second 16 are Y elements.
+    // Amps can have 32 elements to specify amps of the X and Y dipoles. The
+    // first 16 elements are X amps, the second 16 are Y amps.
     double amps_2[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1,
                          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
     // This Jones matrix is on the heap.
     complex double *jones_2 = malloc(4 * sizeof(complex double));
-    if (calc_jones(beam, az, za, freq_hz, delays, amps_2, 32, norm_to_zenith, parallactic, (double *)jones_2, error)) {
-        printf("Got an error when running calc_jones_all_amps: %s\n", error);
-        return EXIT_FAILURE;
-    }
+    if (calc_jones(beam, az, za, freq_hz, delays, amps_2, 32, norm_to_zenith, parallactic, (double *)jones_2))
+        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones");
+
     // The resulting Jones matrix has different elements on the second row,
     // corresponding to the Y element; this is because we only altered the Y
     // amps.

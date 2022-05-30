@@ -18,10 +18,9 @@
 //
 // Compile and run this file with something like:
 
-// nvcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./beam_calcs_cuda_device.cu -o
-// beam_calcs_cuda_device
+// nvcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./fee_cuda_device.cu -o fee_cuda_device
 //
-// LD_LIBRARY_PATH=../target/release ./beam_calcs_cuda_device ../mwa_full_embedded_element_pattern.h5
+// LD_LIBRARY_PATH=../target/release ./fee_cuda_device ../mwa_full_embedded_element_pattern.h5
 
 #include <math.h>
 #include <stdio.h>
@@ -51,6 +50,19 @@ typedef struct JONES {
     CUCOMPLEX j10;
     CUCOMPLEX j11;
 } JONES;
+
+void handle_hyperbeam_error(char file[], int line_num, const char function_name[]) {
+    int err_length = hb_last_error_length();
+    char *err = (char *)malloc(err_length * sizeof(char));
+    int err_status = hb_last_error_message(err, err_length);
+    if (err_status == -1) {
+        printf("Something really bad happened!\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("File %s:%d: hyperbeam error in %s: %s\n", file, line_num, function_name, err);
+
+    exit(EXIT_FAILURE);
+}
 
 __global__ void use_hyperbeam_values(JONES *d_jones, const int *d_tile_map, const int *d_freq_map,
                                      int num_unique_fee_freqs, int num_tiles, int num_freqs, int num_directions) {
@@ -109,13 +121,11 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    // Get a new FEE beam object from hyperbeam.
+    // Get a new beam object from hyperbeam.
     FEEBeam *beam;
-    char error[200];
-    if (new_fee_beam(argv[1], &beam, error)) {
-        printf("Got an error when trying to make an FEEBeam: %s\n", error);
-        return EXIT_FAILURE;
-    }
+    if (new_fee_beam(argv[1], &beam))
+        handle_hyperbeam_error(__FILE__, __LINE__, "new_fee_beam");
+
     // Set up our telescope array. Here, we are using three tiles, but there are
     // two distinct types (one has all dipoles active, the other they're all
     // "dead"). The first 16 values are the first tile, the second 16 for the
@@ -144,14 +154,11 @@ int main(int argc, char *argv[]) {
 
     // Now get a new CUDA FEE beam object.
     FEEBeamCUDA *cuda_beam;
-    if (new_cuda_fee_beam(beam, freqs_hz, delays, dip_amps, num_freqs, num_tiles, num_amps, norm_to_zenith, &cuda_beam,
-                          error)) {
-        printf("Got an error when trying to make an FEEBeamCUDA: %s\n", error);
-        return EXIT_FAILURE;
-    }
+    if (new_cuda_fee_beam(beam, freqs_hz, delays, dip_amps, num_freqs, num_tiles, num_amps, norm_to_zenith, &cuda_beam))
+        handle_hyperbeam_error(__FILE__, __LINE__, "new_cuda_fee_beam");
 
     // Set up the directions to get the beam responses.
-    int num_directions = 100000;
+    size_t num_directions = 100000;
     FLOAT *az = (FLOAT *)malloc(num_directions * sizeof(FLOAT));
     FLOAT *za = (FLOAT *)malloc(num_directions * sizeof(FLOAT));
     for (int i = 0; i < num_directions; i++) {
@@ -162,13 +169,18 @@ int main(int argc, char *argv[]) {
     // https://github.com/JLBLine/polarisation_tests_for_FEE
     int parallactic = 1;
 
+    // Allocate our device memory for the beam responses.
     JONES *d_jones;
+    // We need the number of unique tiles and unique frequencies. hyperbeam
+    // de-duplicates tiles and frequencies to go faster. Cast the returned ints
+    // into size_t just in case we're hitting big numbers.
+    size_t num_unique_tiles = (size_t)get_num_unique_tiles(cuda_beam);
+    size_t num_unique_fee_freqs = (size_t)get_num_unique_fee_freqs(cuda_beam);
+    cudaMalloc(&d_jones, num_unique_tiles * num_unique_fee_freqs * num_directions * sizeof(JONES));
     // hyperbeam expects a pointer to our FLOAT macro. Casting the pointer works
     // fine.
-    if (calc_jones_cuda_device(cuda_beam, num_directions, az, za, parallactic, (FLOAT **)&d_jones, error)) {
-        printf("Got an error when running calc_jones_cuda_device: %s\n", error);
-        return EXIT_FAILURE;
-    }
+    if (calc_jones_cuda_device(cuda_beam, num_directions, az, za, parallactic, (FLOAT *)d_jones))
+        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_cuda_device");
 
     // The beam responses are now on the device. Let's launch our own kernel and
     // interface with the values. This kernel prints messages if the values are
@@ -176,7 +188,6 @@ int main(int argc, char *argv[]) {
     // interface with the beam responses.
     const int *d_tile_map = get_tile_map(cuda_beam);
     const int *d_freq_map = get_freq_map(cuda_beam);
-    int num_unique_fee_freqs = get_num_unique_fee_freqs(cuda_beam);
 
     dim3 gridDim, blockDim;
     blockDim.x = 128;

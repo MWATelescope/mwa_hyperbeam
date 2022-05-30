@@ -42,6 +42,7 @@ codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size redu
 cfg-if = "1.0.*"
 hdf5 = "0.8.*"
 marlu = { version = "0.3.*", default-features = false }
+panic-message = "0.3.0"
 parking_lot = "0.11.*"
 thiserror = "1.0.*"
 
@@ -81,9 +82,9 @@ name = "bench"
 harness = false
 
 [[example]]
-name = "beam_calcs"
+name = "fee"
 required-features = ["examples"]
 
 [[example]]
-name = "beam_calcs_cuda"
+name = "fee_cuda"
 required-features = ["examples", "cuda"]

@@ -495,6 +495,30 @@ impl FEEBeam {
         amps: &[f64],
         norm_to_zenith: bool,
     ) -> Result<Vec<Jones<f64>>, FEEBeamError> {
+        let mut results = vec![Jones::default(); az_rad.len()];
+        self.calc_jones_eng_array_inner(
+            az_rad,
+            za_rad,
+            freq_hz,
+            delays,
+            amps,
+            norm_to_zenith,
+            &mut results,
+        )?;
+        Ok(results)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn calc_jones_eng_array_inner(
+        &self,
+        az_rad: &[f64],
+        za_rad: &[f64],
+        freq_hz: u32,
+        delays: &[u32],
+        amps: &[f64],
+        norm_to_zenith: bool,
+        results: &mut [Jones<f64>],
+    ) -> Result<(), FEEBeamError> {
         // `delays` must have 16 elements...
         debug_assert_eq!(delays.len(), 16);
         // ... but `amps` may have either 16 or 32. 32 elements corresponds to
@@ -512,12 +536,14 @@ impl FEEBeam {
             false => None,
         };
 
-        let out = az_rad
+        az_rad
             .par_iter()
             .zip(za_rad.par_iter())
-            .map(|(&az, &za)| calc_jones_direct(az, za, &coeffs, norm_jones))
-            .collect();
-        Ok(out)
+            .zip(results.par_iter_mut())
+            .for_each(|((&az, &za), result)| {
+                *result = calc_jones_direct(az, za, &coeffs, norm_jones)
+            });
+        Ok(())
     }
 
     /// Calculate the Jones matrix for a given direction and pointing. Compared
@@ -571,6 +597,30 @@ impl FEEBeam {
         amps: &[f64],
         norm_to_zenith: bool,
     ) -> Result<Vec<Jones<f64>>, FEEBeamError> {
+        let mut results = vec![Jones::default(); az_rad.len()];
+        self.calc_jones_array_inner(
+            az_rad,
+            za_rad,
+            freq_hz,
+            delays,
+            amps,
+            norm_to_zenith,
+            &mut results,
+        )?;
+        Ok(results)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn calc_jones_array_inner(
+        &self,
+        az_rad: &[f64],
+        za_rad: &[f64],
+        freq_hz: u32,
+        delays: &[u32],
+        amps: &[f64],
+        norm_to_zenith: bool,
+        results: &mut [Jones<f64>],
+    ) -> Result<(), FEEBeamError> {
         // `delays` must have 16 elements...
         debug_assert_eq!(delays.len(), 16);
         // ... but `amps` may have either 16 or 32. 32 elements corresponds to
@@ -588,16 +638,16 @@ impl FEEBeam {
         let full_amps = fix_amps(amps, delays);
         let coeffs = self.get_modes(freq_hz, delays, &full_amps)?;
 
-        let out = az_rad
+        az_rad
             .par_iter()
             .zip(za_rad.par_iter())
-            .map(|(&az, &za)| {
+            .zip(results.par_iter_mut())
+            .for_each(|((&az, &za), result)| {
                 let mut jones = calc_jones_direct(az, za, &coeffs, norm_jones);
                 apply_parallactic_correction(az, za, &mut jones);
-                jones
-            })
-            .collect();
-        Ok(out)
+                *result = jones;
+            });
+        Ok(())
     }
 
     /// Empty the cached dipole coefficients and normalisation Jones matrices to

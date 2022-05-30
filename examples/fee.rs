@@ -5,7 +5,7 @@
 //! Example code using hyperbeam with Rust.
 //!
 //! Build and run with something like:
-//! `cargo run --release --example beam_calcs -- mwa_full_embedded_element_pattern.h5 10000`
+//! `cargo run --release --example fee -- mwa_full_embedded_element_pattern.h5 10000`
 //!
 //! If you want to use hyperbeam in your own Rust crate, then check out the latest
 //! version on crates.io:

@@ -363,13 +363,42 @@ impl FEEBeamCUDA {
     ) -> Result<DevicePointer<Jones<CudaFloat>>, FEEBeamError> {
         unsafe {
             // Allocate a buffer on the device for results.
-            let d_results = DevicePointer::malloc(
+            let mut d_results = DevicePointer::malloc(
                 self.num_unique_tiles as usize
                     * self.num_unique_freqs as usize
                     * az_rad.len()
                     * std::mem::size_of::<Jones<CudaFloat>>(),
             )?;
 
+            self.calc_jones_device_inner(az_rad, za_rad, parallactic, &mut d_results)?;
+            Ok(d_results)
+        }
+    }
+
+    pub fn calc_jones_device_inner(
+        &self,
+        az_rad: &[CudaFloat],
+        za_rad: &[CudaFloat],
+        parallactic: bool,
+        d_results: &mut DevicePointer<Jones<CudaFloat>>,
+    ) -> Result<(), FEEBeamError> {
+        self.calc_jones_device_inner_ptr(
+            az_rad,
+            za_rad,
+            parallactic,
+            d_results.get_mut() as *mut std::ffi::c_void,
+        )
+    }
+
+    /// This function only exists for FFI purposes.
+    pub(crate) fn calc_jones_device_inner_ptr(
+        &self,
+        az_rad: &[CudaFloat],
+        za_rad: &[CudaFloat],
+        parallactic: bool,
+        d_results: *mut std::ffi::c_void,
+    ) -> Result<(), FEEBeamError> {
+        unsafe {
             let d_azs = DevicePointer::copy_to_device(az_rad)?;
             let d_zas = DevicePointer::copy_to_device(za_rad)?;
             let error_str =
@@ -386,12 +415,12 @@ impl FEEBeamCUDA {
                     None => std::ptr::null_mut(),
                 },
                 parallactic as i8,
-                d_results.get_mut() as *mut std::ffi::c_void,
+                d_results,
                 error_str,
             );
             cuda_status_to_error(result, error_str)?;
 
-            Ok(d_results)
+            Ok(())
         }
     }
 
@@ -406,8 +435,31 @@ impl FEEBeamCUDA {
         za_rad: &[CudaFloat],
         parallactic: bool,
     ) -> Result<Array3<Jones<CudaFloat>>, FEEBeamError> {
-        let device_ptr = self.calc_jones_device(az_rad, za_rad, parallactic)?;
-        let mut jones_results: Array3<Jones<CudaFloat>> = Array3::from_elem(
+        let mut results = Array3::from_elem(
+            (self.tile_map.len(), self.freq_map.len(), az_rad.len()),
+            Jones::default(),
+        );
+
+        self.calc_jones_inner(az_rad, za_rad, parallactic, results.view_mut())?;
+        Ok(results)
+    }
+
+    /// Given directions, calculate beam-response Jones matrices on the device,
+    /// copy them to the host, and free the device memory. This function is the
+    /// same as [`FEEBeamCUDA::calc_jones`], but the results are stored in a
+    /// pre-allocated array. This array should have a shape of
+    /// (`total_num_tiles`, `total_num_freqs`, `az_rad_length`). The first two
+    /// dimensions can be accessed with `FEEBeamCUDA::get_total_num_tiles` and
+    /// `FEEBeamCUDA::get_total_num_freqs`.
+    pub fn calc_jones_inner(
+        &self,
+        az_rad: &[CudaFloat],
+        za_rad: &[CudaFloat],
+        parallactic: bool,
+        mut results: ArrayViewMut3<Jones<CudaFloat>>,
+    ) -> Result<(), FEEBeamError> {
+        // Allocate an array matching the deduplicated device memory.
+        let mut dedup_results: Array3<Jones<CudaFloat>> = Array3::from_elem(
             (
                 self.num_unique_tiles as usize,
                 self.num_unique_freqs as usize,
@@ -415,18 +467,18 @@ impl FEEBeamCUDA {
             ),
             Jones::default(),
         );
+        // Calculate the beam responses. and copy them to the host.
+        let device_ptr = self.calc_jones_device(az_rad, za_rad, parallactic)?;
         unsafe {
-            device_ptr.copy_from_device(jones_results.as_slice_mut().unwrap())?;
+            // The unwrap is safe, as `dedup_results` is a contiguous block of
+            // memory.
+            device_ptr.copy_from_device(dedup_results.as_slice_mut().unwrap())?;
         }
         // Free the device memory.
         drop(device_ptr);
 
         // Expand the results according to the map.
-        let mut jones_expanded = Array3::from_elem(
-            (self.tile_map.len(), self.freq_map.len(), az_rad.len()),
-            Jones::default(),
-        );
-        jones_expanded
+        results
             .outer_iter_mut()
             .zip(self.tile_map.iter())
             .for_each(|(mut jones_row, &i_row)| {
@@ -436,10 +488,10 @@ impl FEEBeamCUDA {
                     .zip(self.freq_map.iter())
                     .for_each(|(mut jones_col, &i_col)| {
                         let i_col: usize = i_col.try_into().unwrap();
-                        jones_col.assign(&jones_results.slice(s![i_row, i_col, ..]));
+                        jones_col.assign(&dedup_results.slice(s![i_row, i_col, ..]));
                     })
             });
-        Ok(jones_expanded)
+        Ok(())
     }
 
     /// Convenience function to get the `FEECoeffs` C struct that the CUDA code
@@ -465,6 +517,16 @@ impl FEEBeamCUDA {
             y_lengths: self.y_lengths.get(),
             y_offsets: self.y_offsets.get(),
         }
+    }
+
+    /// Get the number of tiles that this [`FEEBeamCUDA`] applies to.
+    pub fn get_total_num_tiles(&self) -> usize {
+        self.tile_map.len()
+    }
+
+    /// Get the number of frequencies that this [`FEEBeamCUDA`] applies to.
+    pub fn get_total_num_freqs(&self) -> usize {
+        self.freq_map.len()
     }
 
     /// Get a pointer to the device tile map associated with this

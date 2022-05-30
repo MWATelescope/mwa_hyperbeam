@@ -17,24 +17,23 @@ use marlu::Jones;
 #[test]
 #[serial]
 fn test_ffi_fee_new() {
-    let file = std::ffi::CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let file = CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
     unsafe {
         let mut beam = null_mut();
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
-        let result = new_fee_beam(file.into_raw(), &mut beam, error_str);
+        let result = new_fee_beam(file.into_raw(), &mut beam);
         assert_eq!(result, 0);
 
         free_fee_beam(beam);
     };
 }
+
 #[test]
 #[serial]
 fn test_ffi_fee_new_from_env() {
     std::env::set_var("MWA_BEAM_FILE", "mwa_full_embedded_element_pattern.h5");
     unsafe {
         let mut beam = null_mut();
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
-        let result = new_fee_beam_from_env(&mut beam, error_str);
+        let result = new_fee_beam_from_env(&mut beam);
         assert_eq!(result, 0);
 
         free_fee_beam(beam);
@@ -48,8 +47,7 @@ fn test_calc_jones_via_ffi() {
     let mut jones = Array1::zeros(8);
     unsafe {
         let mut beam = null_mut();
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
-        let result = new_fee_beam(file.into_raw(), &mut beam, null_mut());
+        let result = new_fee_beam(file.into_raw(), &mut beam);
         assert_eq!(result, 0);
         let result = calc_jones(
             beam,
@@ -62,14 +60,8 @@ fn test_calc_jones_via_ffi() {
             0,
             1,
             jones.as_mut_ptr(),
-            error_str,
         );
-        assert_eq!(
-            result,
-            0,
-            "{}",
-            CString::from_raw(error_str).into_string().unwrap()
-        );
+        assert_eq!(result, 0);
 
         free_fee_beam(beam);
     };
@@ -94,8 +86,7 @@ fn test_calc_jones_eng_via_ffi() {
     let mut jones = Array1::zeros(8);
     unsafe {
         let mut beam = null_mut();
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
-        let result = new_fee_beam(file.into_raw(), &mut beam, null_mut());
+        let result = new_fee_beam(file.into_raw(), &mut beam);
         assert_eq!(result, 0);
         let result = calc_jones(
             beam,
@@ -108,14 +99,8 @@ fn test_calc_jones_eng_via_ffi() {
             1,
             0,
             jones.as_mut_ptr(),
-            error_str,
         );
-        assert_eq!(
-            result,
-            0,
-            "{}",
-            CString::from_raw(error_str).into_string().unwrap()
-        );
+        assert_eq!(result, 0);
 
         free_fee_beam(beam);
     };
@@ -140,7 +125,7 @@ fn test_calc_jones_32_amps_via_ffi() {
     let mut jones = Array1::zeros(8);
     unsafe {
         let mut beam = null_mut();
-        let result = new_fee_beam(file.into_raw(), &mut beam, null_mut());
+        let result = new_fee_beam(file.into_raw(), &mut beam);
         assert_eq!(result, 0);
         let result = calc_jones(
             beam,
@@ -157,7 +142,6 @@ fn test_calc_jones_32_amps_via_ffi() {
             0,
             0,
             jones.as_mut_ptr(),
-            null_mut(),
         );
         assert_eq!(result, 0);
 
@@ -181,15 +165,14 @@ fn test_calc_jones_32_amps_via_ffi() {
 #[serial]
 fn test_calc_jones_array_via_ffi() {
     let num_directions = 1000;
-    let file = std::ffi::CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let file = CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let jones = unsafe {
         let mut beam = null_mut();
-        let error = null_mut();
-        let result = new_fee_beam(file.into_raw(), &mut beam, error);
+        let result = new_fee_beam(file.into_raw(), &mut beam);
         assert_eq!(result, 0);
         let az = vec![45.0_f64.to_radians(); num_directions];
         let za = vec![10.0_f64.to_radians(); num_directions];
-        let mut jones_ptr = null_mut();
+        let mut jones = Array2::zeros((num_directions, 8));
         let result = calc_jones_array(
             beam,
             num_directions as _,
@@ -201,20 +184,12 @@ fn test_calc_jones_array_via_ffi() {
             16,
             0,
             0,
-            &mut jones_ptr,
-            error,
+            jones.as_mut_ptr(),
         );
         assert_eq!(result, 0);
 
         free_fee_beam(beam);
-
-        Array1::from(Vec::from_raw_parts(
-            jones_ptr,
-            8 * num_directions,
-            8 * num_directions,
-        ))
-        .into_shape((num_directions, 8))
-        .unwrap()
+        jones
     };
 
     let expected =
@@ -227,15 +202,14 @@ fn test_calc_jones_array_via_ffi() {
 #[serial]
 fn test_calc_jones_array_32_amps_via_ffi() {
     let num_directions = 1000;
-    let file = std::ffi::CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let file = CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let jones = unsafe {
         let mut beam = null_mut();
-        let error = null_mut();
-        let result = new_fee_beam(file.into_raw(), &mut beam, error);
+        let result = new_fee_beam(file.into_raw(), &mut beam);
         assert_eq!(result, 0);
         let az = vec![45.0_f64.to_radians(); num_directions];
         let za = vec![10.0_f64.to_radians(); num_directions];
-        let mut jones_ptr = null_mut();
+        let mut jones = Array2::zeros((num_directions, 8));
         let result = calc_jones_array(
             beam,
             num_directions as _,
@@ -251,20 +225,12 @@ fn test_calc_jones_array_32_amps_via_ffi() {
             32,
             0,
             0,
-            &mut jones_ptr,
-            error,
+            jones.as_mut_ptr(),
         );
         assert_eq!(result, 0);
 
         free_fee_beam(beam);
-
-        Array1::from(Vec::from_raw_parts(
-            jones_ptr,
-            8 * num_directions,
-            8 * num_directions,
-        ))
-        .into_shape((num_directions, 8))
-        .unwrap()
+        jones
     };
 
     let expected = array![
@@ -292,9 +258,9 @@ fn test_ffi_fee_freq_functions() {
     let closest = beam.find_closest_freq(search_freq);
 
     unsafe {
-        let file_cstr = std::ffi::CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        let file_cstr = CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
         let mut ffi_beam = null_mut();
-        let result = new_fee_beam(file_cstr.into_raw(), &mut ffi_beam, null_mut());
+        let result = new_fee_beam(file_cstr.into_raw(), &mut ffi_beam);
         assert_eq!(result, 0);
 
         let mut freqs_ptr: *const u32 = null_mut();
@@ -317,7 +283,7 @@ fn test_ffi_fee_freq_functions() {
 #[cfg(feature = "cuda")]
 #[serial]
 fn test_calc_jones_cuda_via_ffi() {
-    let file = std::ffi::CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let file = CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let freqs = [150e6 as u32];
     let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
     let amps =
@@ -335,13 +301,12 @@ fn test_calc_jones_cuda_via_ffi() {
 
     let mut beam = null_mut();
     let jones_gpu = unsafe {
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
-        let result = new_fee_beam(file.into_raw(), &mut beam, error_str);
+        let result = new_fee_beam(file.into_raw(), &mut beam);
         assert_eq!(result, 0);
 
-        let num_freqs = freqs.len() as u32;
-        let num_tiles = delays.dim().1 as u32;
-        let num_amps = amps.dim().1 as u32;
+        let num_freqs = freqs.len();
+        let num_tiles = delays.dim().0;
+        let num_amps = amps.dim().1;
         let mut cuda_beam = null_mut();
 
         let result = new_cuda_fee_beam(
@@ -349,23 +314,17 @@ fn test_calc_jones_cuda_via_ffi() {
             freqs.as_ptr(),
             delays.as_ptr(),
             amps.as_ptr(),
-            num_freqs,
-            num_tiles,
-            num_amps,
+            num_freqs as u32,
+            num_tiles as u32,
+            num_amps as u32,
             norm_to_zenith as u8,
             &mut cuda_beam,
-            error_str,
         );
-        assert_eq!(
-            result,
-            0,
-            "{}",
-            CString::from_raw(error_str).into_string().unwrap()
-        );
+        assert_eq!(result, 0);
 
         let num_azza = az.len() as u32;
         let parallactic_correction = 1;
-        let mut jones_floats = null_mut();
+        let mut jones: Array3<Jones<CudaFloat>> = Array3::zeros((num_tiles, num_freqs, az.len()));
 
         let result = calc_jones_cuda(
             cuda_beam,
@@ -373,20 +332,13 @@ fn test_calc_jones_cuda_via_ffi() {
             az.as_ptr(),
             za.as_ptr(),
             parallactic_correction,
-            &mut jones_floats,
-            error_str,
+            jones.as_mut_ptr().cast(),
         );
-        assert_eq!(
-            result,
-            0,
-            "{}",
-            CString::from_raw(error_str).into_string().unwrap()
-        );
+        assert_eq!(result, 0);
 
         free_cuda_fee_beam(cuda_beam);
 
-        let jones: *mut Jones<CudaFloat> = jones_floats.cast();
-        ArrayView3::from_shape_ptr((delays.dim().0, freqs.len(), az.len()), jones).into_owned()
+        jones
     };
 
     // Compare with CPU results.
@@ -443,78 +395,87 @@ fn test_calc_jones_cuda_via_ffi() {
 
 #[test]
 fn test_error_file_doesnt_exist() {
-    let file = "/unlikely/to/exist.h5";
-    let file_cstr = std::ffi::CString::new(file).unwrap();
-    let mut beam = null_mut();
-    let error_str = unsafe {
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
-        let result = new_fee_beam(file_cstr.into_raw(), &mut beam, error_str);
-        assert!(result != 0);
-        let cstr = CString::from_raw(error_str);
-        assert!(cstr.to_str().is_ok());
+    let file = CString::new("unlikely-to-exist.h5").unwrap();
+    let file_ptr = file.into_raw();
+    unsafe {
+        let mut beam = null_mut();
+        let result = new_fee_beam(file_ptr, &mut beam);
+        assert_ne!(result, 0);
+        drop(CString::from_raw(file_ptr));
 
-        cstr.to_str().unwrap().to_string()
-    };
-    assert!(!error_str.is_empty());
-    assert_eq!(
-        error_str,
-        format!("Specified beam file '{}' doesn't exist", file)
-    );
+        let err_len = hb_last_error_length();
+        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
+        let err_ptr = err.into_raw();
+        hb_last_error_message(err_ptr, err_len);
+        let err = CString::from_raw(err_ptr);
+        let err_str = err.to_str().unwrap();
+        assert_eq!(
+            err_str, "Specified beam file 'unlikely-to-exist.h5' doesn't exist",
+            "error message: {err_str}"
+        );
+    }
 }
 
 #[test]
 fn test_error_env_file_doesnt_exist() {
-    let file = "/unlikely/to/exist/again.h5";
-    std::env::set_var("MWA_BEAM_FILE", file);
-    let mut beam = null_mut();
-    let error_str = unsafe {
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
-        let result = new_fee_beam_from_env(&mut beam, error_str);
-        assert!(result != 0);
-        let cstr = CString::from_raw(error_str);
-        assert!(cstr.to_str().is_ok());
+    std::env::set_var("MWA_BEAM_FILE", "unlikely-to-exist.h5");
+    unsafe {
+        let mut beam = null_mut();
+        let result = new_fee_beam_from_env(&mut beam);
+        assert_ne!(result, 0);
 
-        cstr.to_str().unwrap().to_string()
-    };
-    assert!(!error_str.is_empty());
-    assert_eq!(
-        error_str,
-        format!("Specified beam file '{}' doesn't exist", file)
-    );
+        let err_len = hb_last_error_length();
+        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
+        let err_ptr = err.into_raw();
+        hb_last_error_message(err_ptr, err_len);
+        let err = CString::from_raw(err_ptr);
+        let err_str = err.to_str().unwrap();
+        assert_eq!(
+            err_str, "Specified beam file 'unlikely-to-exist.h5' doesn't exist",
+            "error message: {err_str}"
+        );
+    }
 }
 
 #[test]
 fn test_error_file_invalid_utf8() {
-    let file_cstr = unsafe { std::ffi::CString::from_vec_unchecked(vec![1, 1, 1, 1, 0]) };
-    let mut beam = null_mut();
-    let error_str = unsafe {
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
-        let result = new_fee_beam(file_cstr.into_raw(), &mut beam, error_str);
-        assert!(result != 0);
-        let cstr = CString::from_raw(error_str);
-        assert!(cstr.to_str().is_ok());
+    let file = unsafe { CString::from_vec_unchecked(vec![1, 1, 1, 1, 0]) };
+    let file_ptr = file.into_raw();
 
-        cstr.to_str().unwrap().to_string()
-    };
-    assert!(!error_str.is_empty());
-    assert_eq!(
-        error_str,
-        "Specified beam file '\u{1}\u{1}\u{1}\u{1}' doesn't exist"
-    );
+    unsafe {
+        let mut beam = null_mut();
+        let result = new_fee_beam(file_ptr, &mut beam);
+        assert_ne!(result, 0);
+        drop(CString::from_raw(file_ptr));
+
+        let err_len = hb_last_error_length();
+        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
+        let err_ptr = err.into_raw();
+        hb_last_error_message(err_ptr, err_len);
+        let err = CString::from_raw(err_ptr);
+        let err_str = err.to_str().unwrap();
+
+        assert_eq!(
+            err_str,
+            "Specified beam file '\u{1}\u{1}\u{1}\u{1}' doesn't exist"
+        );
+    }
 }
 
 #[test]
 fn test_bool_errors() {
-    let file = std::ffi::CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let file = CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let file_ptr = file.into_raw();
+
     unsafe {
         let mut beam = null_mut();
-        let result = new_fee_beam(file.into_raw(), &mut beam, null_mut());
-        assert!(result == 0);
+        let result = new_fee_beam(file_ptr, &mut beam);
+        assert_eq!(result, 0);
+        drop(CString::from_raw(file_ptr));
 
         let mut jones = [0.0; 8];
 
         // Bad number of amps.
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
         let result = calc_jones(
             beam,
             45.0_f64.to_radians(),
@@ -530,17 +491,18 @@ fn test_bool_errors() {
             2,
             0,
             jones.as_mut_ptr(),
-            error_str,
         );
-        assert!(result != 0);
-        let cstr = CString::from_raw(error_str);
-        assert_eq!(
-            cstr.to_str().unwrap(),
-            "A value other than 16 or 32 was used for num_amps"
-        );
+        assert_ne!(result, 0);
+
+        let err_len = hb_last_error_length();
+        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
+        let err_ptr = err.into_raw();
+        hb_last_error_message(err_ptr, err_len);
+        let err = CString::from_raw(err_ptr);
+        let err_str = err.to_str().unwrap();
+        assert_eq!(err_str, "A value other than 16 or 32 was used for num_amps");
 
         // Bad norm_to_zenith value.
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
         let result = calc_jones(
             beam,
             45.0_f64.to_radians(),
@@ -556,17 +518,21 @@ fn test_bool_errors() {
             2,
             0,
             jones.as_mut_ptr(),
-            error_str,
         );
-        assert!(result != 0);
-        let cstr = CString::from_raw(error_str);
+        assert_ne!(result, 0);
+
+        let err_len = hb_last_error_length();
+        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
+        let err_ptr = err.into_raw();
+        hb_last_error_message(err_ptr, err_len);
+        let err = CString::from_raw(err_ptr);
+        let err_str = err.to_str().unwrap();
         assert_eq!(
-            cstr.to_str().unwrap(),
+            err_str,
             "A value other than 0 or 1 was used for norm_to_zenith"
         );
 
         // Bad parallactic value.
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
         let result = calc_jones(
             beam,
             45.0_f64.to_radians(),
@@ -582,12 +548,16 @@ fn test_bool_errors() {
             0,
             2,
             jones.as_mut_ptr(),
-            error_str,
         );
-        assert!(result != 0);
-        let cstr = CString::from_raw(error_str);
+        assert_ne!(result, 0);
+        let err_len = hb_last_error_length();
+        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
+        let err_ptr = err.into_raw();
+        hb_last_error_message(err_ptr, err_len);
+        let err = CString::from_raw(err_ptr);
+        let err_str = err.to_str().unwrap();
         assert_eq!(
-            cstr.to_str().unwrap(),
+            err_str,
             "A value other than 0 or 1 was used for parallactic"
         );
 
@@ -595,7 +565,6 @@ fn test_bool_errors() {
         let az = [0.1];
         let za = [0.1];
         // Bad number of amps.
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
         let result = calc_jones_array(
             beam,
             az.len() as _,
@@ -607,18 +576,18 @@ fn test_bool_errors() {
             10,
             0,
             0,
-            &mut jones.as_mut_ptr(),
-            error_str,
+            jones.as_mut_ptr(),
         );
-        assert!(result != 0);
-        let cstr = CString::from_raw(error_str);
-        assert_eq!(
-            cstr.to_str().unwrap(),
-            "A value other than 16 or 32 was used for num_amps"
-        );
+        assert_ne!(result, 0);
+        let err_len = hb_last_error_length();
+        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
+        let err_ptr = err.into_raw();
+        hb_last_error_message(err_ptr, err_len);
+        let err = CString::from_raw(err_ptr);
+        let err_str = err.to_str().unwrap();
+        assert_eq!(err_str, "A value other than 16 or 32 was used for num_amps");
 
         // Bad norm_to_zenith value.
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
         let result = calc_jones_array(
             beam,
             az.len() as _,
@@ -630,18 +599,21 @@ fn test_bool_errors() {
             16,
             3,
             0,
-            &mut jones.as_mut_ptr(),
-            error_str,
+            jones.as_mut_ptr(),
         );
-        assert!(result != 0);
-        let cstr = CString::from_raw(error_str);
+        assert_ne!(result, 0);
+        let err_len = hb_last_error_length();
+        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
+        let err_ptr = err.into_raw();
+        hb_last_error_message(err_ptr, err_len);
+        let err = CString::from_raw(err_ptr);
+        let err_str = err.to_str().unwrap();
         assert_eq!(
-            cstr.to_str().unwrap(),
+            err_str,
             "A value other than 0 or 1 was used for norm_to_zenith"
         );
 
         // Bad parallactic value.
-        let error_str = CString::from_vec_unchecked(vec![1; 200]).into_raw();
         let result = calc_jones_array(
             beam,
             az.len() as _,
@@ -653,13 +625,17 @@ fn test_bool_errors() {
             16,
             0,
             255,
-            &mut jones.as_mut_ptr(),
-            error_str,
+            jones.as_mut_ptr(),
         );
-        assert!(result != 0);
-        let cstr = CString::from_raw(error_str);
+        assert_ne!(result, 0);
+        let err_len = hb_last_error_length();
+        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
+        let err_ptr = err.into_raw();
+        hb_last_error_message(err_ptr, err_len);
+        let err = CString::from_raw(err_ptr);
+        let err_str = err.to_str().unwrap();
         assert_eq!(
-            cstr.to_str().unwrap(),
+            err_str,
             "A value other than 0 or 1 was used for parallactic"
         );
     };

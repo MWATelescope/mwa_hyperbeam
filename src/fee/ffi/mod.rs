@@ -8,10 +8,14 @@
 #[cfg(test)]
 mod tests;
 
-use std::error::Error;
-use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
-use std::slice;
+use std::{
+    cell::RefCell,
+    ffi::CStr,
+    os::raw::{c_char, c_int},
+    panic, slice,
+};
+
+use marlu::rayon::iter::Either;
 
 use super::FEEBeam;
 
@@ -23,28 +27,76 @@ cfg_if::cfg_if! {
     }
 }
 
-/// Private function to conveniently write errors to error strings.
-unsafe fn error_to_error_string<E: Error>(error: E, error_str: *mut c_char) {
-    if !error_str.is_null() {
-        let error = CString::new(error.to_string()).unwrap();
-        let error_bytes = error.as_bytes_with_nul();
-        // Rust wants to make a slice of [i8] with c_char, so cast the pointer
-        // to get [u8] instead.
-        let error_buf: &mut [u8] = slice::from_raw_parts_mut(error_str.cast(), error_bytes.len());
-        error_buf[..].copy_from_slice(error_bytes);
-    }
+// Error handling taken from
+// https://michael-f-bryan.github.io/rust-ffi-guide/errors/return_types.html
+thread_local! {
+    static LAST_ERROR: RefCell<Option<String>> = RefCell::new(None);
 }
 
-/// Private function to conveniently write strings to error strings.
-unsafe fn string_to_error_string(error: &str, error_str: *mut c_char) {
-    if !error_str.is_null() {
-        let error = CString::new(error).unwrap();
-        let error_bytes = error.as_bytes_with_nul();
-        // Rust wants to make a slice of [i8] with c_char, so cast the pointer
-        // to get [u8] instead.
-        let error_buf: &mut [u8] = slice::from_raw_parts_mut(error_str.cast(), error_bytes.len());
-        error_buf[..].copy_from_slice(error_bytes);
+/// Update the most recent error, clearing whatever may have been there before.
+pub fn update_last_error(err: String) {
+    LAST_ERROR.with(|prev| {
+        *prev.borrow_mut() = Some(err);
+    });
+}
+
+/// Retrieve the most recent error, clearing it in the process.
+pub fn take_last_error() -> Option<String> {
+    LAST_ERROR.with(|prev| prev.borrow_mut().take())
+}
+
+/// Calculate the number of bytes in the last error's error message **not**
+/// including any trailing `null` characters.
+#[no_mangle]
+pub extern "C" fn hb_last_error_length() -> c_int {
+    LAST_ERROR.with(|prev| match *prev.borrow() {
+        Some(ref err) => err.to_string().len() as c_int + 1,
+        None => 0,
+    })
+}
+
+/// Write the most recent error message into a caller-provided buffer as a UTF-8
+/// string, returning the number of bytes written.
+///
+/// # Note
+///
+/// This writes a **UTF-8** string into the buffer. Windows users may need to
+/// convert it to a UTF-16 "unicode" afterwards.
+///
+/// If there are no recent errors then this returns `0` (because we wrote 0
+/// bytes). `-1` is returned if there are any errors, for example when passed a
+/// null pointer or a buffer of insufficient size.
+#[no_mangle]
+pub unsafe extern "C" fn hb_last_error_message(buffer: *mut c_char, length: c_int) -> c_int {
+    if buffer.is_null() {
+        // warn!("Null pointer passed into last_error_message() as the buffer");
+        return -1;
     }
+
+    let last_error = match take_last_error() {
+        Some(err) => err,
+        None => return 0,
+    };
+
+    let buffer = slice::from_raw_parts_mut(buffer as *mut u8, length as usize);
+
+    if last_error.len() >= buffer.len() {
+        // warn!("Buffer provided for writing the last error message is too small.");
+        // warn!(
+        //     "Expected at least {} bytes but got {}",
+        //     last_error.len() + 1,
+        //     buffer.len()
+        // );
+        return -1;
+    }
+
+    std::ptr::copy_nonoverlapping(last_error.as_ptr(), buffer.as_mut_ptr(), last_error.len());
+
+    // Add a trailing null so people using the string as a `char *` don't
+    // accidentally read into garbage.
+    buffer[last_error.len()] = 0;
+
+    last_error.len() as c_int
 }
 
 /// Create a new MWA FEE beam.
@@ -54,37 +106,51 @@ unsafe fn string_to_error_string(error: &str, error_str: *mut c_char) {
 /// * `hdf5_file` - the path to the MWA FEE beam file.
 /// * `fee_beam` - a double pointer to the `FEEBeam` struct which is set by this
 ///   function. This struct must be freed by calling `free_fee_beam`.
-/// * `error_str` - a pointer to a character array which is set by this function
-///   if an error occurs. If this pointer is null, no error message can be
-///   reported if an error occurs.
 ///
 /// # Returns
 ///
-/// * An exit code integer. If this is non-zero and an error string was
-///   provided, then the error string is set.
+/// * An exit code integer. If this is non-zero then an error occurred; the
+///   details can be obtained by (1) getting the length of the error string by
+///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
+///   with a string buffer with a length at least equal to the error length.
 ///
 #[no_mangle]
 pub unsafe extern "C" fn new_fee_beam(
     hdf5_file: *const c_char,
     fee_beam: *mut *mut FEEBeam,
-    error_str: *mut c_char,
 ) -> i32 {
-    let path = match CStr::from_ptr(hdf5_file).to_str() {
-        Ok(p) => p,
-        Err(e) => {
-            error_to_error_string(e, error_str);
-            return 2;
+    panic::set_hook(Box::new(|pi| {
+        update_last_error(panic_message::panic_info_message(pi).to_string());
+    }));
+
+    let result = panic::catch_unwind(|| {
+        let path = match CStr::from_ptr(hdf5_file).to_str() {
+            Ok(p) => p,
+            Err(e) => {
+                update_last_error(e.to_string());
+                return Either::Left(2);
+            }
+        };
+        match FEEBeam::new(path) {
+            Ok(b) => Either::Right(b),
+            Err(e) => {
+                update_last_error(e.to_string());
+                Either::Left(1)
+            }
         }
-    };
-    let beam = match FEEBeam::new(path) {
-        Ok(b) => b,
-        Err(e) => {
-            error_to_error_string(e, error_str);
-            return 1;
+    });
+
+    let _ = panic::take_hook();
+
+    match result {
+        Ok(Either::Right(b)) => {
+            *fee_beam = Box::into_raw(Box::new(b));
+            0
         }
-    };
-    *fee_beam = Box::into_raw(Box::new(beam));
-    0
+        Ok(Either::Left(e)) => e,
+        // For panics, the FFI error message is already updated.
+        Err(_) => -1,
+    }
 }
 
 /// Create a new MWA FEE beam. Requires the HDF5 beam file path to be specified
@@ -94,29 +160,39 @@ pub unsafe extern "C" fn new_fee_beam(
 ///
 /// * `fee_beam` - a double pointer to the `FEEBeam` struct which is set by this
 ///   function. This struct must be freed by calling `free_fee_beam`.
-/// * `error_str` - a pointer to a character array which is set by this function
-///   if an error occurs. If this pointer is null, no error message can be
-///   reported if an error occurs.
 ///
 /// # Returns
 ///
-/// * An exit code integer. If this is non-zero and an error string was
-///   provided, then the error string is set.
+/// * An exit code integer. If this is non-zero then an error occurred; the
+///   details can be obtained by (1) getting the length of the error string by
+///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
+///   with a string buffer with a length at least equal to the error length.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn new_fee_beam_from_env(
-    fee_beam: *mut *mut FEEBeam,
-    error_str: *mut c_char,
-) -> i32 {
-    let beam = match FEEBeam::new_from_env() {
-        Ok(b) => b,
+pub unsafe extern "C" fn new_fee_beam_from_env(fee_beam: *mut *mut FEEBeam) -> i32 {
+    panic::set_hook(Box::new(|pi| {
+        update_last_error(panic_message::panic_info_message(pi).to_string());
+    }));
+
+    let result = panic::catch_unwind(|| match FEEBeam::new_from_env() {
+        Ok(b) => Either::Right(b),
         Err(e) => {
-            error_to_error_string(e, error_str);
-            return 1;
+            update_last_error(e.to_string());
+            Either::Left(1)
         }
-    };
-    *fee_beam = Box::into_raw(Box::new(beam));
-    0
+    });
+
+    let _ = panic::take_hook();
+
+    match result {
+        Ok(Either::Right(b)) => {
+            *fee_beam = Box::into_raw(Box::new(b));
+            0
+        }
+        Ok(Either::Left(e)) => e,
+        // For panics, the FFI error message is already updated.
+        Err(_) => -1,
+    }
 }
 
 /// Get the beam response Jones matrix for the given direction and pointing. Can
@@ -134,8 +210,8 @@ pub unsafe extern "C" fn new_fee_beam_from_env(
 /// dipole gains apply to both X and Y elements of dipoles. If there are 32, the
 /// first 16 amps are for the X elements, the next 16 the Y elements.
 ///
-/// Note the type of `jones` (*double); we can't pass complex numbers across the
-/// FFI boundary, so the real and imaginary components are unpacked into
+/// Note the type of `jones` (`*double`); we can't pass complex numbers across
+/// the FFI boundary, so the real and imaginary components are unpacked into
 /// doubles. The output contains 8 doubles, where the j00 is the first pair, j01
 /// is the second pair, etc.
 ///
@@ -157,16 +233,15 @@ pub unsafe extern "C" fn new_fee_beam_from_env(
 ///   be normalised with respect to zenith.
 /// * `parallactic` - A boolean indicating whether the parallactic angle
 ///   correction should be applied.
-/// * `jones` - A pointer to a buffer with at least 8 doubles available. The
-///   Jones matrix beam response is written here.
-/// * `error_str` - a pointer to a character array which is set by this function
-///   if an error occurs. If this pointer is null, no error message can be
-///   reported if an error occurs.
+/// * `jones` - A pointer to a buffer with at least `8 * sizeof(double)`
+///   allocated. The Jones matrix beam response is written here.
 ///
 /// # Returns
 ///
-/// * An exit code integer. If this is non-zero and an error string was
-///   provided, then the error string is set.
+/// * An exit code integer. If this is non-zero then an error occurred; the
+///   details can be obtained by (1) getting the length of the error string by
+///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
+///   with a string buffer with a length at least equal to the error length.
 ///
 #[no_mangle]
 pub unsafe extern "C" fn calc_jones(
@@ -180,18 +255,11 @@ pub unsafe extern "C" fn calc_jones(
     norm_to_zenith: u8,
     parallactic: u8,
     jones: *mut f64,
-    error_str: *mut c_char,
 ) -> i32 {
-    let beam = &mut *fee_beam;
-    let delays_s = slice::from_raw_parts(delays, 16);
-    let amps_s = slice::from_raw_parts(amps, num_amps as usize);
     match num_amps {
         16 | 32 => (),
         _ => {
-            string_to_error_string(
-                "A value other than 16 or 32 was used for num_amps",
-                error_str,
-            );
+            update_last_error("A value other than 16 or 32 was used for num_amps".to_string());
             return 1;
         }
     };
@@ -199,10 +267,7 @@ pub unsafe extern "C" fn calc_jones(
         0 => false,
         1 => true,
         _ => {
-            string_to_error_string(
-                "A value other than 0 or 1 was used for norm_to_zenith",
-                error_str,
-            );
+            update_last_error("A value other than 0 or 1 was used for norm_to_zenith".to_string());
             return 1;
         }
     };
@@ -210,40 +275,34 @@ pub unsafe extern "C" fn calc_jones(
         0 => false,
         1 => true,
         _ => {
-            string_to_error_string(
-                "A value other than 0 or 1 was used for parallactic",
-                error_str,
-            );
+            update_last_error("A value other than 0 or 1 was used for parallactic".to_string());
             return 1;
         }
     };
 
+    let beam = &mut *fee_beam;
+    let delays_s = slice::from_raw_parts(delays, 16);
+    let amps_s = slice::from_raw_parts(amps, num_amps as usize);
+
     // Using the passed-in beam, get the beam response (Jones matrix).
-    let beam_jones_result = if para_bool {
+    let result = if para_bool {
         beam.calc_jones(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
     } else {
         beam.calc_jones_eng(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
     };
-    let beam_jones = match beam_jones_result {
-        Ok(j) => j,
-        Err(e) => {
-            error_to_error_string(e, error_str);
-            return 1;
+    match result {
+        Ok(j) => {
+            let jones_buf = slice::from_raw_parts_mut(jones, 8);
+            jones_buf[..].copy_from_slice(&[
+                j[0].re, j[0].im, j[1].re, j[1].im, j[2].re, j[2].im, j[3].re, j[3].im,
+            ]);
+            0
         }
-    };
-
-    let jones_buf = slice::from_raw_parts_mut(jones, 8);
-    jones_buf[..].copy_from_slice(&[
-        beam_jones[0].re,
-        beam_jones[0].im,
-        beam_jones[1].re,
-        beam_jones[1].im,
-        beam_jones[2].re,
-        beam_jones[2].im,
-        beam_jones[3].re,
-        beam_jones[3].im,
-    ]);
-    0
+        Err(e) => {
+            update_last_error(e.to_string());
+            1
+        }
+    }
 }
 
 /// Get the beam response Jones matrix for several az/za directions for the
@@ -259,9 +318,10 @@ pub unsafe extern "C" fn calc_jones(
 /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>).
 /// `amps` being dipole gains (usually 1 or 0), not digital gains.
 ///
-/// As there are 8 doubles per Jones matrix, there are 8 * `num_azza` doubles in
-/// the array. Rust will calculate the Jones matrices in parallel. See the
-/// documentation for `calc_jones` for more info.
+/// As there are 8 elements per Jones matrix, there must be at least `8 *
+/// num_azza * sizeof(double)` allocated in the array. Rust will calculate the
+/// Jones matrices in parallel. See the documentation for `calc_jones` for more
+/// info.
 ///
 /// # Arguments
 ///
@@ -282,17 +342,16 @@ pub unsafe extern "C" fn calc_jones(
 ///   be normalised with respect to zenith.
 /// * `parallactic` - A boolean indicating whether the parallactic angle
 ///   correction should be applied.
-/// * `jones` - A double pointer to a buffer with at least 8 * num_azza *
-///   sizeof(double) bytes available. The Jones matrix beam responses are
+/// * `jones` - A pointer to a buffer with at least `8 * num_azza *
+///   sizeof(double)` bytes allocated. The Jones matrix beam responses are
 ///   written here.
-/// * `error_str` - a pointer to a character array which is set by this function
-///   if an error occurs. If this pointer is null, no error message can be
-///   reported if an error occurs.
 ///
 /// # Returns
 ///
-/// * An exit code integer. If this is non-zero and an error string was
-///   provided, then the error string is set.
+/// * An exit code integer. If this is non-zero then an error occurred; the
+///   details can be obtained by (1) getting the length of the error string by
+///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
+///   with a string buffer with a length at least equal to the error length.
 ///
 #[no_mangle]
 pub unsafe extern "C" fn calc_jones_array(
@@ -306,21 +365,12 @@ pub unsafe extern "C" fn calc_jones_array(
     num_amps: u32,
     norm_to_zenith: u8,
     parallactic: u8,
-    jones: *mut *mut f64,
-    error_str: *mut c_char,
+    jones: *mut f64,
 ) -> i32 {
-    let beam = &mut *fee_beam;
-    let az = slice::from_raw_parts(az_rad, num_azza as usize);
-    let za = slice::from_raw_parts(za_rad, num_azza as usize);
-    let delays_s = slice::from_raw_parts(delays, 16);
-    let amps_s = slice::from_raw_parts(amps, num_amps as usize);
     match num_amps {
         16 | 32 => (),
         _ => {
-            string_to_error_string(
-                "A value other than 16 or 32 was used for num_amps",
-                error_str,
-            );
+            update_last_error("A value other than 16 or 32 was used for num_amps".to_string());
             return 1;
         }
     };
@@ -328,10 +378,7 @@ pub unsafe extern "C" fn calc_jones_array(
         0 => false,
         1 => true,
         _ => {
-            string_to_error_string(
-                "A value other than 0 or 1 was used for norm_to_zenith",
-                error_str,
-            );
+            update_last_error("A value other than 0 or 1 was used for norm_to_zenith".to_string());
             return 1;
         }
     };
@@ -339,31 +386,30 @@ pub unsafe extern "C" fn calc_jones_array(
         0 => false,
         1 => true,
         _ => {
-            string_to_error_string(
-                "A value other than 0 or 1 was used for parallactic",
-                error_str,
-            );
+            update_last_error("A value other than 0 or 1 was used for parallactic".to_string());
             return 1;
         }
     };
+
+    let beam = &mut *fee_beam;
+    let az = slice::from_raw_parts(az_rad, num_azza as usize);
+    let za = slice::from_raw_parts(za_rad, num_azza as usize);
+    let delays_s = slice::from_raw_parts(delays, 16);
+    let amps_s = slice::from_raw_parts(amps, num_amps as usize);
+    let results_s = slice::from_raw_parts_mut(jones.cast(), num_azza as usize);
 
     let beam_jones_result = if para_bool {
-        beam.calc_jones_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
+        beam.calc_jones_array_inner(az, za, freq_hz, delays_s, amps_s, norm_bool, results_s)
     } else {
-        beam.calc_jones_eng_array(az, za, freq_hz, delays_s, amps_s, norm_bool)
+        beam.calc_jones_eng_array_inner(az, za, freq_hz, delays_s, amps_s, norm_bool, results_s)
     };
-    let mut beam_jones = match beam_jones_result {
-        Ok(j) => j,
+    match beam_jones_result {
+        Ok(()) => 0,
         Err(e) => {
-            error_to_error_string(e, error_str);
-            return 1;
+            update_last_error(e.to_string());
+            1
         }
-    };
-
-    let ptr = beam_jones.as_mut_ptr();
-    std::mem::forget(beam_jones);
-    *jones = ptr.cast();
-    0
+    }
 }
 
 /// Get the available frequencies inside the HDF5 file.
@@ -383,8 +429,7 @@ pub unsafe extern "C" fn get_fee_beam_freqs(
 ) {
     let beam = &mut *fee_beam;
     let freqs = beam.get_freqs();
-    let freqs_ptr_mutator = &mut *freqs_ptr;
-    *freqs_ptr_mutator = freqs.as_ptr();
+    *freqs_ptr = freqs.as_ptr();
     *num_freqs = freqs.len();
 }
 
@@ -413,7 +458,7 @@ pub unsafe extern "C" fn closest_freq(fee_beam: *mut FEEBeam, freq: u32) -> u32 
 ///
 #[no_mangle]
 pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
-    Box::from_raw(fee_beam);
+    drop(Box::from_raw(fee_beam));
 }
 
 /// Get a `FEEBeamCUDA` struct, which is used to calculate beam responses on a
@@ -439,14 +484,13 @@ pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
 /// * `cuda_fee_beam` - a double pointer to the `FEEBeamCUDA` struct which is
 ///   set by this function. This struct must be freed by calling
 ///   `free_cuda_fee_beam`.
-/// * `error_str` - a pointer to a character array which is set by this function
-///   if an error occurs. If this pointer is null, no error message can be
-///   reported if an error occurs.
 ///
 /// # Returns
 ///
-/// * An exit code integer. If this is non-zero and an error string was
-///   provided, then the error string is set.
+/// * An exit code integer. If this is non-zero then an error occurred; the
+///   details can be obtained by (1) getting the length of the error string by
+///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
+///   with a string buffer with a length at least equal to the error length.
 ///
 #[cfg(feature = "cuda")]
 #[no_mangle]
@@ -460,51 +504,45 @@ pub unsafe extern "C" fn new_cuda_fee_beam(
     num_amps: u32,
     norm_to_zenith: u8,
     cuda_fee_beam: *mut *mut FEEBeamCUDA,
-    error_str: *mut c_char,
 ) -> i32 {
     match num_amps {
         16 | 32 => (),
         _ => {
-            string_to_error_string(
-                "A value other than 16 or 32 was used for num_amps",
-                error_str,
-            );
+            update_last_error("A value other than 16 or 32 was used for num_amps".to_string());
             return 1;
         }
     };
-    // Turn the pointers into slices and/or arrays.
-    let freqs = slice::from_raw_parts(freqs_hz, num_freqs as usize);
-    let amps = ArrayView2::from_shape_ptr((num_tiles as usize, num_amps as usize), amps);
-    let delays = ArrayView2::from_shape_ptr((num_tiles as usize, 16), delays);
     let norm_bool = match norm_to_zenith {
         0 => false,
         1 => true,
         _ => {
-            string_to_error_string(
-                "A value other than 0 or 1 was used for norm_to_zenith",
-                error_str,
-            );
+            update_last_error("A value other than 0 or 1 was used for norm_to_zenith".to_string());
             return 1;
         }
     };
 
+    // Turn the pointers into slices and/or arrays.
+    let freqs = slice::from_raw_parts(freqs_hz, num_freqs as usize);
+    let amps = ArrayView2::from_shape_ptr((num_tiles as usize, num_amps as usize), amps);
+    let delays = ArrayView2::from_shape_ptr((num_tiles as usize, 16), delays);
+
     let beam = &mut *fee_beam;
-    let cuda_beam = match beam.cuda_prepare(freqs, delays, amps, norm_bool) {
-        Ok(b) => b,
-        Err(e) => {
-            error_to_error_string(e, error_str);
-            return 1;
+    match beam.cuda_prepare(freqs, delays, amps, norm_bool) {
+        Ok(b) => {
+            *cuda_fee_beam = Box::into_raw(Box::new(b));
+            0
         }
-    };
-    *cuda_fee_beam = Box::into_raw(Box::new(cuda_beam));
-    0
+        Err(e) => {
+            update_last_error(e.to_string());
+            1
+        }
+    }
 }
 
 /// Get beam response Jones matrices for the given directions, using CUDA. The
-/// Jones matrix elements for each direction are put into a single array (made
-/// available with the output pointer `jones`). Can optionally re-define the X
-/// and Y polarisations and apply a parallactic-angle correction; see Jack's
-/// thorough investigation at
+/// Jones matrix elements for each direction are put into a host-memory buffer
+/// `jones`. Can optionally re-define the X and Y polarisations and apply a
+/// parallactic-angle correction; see Jack's thorough investigation at
 /// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
 ///
 /// # Arguments
@@ -517,16 +555,19 @@ pub unsafe extern "C" fn new_cuda_fee_beam(
 ///   radians)
 /// * `parallactic` - A boolean indicating whether the parallactic angle
 ///   correction should be applied.
-/// * `jones` - A double pointer to a buffer with resulting beam-response Jones
-///   matrices.
-/// * `error_str` - a pointer to a character array which is set by this function
-///   if an error occurs. If this pointer is null, no error message can be
-///   reported if an error occurs.
+/// * `jones` - A pointer to a buffer with at least `num_unique_tiles *
+///   num_unique_fee_freqs * num_azza * 8 * sizeof(FLOAT)` bytes allocated.
+///   `FLOAT` is either `float` or `double`, depending on how `hyperbeam` was
+///   compiled. The Jones matrix beam responses are written here. This should be
+///   set up with the `get_num_unique_tiles` and `get_num_unique_fee_freqs`
+///   functions; see the examples for more help.
 ///
 /// # Returns
 ///
-/// * An exit code integer. If this is non-zero and an error string was
-///   provided, then the error string is set.
+/// * An exit code integer. If this is non-zero then an error occurred; the
+///   details can be obtained by (1) getting the length of the error string by
+///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
+///   with a string buffer with a length at least equal to the error length.
 ///
 #[cfg(feature = "cuda")]
 #[no_mangle]
@@ -536,35 +577,37 @@ pub unsafe extern "C" fn calc_jones_cuda(
     az_rad: *const CudaFloat,
     za_rad: *const CudaFloat,
     parallactic: u8,
-    jones: *mut *mut CudaFloat,
-    error_str: *mut c_char,
+    jones: *mut CudaFloat,
 ) -> i32 {
-    let beam = &mut *cuda_fee_beam;
-    let az = slice::from_raw_parts(az_rad, num_azza as usize);
-    let za = slice::from_raw_parts(za_rad, num_azza as usize);
     let para_bool = match parallactic {
         0 => false,
         1 => true,
         _ => {
-            string_to_error_string(
-                "A value other than 0 or 1 was used for parallactic",
-                error_str,
-            );
-            return 1;
-        }
-    };
-    let mut beam_jones = match beam.calc_jones(az, za, para_bool) {
-        Ok(j) => j,
-        Err(e) => {
-            error_to_error_string(e, error_str);
+            update_last_error("A value other than 0 or 1 was used for parallactic".to_string());
             return 1;
         }
     };
 
-    let ptr = beam_jones.as_mut_ptr();
-    std::mem::forget(beam_jones);
-    *jones = ptr.cast();
-    0
+    // Turn the pointers into slices and/or arrays.
+    let beam = &mut *cuda_fee_beam;
+    let az = slice::from_raw_parts(az_rad, num_azza as usize);
+    let za = slice::from_raw_parts(za_rad, num_azza as usize);
+    let results = ArrayViewMut3::from_shape_ptr(
+        (
+            beam.num_unique_tiles as usize,
+            beam.num_unique_freqs as usize,
+            num_azza as usize,
+        ),
+        jones.cast(),
+    );
+
+    match beam.calc_jones_inner(az, za, para_bool, results) {
+        Ok(()) => 0,
+        Err(e) => {
+            update_last_error(e.to_string());
+            1
+        }
+    }
 }
 
 /// Get beam response Jones matrices for the given directions, using CUDA. The
@@ -583,16 +626,19 @@ pub unsafe extern "C" fn calc_jones_cuda(
 ///   radians)
 /// * `parallactic` - A boolean indicating whether the parallactic angle
 ///   correction should be applied.
-/// * `d_jones` - A double pointer to a device buffer with resulting
-///   beam-response Jones matrices.
-/// * `error_str` - a pointer to a character array which is set by this function
-///   if an error occurs. If this pointer is null, no error message can be
-///   reported if an error occurs.
+/// * `d_jones` - A pointer to a device buffer with at least `8 * num_unique_tiles *
+///   num_unique_fee_freqs * num_azza * sizeof(FLOAT)` bytes allocated. `FLOAT`
+///   is either `float` or `double`, depending on how `hyperbeam` was compiled.
+///   The Jones matrix beam responses are written here. This should be set up
+///   with the `get_num_unique_tiles` and `get_num_unique_fee_freqs` functions;
+///   see the examples for more help.
 ///
 /// # Returns
 ///
-/// * An exit code integer. If this is non-zero and an error string was
-///   provided, then the error string is set.
+/// * An exit code integer. If this is non-zero then an error occurred; the
+///   details can be obtained by (1) getting the length of the error string by
+///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
+///   with a string buffer with a length at least equal to the error length.
 ///
 #[cfg(feature = "cuda")]
 #[no_mangle]
@@ -602,34 +648,28 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
     az_rad: *const CudaFloat,
     za_rad: *const CudaFloat,
     parallactic: u8,
-    d_jones: *mut *mut CudaFloat,
-    error_str: *mut c_char,
+    d_jones: *mut CudaFloat,
 ) -> i32 {
-    let beam = &mut *cuda_fee_beam;
-    let az = slice::from_raw_parts(az_rad, num_azza as usize);
-    let za = slice::from_raw_parts(za_rad, num_azza as usize);
     let para_bool = match parallactic {
         0 => false,
         1 => true,
         _ => {
-            string_to_error_string(
-                "A value other than 0 or 1 was used for parallactic",
-                error_str,
-            );
-            return 1;
-        }
-    };
-    let device_ptr = match beam.calc_jones_device(az, za, para_bool) {
-        Ok(j) => j,
-        Err(e) => {
-            error_to_error_string(e, error_str);
+            update_last_error("A value other than 0 or 1 was used for parallactic".to_string());
             return 1;
         }
     };
 
-    *d_jones = device_ptr.get_mut().cast();
-    std::mem::forget(device_ptr);
-    0
+    let beam = &mut *cuda_fee_beam;
+    let az = slice::from_raw_parts(az_rad, num_azza as usize);
+    let za = slice::from_raw_parts(za_rad, num_azza as usize);
+
+    match beam.calc_jones_device_inner_ptr(az, za, para_bool, d_jones.cast()) {
+        Ok(()) => 0,
+        Err(e) => {
+            update_last_error(e.to_string());
+            1
+        }
+    }
 }
 
 /// Get a pointer to the device tile map. This is necessary to access
@@ -670,6 +710,23 @@ pub unsafe extern "C" fn get_freq_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const
     beam.get_freq_map()
 }
 
+/// Get the number of de-duplicated tiles associated with this `FEEBeamCUDA`.
+///
+/// # Arguments
+///
+/// * `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+///
+/// # Returns
+///
+/// * The number of de-duplicated tiles associated with this `FEEBeamCUDA`.
+///
+#[cfg(feature = "cuda")]
+#[no_mangle]
+pub unsafe extern "C" fn get_num_unique_tiles(cuda_fee_beam: *mut FEEBeamCUDA) -> i32 {
+    let beam = &mut *cuda_fee_beam;
+    beam.num_unique_tiles
+}
+
 /// Get the number of de-duplicated frequencies associated with this
 /// `FEEBeamCUDA`.
 ///
@@ -698,5 +755,5 @@ pub unsafe extern "C" fn get_num_unique_fee_freqs(cuda_fee_beam: *mut FEEBeamCUD
 #[cfg(feature = "cuda")]
 #[no_mangle]
 pub unsafe extern "C" fn free_cuda_fee_beam(fee_beam: *mut FEEBeamCUDA) {
-    Box::from_raw(fee_beam);
+    drop(Box::from_raw(fee_beam));
 }

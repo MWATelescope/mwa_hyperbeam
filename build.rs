@@ -106,6 +106,7 @@ fn main() {
                             "calc_jones_cuda_device".to_string(),
                             "get_tile_map".to_string(),
                             "get_freq_map".to_string(),
+                            "get_num_unique_tiles".to_string(),
                             "get_num_unique_fee_freqs".to_string(),
                             "free_cuda_fee_beam".to_string(),
                         ],

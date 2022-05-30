@@ -19,8 +19,8 @@
 // below. Otherwise, no flag is needed.
 //
 // Compile and run this file with something like:
-// gcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./beam_calcs_cuda.c -o beam_calcs_cuda
-// LD_LIBRARY_PATH=../target/release ./beam_calcs_cuda ../mwa_full_embedded_element_pattern.h5
+// gcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./fee_cuda.c -o fee_cuda
+// LD_LIBRARY_PATH=../target/release ./fee_cuda ../mwa_full_embedded_element_pattern.h5
 
 #include <complex.h>
 #include <math.h>
@@ -39,6 +39,19 @@
 #define CIMAG cimag
 #endif
 
+void handle_hyperbeam_error(char file[], int line_num, const char function_name[]) {
+    int err_length = hb_last_error_length();
+    char *err = malloc(err_length * sizeof(char));
+    int err_status = hb_last_error_message(err, err_length);
+    if (err_status == -1) {
+        printf("Something really bad happened!\n");
+        exit(EXIT_FAILURE);
+    }
+    printf("File %s:%d: hyperbeam error in %s: %s\n", file, line_num, function_name, err);
+
+    exit(EXIT_FAILURE);
+}
+
 int main(int argc, char *argv[]) {
     if (argc == 1) {
         fprintf(stderr, "Expected one argument - the path to the HDF5 file.\n");
@@ -47,11 +60,9 @@ int main(int argc, char *argv[]) {
 
     // Get a new FEE beam object from hyperbeam.
     FEEBeam *beam;
-    char error[200];
-    if (new_fee_beam(argv[1], &beam, error)) {
-        printf("Got an error when trying to make an FEEBeam: %s\n", error);
-        return EXIT_FAILURE;
-    }
+    if (new_fee_beam(argv[1], &beam))
+        handle_hyperbeam_error(__FILE__, __LINE__, "new_fee_beam");
+
     // Set up our telescope array. Here, we are using two distinct tiles
     // (different dead dipoles). The first 16 values are the first tile, second
     // 16 second tile. When giving 16 values per tile, each value is used for
@@ -77,11 +88,8 @@ int main(int argc, char *argv[]) {
 
     // Now get a new CUDA FEE beam object.
     FEEBeamCUDA *cuda_beam;
-    if (new_cuda_fee_beam(beam, freqs_hz, delays, dip_amps, num_freqs, num_tiles, num_amps, norm_to_zenith, &cuda_beam,
-                          error)) {
-        printf("Got an error when trying to make an FEEBeamCUDA: %s\n", error);
-        return EXIT_FAILURE;
-    }
+    if (new_cuda_fee_beam(beam, freqs_hz, delays, dip_amps, num_freqs, num_tiles, num_amps, norm_to_zenith, &cuda_beam))
+        handle_hyperbeam_error(__FILE__, __LINE__, "new_cuda_fee_beam");
 
     // Set up the directions to get the beam responses.
     int num_azzas = 1000000;
@@ -95,13 +103,15 @@ int main(int argc, char *argv[]) {
     // https://github.com/JLBLine/polarisation_tests_for_FEE
     int parallactic = 1;
 
-    complex FLOAT *jones;
+    // Allocate a buffer for the results.
+    size_t num_unique_tiles = (size_t)get_num_unique_tiles(cuda_beam);
+    size_t num_unique_fee_freqs = (size_t)get_num_unique_fee_freqs(cuda_beam);
+    complex FLOAT *jones = malloc(num_unique_tiles * num_unique_fee_freqs * num_azzas * 8 * sizeof(FLOAT));
     // hyperbeam expects a pointer to our FLOAT macro. Casting the pointer works
     // fine.
-    if (calc_jones_cuda(cuda_beam, num_azzas, az, za, parallactic, (FLOAT **)&jones, error)) {
-        printf("Got an error when running calc_jones_cuda: %s\n", error);
-        return EXIT_FAILURE;
-    }
+    if (calc_jones_cuda(cuda_beam, num_azzas, az, za, parallactic, (FLOAT *)jones))
+        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_cuda");
+
     printf("The first Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", CREAL(jones[0]), CIMAG(jones[0]));
     printf(" %+.8f%+.8fi]\n", CREAL(jones[1]), CIMAG(jones[1]));

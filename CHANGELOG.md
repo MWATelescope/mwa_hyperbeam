@@ -8,6 +8,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 ### Changed
+- FFI function calls and error handling has changed. Please familiarise yourself
+  with the new include file and/or examples.
 - Function documentation is now more consistent and hopefully more readable.
 
 ### Fixed
