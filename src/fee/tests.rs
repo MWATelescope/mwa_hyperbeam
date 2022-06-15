@@ -5,7 +5,6 @@
 //! Tests for FEE beam code.
 
 use super::*;
-use crate::jones_test::TestJones;
 use approx::*;
 use marlu::constants::MWA_LAT_RAD;
 use ndarray::prelude::*;
@@ -595,8 +594,6 @@ fn test_calc_jones_eng() {
         c64::new(0.036362, 0.103868),
         c64::new(-0.036836, -0.105791),
     ]);
-    let jones = TestJones::from(jones);
-    let expected = TestJones::from(expected);
     assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
 }
 
@@ -625,8 +622,6 @@ fn test_calc_jones_eng_2() {
         c64::new(0.024792, 0.040577),
         c64::new(-0.069501, -0.113706),
     ]);
-    let jones = TestJones::from(jones);
-    let expected = TestJones::from(expected);
     assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
 }
 
@@ -646,8 +641,6 @@ fn test_calc_jones_eng_norm() {
         c64::new(0.887146, 0.216103),
         c64::new(-0.0896141, -0.021803),
     ]);
-    let jones = TestJones::from(jones);
-    let expected = TestJones::from(expected);
     assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
 }
 
@@ -676,8 +669,6 @@ fn test_calc_jones_eng_norm_2() {
         c64::new(0.697787, -0.257219),
         c64::new(-0.0711516, 0.0264293),
     ]);
-    let jones = TestJones::from(jones);
-    let expected = TestJones::from(expected);
     assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
 }
 
@@ -704,8 +695,6 @@ fn test_calc_jones() {
         c64::new(0.002309524016541907, 0.006230549725189563),
         c64::new(0.05144802517335513, 0.14772685224822762),
     ]);
-    let jones = TestJones::from(jones);
-    let expected = TestJones::from(expected);
     assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
 }
 
@@ -732,8 +721,6 @@ fn test_calc_jones_norm() {
         c64::new(0.003267814789407464, 0.0008339646338281076),
         c64::new(0.8954320133256206, 0.22219600210153623),
     ]);
-    let jones = TestJones::from(jones);
-    let expected = TestJones::from(expected);
     assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
 
     // Ensure that FEEBeam::calc_jones is the same as FEEBeam::calc_jones_pair.
@@ -748,7 +735,7 @@ fn test_calc_jones_norm() {
     );
     assert!(result.is_ok());
     let jones2 = result.unwrap();
-    assert_abs_diff_eq!(TestJones::from(jones2), jones, epsilon = 1e-14);
+    assert_abs_diff_eq!(jones2, jones, epsilon = 1e-14);
 }
 
 #[test]
@@ -774,7 +761,7 @@ fn test_calc_jones_pa() {
     assert!(result.is_ok());
     let not_pa = result.unwrap();
 
-    assert_abs_diff_ne!(TestJones::from(pa), TestJones::from(not_pa));
+    assert_abs_diff_ne!(pa, not_pa);
 }
 
 #[test]
@@ -848,9 +835,7 @@ fn test_calc_jones_array() {
     let jones_array = result.unwrap();
 
     assert_eq!(jones_array.len(), 1);
-    let jones = TestJones::from(jones);
-    let jones_array = TestJones::from(jones_array[0]);
-    assert_eq!(jones, jones_array);
+    assert_eq!(jones, jones_array[0]);
 
     // Ensure that FEEBeam::calc_jones_array is the same as
     // FEEBeam::calc_jones_array_pair.
@@ -866,7 +851,7 @@ fn test_calc_jones_array() {
     assert!(result.is_ok());
     let jones2 = result.unwrap();
     assert_eq!(jones2.len(), 1);
-    assert_abs_diff_eq!(TestJones::from(jones2[0]), jones, epsilon = 1e-15);
+    assert_abs_diff_eq!(jones2[0], jones, epsilon = 1e-15);
 }
 
 #[test]

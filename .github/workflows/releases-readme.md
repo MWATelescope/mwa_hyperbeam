@@ -8,9 +8,10 @@ page](https://github.com/MWATelescope/mwa_hyperbeam/releases).
 2.0)](https://www.mozilla.org/en-US/MPL/2.0/). The LICENSE file is the relevant
 copy.
 
-Another license from the `hdf5` library is provided (COPYING-hdf5). This is
-included because (as per the terms of that license) `hdf5` is compiled inside
-the `hyperbeam` products in this tarball.
+Other licenses are included from the `hdf5` (COPYING-hdf5) and `erfa`
+(LICENSE-erfa) libraries. These are included because (as per the terms of the
+licenses) `hdf5` and `erfa` are compiled inside the `hyperbeam` products in this
+tarball.
 
 # What are these different x86-64 versions?
 

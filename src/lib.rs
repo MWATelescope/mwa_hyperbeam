@@ -13,9 +13,6 @@ mod types;
 #[cfg(feature = "python")]
 mod python;
 
-#[cfg(test)]
-mod jones_test;
-
 // Re-exports.
 #[cfg(feature = "cuda")]
 /// The float type use in CUDA code. This depends on how `hyperbeam` was

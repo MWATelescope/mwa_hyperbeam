@@ -388,9 +388,6 @@ fn test_calc_jones_cuda_via_ffi() {
         free_fee_beam(beam);
     }
 
-    let jones_cpu = jones_cpu.mapv(crate::jones_test::TestJones::from);
-    let jones_gpu = jones_gpu.mapv(crate::jones_test::TestJones::from);
-
     #[cfg(not(feature = "cuda-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 

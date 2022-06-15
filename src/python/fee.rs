@@ -4,7 +4,9 @@
 
 //! Python interface to hyperbeam FEE code.
 
-use marlu::ndarray::prelude::*;
+#[cfg(feature = "cuda-single")]
+use marlu::c32;
+use marlu::{c64, ndarray::prelude::*};
 use numpy::*;
 use pyo3::create_exception;
 use pyo3::prelude::*;
@@ -78,7 +80,7 @@ impl FEEBeam {
         norm_to_zenith: bool,
         array_latitude_rad: Option<f64>,
         iau_order: Option<bool>,
-    ) -> PyResult<&'py PyArray1<numpy::c64>> {
+    ) -> PyResult<&'py PyArray1<c64>> {
         let jones = self.beam.calc_jones_pair(
             az_rad,
             za_rad,
@@ -93,7 +95,7 @@ impl FEEBeam {
             iau_order.unwrap_or(false),
         )?;
         // Ensure that the numpy crate's c64 is being used.
-        let jones_py: Vec<numpy::c64> = jones.iter().map(|c| numpy::c64::new(c.re, c.im)).collect();
+        let jones_py: Vec<c64> = jones.iter().map(|c| c64::new(c.re, c.im)).collect();
 
         let np_array = PyArray1::from_vec(py, jones_py);
         Ok(np_array)
@@ -125,7 +127,7 @@ impl FEEBeam {
         norm_to_zenith: bool,
         array_latitude_rad: Option<f64>,
         iau_order: Option<bool>,
-    ) -> PyResult<&'py PyArray2<numpy::c64>> {
+    ) -> PyResult<&'py PyArray2<c64>> {
         let jones = self.beam.calc_jones_array_pair(
             &az_rad,
             &za_rad,
@@ -145,7 +147,7 @@ impl FEEBeam {
         let old_len = jones.len();
         let new_len = old_len * 4;
         let new_cap = jones.capacity() * 4;
-        let new_ptr = jones.as_mut_ptr() as *mut numpy::c64;
+        let new_ptr = jones.as_mut_ptr() as *mut c64;
         // SAFETY: new_cap == old_cap * N, align_of::<C64>() == align_of::<Jones>()
         let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
         let a2 = Array2::from_shape_vec((old_len, 4), flat).unwrap();
@@ -188,7 +190,7 @@ impl FEEBeam {
         norm_to_zenith: bool,
         array_latitude_rad: Option<f64>,
         iau_order: Option<bool>,
-    ) -> PyResult<&'py PyArray4<numpy::c64>> {
+    ) -> PyResult<&'py PyArray4<c64>> {
         // hyperbeam expects ints for the frequencies. Convert them to make sure
         // everything's OK.
         let freqs: Vec<u32> = freqs_hz.iter().map(|&f| f.round() as _).collect();
@@ -219,7 +221,7 @@ impl FEEBeam {
 
         let new_len = jones.len() * 4;
         let new_cap = jones.capacity() * 4;
-        let new_ptr = jones.as_mut_ptr() as *mut numpy::c64;
+        let new_ptr = jones.as_mut_ptr() as *mut c64;
         // SAFETY: new_cap == old_cap * N, align_of::<C64>() == align_of::<Jones>()
         let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
         let a4 = Array4::from_shape_vec((old_dim.0, old_dim.1, old_dim.2, 4), flat).unwrap();
@@ -250,7 +252,7 @@ impl FEEBeam {
         norm_to_zenith: bool,
         array_latitude_rad: Option<f64>,
         iau_order: Option<bool>,
-    ) -> PyResult<&'py PyArray4<numpy::c32>> {
+    ) -> PyResult<&'py PyArray4<c32>> {
         // hyperbeam expects ints for the frequencies. Convert them to make sure
         // everything's OK.
         let freqs: Vec<u32> = freqs_hz.iter().map(|&f| f.round() as _).collect();
@@ -284,7 +286,7 @@ impl FEEBeam {
 
         let new_len = jones.len() * 4;
         let new_cap = jones.capacity() * 4;
-        let new_ptr = jones.as_mut_ptr() as *mut numpy::c32;
+        let new_ptr = jones.as_mut_ptr() as *mut c32;
         // SAFETY: new_cap == old_cap * N, align_of::<C32>() == align_of::<Jones>()
         let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
         let a4 = Array4::from_shape_vec((old_dim.0, old_dim.1, old_dim.2, 4), flat).unwrap();

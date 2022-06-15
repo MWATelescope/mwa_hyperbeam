@@ -9,7 +9,6 @@ use marlu::{constants::MWA_LAT_RAD, ndarray::prelude::*};
 use serial_test::serial;
 
 use super::*;
-use crate::jones_test::TestJones;
 
 #[test]
 #[serial]
@@ -76,9 +75,6 @@ fn test_cuda_calc_jones_no_norm() {
             out.assign(&Array1::from(cpu_results));
         }
     }
-
-    let jones_cpu = jones_cpu.mapv(TestJones::from);
-    let jones_gpu = jones_gpu.mapv(TestJones::from);
 
     #[cfg(not(feature = "cuda-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
@@ -154,9 +150,6 @@ fn test_cuda_calc_jones_w_norm() {
         }
     }
 
-    let jones_cpu = jones_cpu.mapv(TestJones::from);
-    let jones_gpu = jones_gpu.mapv(TestJones::from);
-
     #[cfg(not(feature = "cuda-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
@@ -231,9 +224,6 @@ fn test_cuda_calc_jones_w_norm_and_parallactic() {
         }
     }
 
-    let jones_cpu = jones_cpu.mapv(TestJones::from);
-    let jones_gpu = jones_gpu.mapv(TestJones::from);
-
     #[cfg(not(feature = "cuda-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
@@ -276,7 +266,7 @@ fn test_cuda_calc_jones_with_and_without_parallactic() {
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let not_pa = result.unwrap();
 
-    assert_abs_diff_ne!(pa.mapv(TestJones::from), not_pa.mapv(TestJones::from));
+    assert_abs_diff_ne!(pa, not_pa);
 }
 
 #[test]
@@ -362,9 +352,6 @@ fn test_cuda_calc_jones_deduplication() {
             out.assign(&Array1::from(cpu_results));
         }
     }
-
-    let jones_cpu = jones_cpu.mapv(TestJones::from);
-    let jones_gpu = jones_gpu.mapv(TestJones::from);
 
     #[cfg(not(feature = "cuda-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
@@ -458,9 +445,6 @@ fn test_cuda_calc_jones_deduplication_w_norm() {
         }
     }
 
-    let jones_cpu = jones_cpu.mapv(TestJones::from);
-    let jones_gpu = jones_gpu.mapv(TestJones::from);
-
     #[cfg(not(feature = "cuda-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
@@ -543,9 +527,6 @@ fn test_cuda_calc_jones_no_amps() {
         }
     }
 
-    let jones_cpu = jones_cpu.mapv(TestJones::from);
-    let jones_gpu = jones_gpu.mapv(TestJones::from);
-
     #[cfg(not(feature = "cuda-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
@@ -556,13 +537,13 @@ fn test_cuda_calc_jones_no_amps() {
     // The results for this tile are all zero.
     assert_abs_diff_eq!(
         jones_gpu.slice(s![1, .., ..]),
-        Array2::from_elem((jones_gpu.dim().1, jones_gpu.dim().2), TestJones::default())
+        Array2::from_elem((jones_gpu.dim().1, jones_gpu.dim().2), Jones::default())
     );
 
     // The results for this tile are at least some non-zero.
     assert_abs_diff_ne!(
         jones_gpu.slice(s![0, .., ..]),
-        Array2::from_elem((jones_gpu.dim().1, jones_gpu.dim().2), TestJones::default())
+        Array2::from_elem((jones_gpu.dim().1, jones_gpu.dim().2), Jones::default())
     );
 }
 

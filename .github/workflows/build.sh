@@ -17,7 +17,7 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         export RUSTFLAGS="-C target-cpu=${level}"
 
         # Build python first
-        maturin build --release --cargo-extra-args='--features=python,all-static' --strip
+        maturin build --release --features=python,all-static --strip -i 3.7 3.8 3.9 3.10
 
         # Build C objects
         cargo build --release --features all-static
@@ -44,9 +44,10 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     export CC=gcc-9
     export CXX=g++-9
     pip3 install maturin
+    brew install autoconf automake libtool
 
     # Build python first
-    maturin build --release --cargo-extra-args='--features=python,all-static' --strip
+    maturin build --release --features=python,all-static --strip
 
     # Build C objects
     cargo build --release --features all-static

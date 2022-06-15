@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2022-08-23
 ### Added
 - `calc_jones` functions have now been renamed to "_pair" functions, which take
   independent arguments of azimuths and zenith angles. The original functions
@@ -14,6 +14,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   convenient for the caller by avoiding the need to allocate new arrays.
 
 ### Changed
+- The minimum required Rust version is now 1.60.
+- Python 3.6 support has been dropped, but 3.10 support is available.
 - Rust function APIs have changed.
   - Previously, the MWA latitude was hard-coded when doing the parallactic-angle
     correction. Now, to get the correction, callers must supply a latitude.
