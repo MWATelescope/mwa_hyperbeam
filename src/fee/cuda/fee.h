@@ -77,7 +77,8 @@ typedef struct AzZA {
 } AzZA;
 
 int cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
-                    int num_coeffs, const void *norm_jones, int8_t parallactic, void *d_results, char *error_str);
+                    int num_coeffs, const void *norm_jones, const FLOAT *array_latitude_rad, const int iau_reorder,
+                    void *d_results, char *error_str);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -97,7 +98,6 @@ extern "C" {
 #endif // __cplusplus
 
 const int NMAX = 31;
-const FLOAT MWA_LAT_RAD = -0.4660608448386394;
 const FLOAT M_2PI = 2.0 * M_PI;
 
 /* The following C++ program gives the factorial values:
@@ -254,12 +254,12 @@ inline __device__ void operator*=(CUCOMPLEX &a, FLOAT b) {
 //
 // This code is adapted from ERFA. The copyright notice associated with ERFA and
 // the original code is at the bottom of this file.
-inline __device__ HADec azel_to_hadec_mwa(FLOAT azimuth_rad, FLOAT elevation_rad) {
+inline __device__ HADec azel_to_hadec(FLOAT azimuth_rad, FLOAT elevation_rad, FLOAT array_latitude_rad) {
     /* Useful trig functions. */
     FLOAT sa, ca, se, ce, sp, cp;
     SINCOS(azimuth_rad, &sa, &ca);
     SINCOS(elevation_rad, &se, &ce);
-    SINCOS(MWA_LAT_RAD, &sp, &cp);
+    SINCOS(array_latitude_rad, &sp, &cp);
 
     /* HA,Dec unit vector. */
     FLOAT x = -ca * ce * sp + se * cp;
@@ -279,12 +279,12 @@ inline __device__ HADec azel_to_hadec_mwa(FLOAT azimuth_rad, FLOAT elevation_rad
 //
 // This code is adapted from ERFA. The copyright notice associated with ERFA and
 // the original code is at the bottom of this file.
-inline __device__ AzZA hadec_to_azza_mwa(FLOAT hour_angle_rad, FLOAT dec_rad) {
+inline __device__ AzZA hadec_to_azza(FLOAT hour_angle_rad, FLOAT dec_rad, FLOAT array_latitude_rad) {
     /* Useful trig functions. */
     FLOAT sh, ch, sd, cd, sp, cp;
     SINCOS(hour_angle_rad, &sh, &ch);
     SINCOS(dec_rad, &sd, &cd);
-    SINCOS(MWA_LAT_RAD, &sp, &cp);
+    SINCOS(array_latitude_rad, &sp, &cp);
 
     /* Az,Alt unit vector. */
     FLOAT x = -ch * cd * sp + sd * cp;
@@ -305,9 +305,9 @@ inline __device__ AzZA hadec_to_azza_mwa(FLOAT hour_angle_rad, FLOAT dec_rad) {
 //
 // This code is adapted from ERFA. The copyright notice associated with ERFA and
 // the original code is at the bottom of this file.
-inline __device__ FLOAT get_parallactic_angle_mwa(FLOAT hour_angle_rad, FLOAT dec_rad) {
+inline __device__ FLOAT get_parallactic_angle(FLOAT hour_angle_rad, FLOAT dec_rad, FLOAT array_latitude_rad) {
     FLOAT s_phi, c_phi, s_ha, c_ha, s_dec, c_dec, cqsz, sqsz;
-    SINCOS(MWA_LAT_RAD, &s_phi, &c_phi);
+    SINCOS(array_latitude_rad, &s_phi, &c_phi);
     SINCOS(hour_angle_rad, &s_ha, &c_ha);
     SINCOS(dec_rad, &s_dec, &c_dec);
 
@@ -316,18 +316,24 @@ inline __device__ FLOAT get_parallactic_angle_mwa(FLOAT hour_angle_rad, FLOAT de
     return ((sqsz != 0.0 || cqsz != 0.0) ? ATAN2(sqsz, cqsz) : 0.0);
 }
 
-// Rotate a Jones matrix according to the parallactic angle and re-order it
-// according to Jack's investigation.
-inline __device__ void rotate_jones(FEEJones *jm, FLOAT pa) {
+// Apply the parallactic-angle correction. If `iau_order` is true then the beam
+// response is [NS-NS NS-EW EW-NS EW-EW], otherwise [EW-EW EW-NS NS-EW NS-NS].
+inline __device__ void apply_pa_correction(FEEJones *jm, FLOAT pa, int iau_order) {
     FLOAT s_rot, c_rot;
-    SINCOS(pa + M_PI_2, &s_rot, &c_rot);
+    SINCOS(pa, &s_rot, &c_rot);
     FEEJones new_jm;
 
-    // Re-ordering and negations according to Jack's investigation.
-    new_jm.j00 = jm->j10 * -s_rot + jm->j11 * -c_rot;
-    new_jm.j01 = jm->j10 * c_rot - jm->j11 * s_rot;
-    new_jm.j10 = jm->j00 * -s_rot + jm->j01 * -c_rot;
-    new_jm.j11 = jm->j00 * c_rot - jm->j01 * s_rot;
+    if (iau_order == 1) {
+        new_jm.j00 = jm->j10 * -c_rot + jm->j11 * s_rot;
+        new_jm.j01 = jm->j10 * -s_rot + jm->j11 * -c_rot;
+        new_jm.j10 = jm->j00 * -c_rot + jm->j01 * s_rot;
+        new_jm.j11 = jm->j00 * -s_rot + jm->j01 * -c_rot;
+    } else {
+        new_jm.j00 = jm->j00 * -s_rot + jm->j01 * -c_rot;
+        new_jm.j01 = jm->j00 * -c_rot + jm->j01 * s_rot;
+        new_jm.j10 = jm->j10 * -s_rot + jm->j11 * -c_rot;
+        new_jm.j11 = jm->j10 * -c_rot + jm->j11 * s_rot;
+    }
 
     *jm = new_jm;
 }
@@ -539,8 +545,8 @@ inline __device__ FEEJones calc_jones_direct_device(const FLOAT az_rad, const FL
  * blockIdx.y * blockDim.x + threadIdx.x corresponds to direction.
  */
 __global__ void fee_kernel(const FEECoeffs d_coeffs, const int num_coeffs, const FLOAT *d_azs, const FLOAT *d_zas,
-                           const int num_directions, const FEEJones *d_norm_jones, const bool parallactic,
-                           FEEJones *d_fee_jones) {
+                           const int num_directions, const FEEJones *d_norm_jones, const FLOAT *d_array_latitude_rad,
+                           const int iau_order, FEEJones *d_fee_jones) {
     int i_direction = blockIdx.y * blockDim.x + threadIdx.x;
     if (i_direction >= num_directions)
         return;
@@ -569,10 +575,10 @@ __global__ void fee_kernel(const FEECoeffs d_coeffs, const int num_coeffs, const
         jm.j11 = CUCDIV(jm.j11, norm.j11);
     }
 
-    if (parallactic) {
-        HADec hadec = azel_to_hadec_mwa(az, M_PI_2 - za);
-        FLOAT pa = get_parallactic_angle_mwa(hadec.ha, hadec.dec);
-        rotate_jones(&jm, pa);
+    if (d_array_latitude_rad != NULL) {
+        HADec hadec = azel_to_hadec(az, M_PI_2 - za, *d_array_latitude_rad);
+        FLOAT pa = get_parallactic_angle(hadec.ha, hadec.dec, *d_array_latitude_rad);
+        apply_pa_correction(&jm, pa, iau_order);
     }
 
     // Copy the Jones matrix to global memory.
@@ -595,8 +601,14 @@ inline int gpuAssert(cudaError_t code, const char *file, int line, char *error_s
 }
 
 extern "C" int cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *coeffs,
-                               int num_coeffs, const void *d_norm_jones, int8_t parallactic, void *d_results,
-                               char *error_str) {
+                               int num_coeffs, const void *d_norm_jones, const FLOAT *array_latitude_rad,
+                               const int iau_order, void *d_results, char *error_str) {
+    FLOAT *d_array_latitude_rad = NULL;
+    if (array_latitude_rad != NULL) {
+        cudaMalloc(&d_array_latitude_rad, sizeof(FLOAT));
+        cudaMemcpy(d_array_latitude_rad, array_latitude_rad, sizeof(FLOAT), cudaMemcpyHostToDevice);
+    }
+
     dim3 gridDim, blockDim;
     blockDim.x = 32;
     gridDim.x = num_coeffs;
@@ -604,12 +616,16 @@ extern "C" int cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_d
     // This is empirically faster on my GeForce RTX 2070.
     cudaFuncSetCacheConfig(fee_kernel, cudaFuncCachePreferL1);
     fee_kernel<<<gridDim, blockDim>>>(*coeffs, num_coeffs, d_azs, d_zas, num_directions, (FEEJones *)d_norm_jones,
-                                      (bool)parallactic, (FEEJones *)d_results);
+                                      d_array_latitude_rad, iau_order, (FEEJones *)d_results);
 
     if (gpuAssert(cudaPeekAtLastError(), __FILE__, __LINE__, error_str))
         return EXIT_FAILURE;
     if (gpuAssert(cudaDeviceSynchronize(), __FILE__, __LINE__, error_str))
         return EXIT_FAILURE;
+
+    if (array_latitude_rad != NULL) {
+        cudaFree(d_array_latitude_rad);
+    }
 
     return EXIT_SUCCESS;
 }

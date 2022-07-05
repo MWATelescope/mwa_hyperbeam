@@ -197,8 +197,8 @@ pub unsafe extern "C" fn new_fee_beam_from_env(fee_beam: *mut *mut FEEBeam) -> i
 
 /// Get the beam response Jones matrix for the given direction and pointing. Can
 /// optionally re-define the X and Y polarisations and apply a parallactic-angle
-/// correction; see Jack's thorough investigation at
-/// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
+/// correction; see
+/// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
 ///
 /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
@@ -231,8 +231,11 @@ pub unsafe extern "C" fn new_fee_beam_from_env(fee_beam: *mut *mut FEEBeam) -> i
 /// * `num_amps` - The number of dipole gains used (either 16 or 32).
 /// * `norm_to_zenith` - A boolean indicating whether the beam response should
 ///   be normalised with respect to zenith.
-/// * `parallactic` - A boolean indicating whether the parallactic angle
-///   correction should be applied.
+/// * `array_latitude_rad` - A pointer to an array latitude to use for the
+///   parallactic-angle correction. If the pointer is null, no correction is
+///   done.
+/// * `iau_order` - A boolean indicating whether the Jones matrix should be
+///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
 /// * `jones` - A pointer to a buffer with at least `8 * sizeof(double)`
 ///   allocated. The Jones matrix beam response is written here.
 ///
@@ -253,7 +256,8 @@ pub unsafe extern "C" fn calc_jones(
     amps: *const f64,
     num_amps: u32,
     norm_to_zenith: u8,
-    parallactic: u8,
+    array_latitude_rad: *const f64,
+    iau_order: u8,
     jones: *mut f64,
 ) -> i32 {
     match num_amps {
@@ -271,11 +275,12 @@ pub unsafe extern "C" fn calc_jones(
             return 1;
         }
     };
-    let para_bool = match parallactic {
+    let array_latitude_rad = array_latitude_rad.as_ref().copied();
+    let iau_bool = match iau_order {
         0 => false,
         1 => true,
         _ => {
-            update_last_error("A value other than 0 or 1 was used for parallactic".to_string());
+            update_last_error("A value other than 0 or 1 was used for iau_order".to_string());
             return 1;
         }
     };
@@ -285,12 +290,16 @@ pub unsafe extern "C" fn calc_jones(
     let amps_s = slice::from_raw_parts(amps, num_amps as usize);
 
     // Using the passed-in beam, get the beam response (Jones matrix).
-    let result = if para_bool {
-        beam.calc_jones(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
-    } else {
-        beam.calc_jones_eng(az_rad, za_rad, freq_hz, delays_s, amps_s, norm_bool)
-    };
-    match result {
+    match beam.calc_jones_pair(
+        az_rad,
+        za_rad,
+        freq_hz,
+        delays_s,
+        amps_s,
+        norm_bool,
+        array_latitude_rad,
+        iau_bool,
+    ) {
         Ok(j) => {
             let jones_buf = slice::from_raw_parts_mut(jones, 8);
             jones_buf[..].copy_from_slice(&[
@@ -309,8 +318,8 @@ pub unsafe extern "C" fn calc_jones(
 /// given pointing. The Jones matrix elements for each direction are put into a
 /// single array (made available with the output pointer `jones`). Can
 /// optionally re-define the X and Y polarisations and apply a parallactic-angle
-/// correction; see Jack's thorough investigation at
-/// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
+/// correction; see
+/// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
 ///
 /// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
@@ -340,8 +349,11 @@ pub unsafe extern "C" fn calc_jones(
 /// * `num_amps` - The number of dipole gains used (either 16 or 32).
 /// * `norm_to_zenith` - A boolean indicating whether the beam response should
 ///   be normalised with respect to zenith.
-/// * `parallactic` - A boolean indicating whether the parallactic angle
-///   correction should be applied.
+/// * `array_latitude_rad` - A pointer to an array latitude to use for the
+///   parallactic-angle correction. If the pointer is null, no correction is
+///   done.
+/// * `iau_order` - A boolean indicating whether the Jones matrix should be
+///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
 /// * `jones` - A pointer to a buffer with at least `8 * num_azza *
 ///   sizeof(double)` bytes allocated. The Jones matrix beam responses are
 ///   written here.
@@ -364,7 +376,8 @@ pub unsafe extern "C" fn calc_jones_array(
     amps: *const f64,
     num_amps: u32,
     norm_to_zenith: u8,
-    parallactic: u8,
+    array_latitude_rad: *const f64,
+    iau_order: u8,
     jones: *mut f64,
 ) -> i32 {
     match num_amps {
@@ -382,11 +395,12 @@ pub unsafe extern "C" fn calc_jones_array(
             return 1;
         }
     };
-    let para_bool = match parallactic {
+    let array_latitude_rad = array_latitude_rad.as_ref().copied();
+    let iau_bool = match iau_order {
         0 => false,
         1 => true,
         _ => {
-            update_last_error("A value other than 0 or 1 was used for parallactic".to_string());
+            update_last_error("A value other than 0 or 1 was used for iau_order".to_string());
             return 1;
         }
     };
@@ -398,12 +412,17 @@ pub unsafe extern "C" fn calc_jones_array(
     let amps_s = slice::from_raw_parts(amps, num_amps as usize);
     let results_s = slice::from_raw_parts_mut(jones.cast(), num_azza as usize);
 
-    let beam_jones_result = if para_bool {
-        beam.calc_jones_array_inner(az, za, freq_hz, delays_s, amps_s, norm_bool, results_s)
-    } else {
-        beam.calc_jones_eng_array_inner(az, za, freq_hz, delays_s, amps_s, norm_bool, results_s)
-    };
-    match beam_jones_result {
+    match beam.calc_jones_array_pair_inner(
+        az,
+        za,
+        freq_hz,
+        delays_s,
+        amps_s,
+        norm_bool,
+        array_latitude_rad,
+        iau_bool,
+        results_s,
+    ) {
         Ok(()) => 0,
         Err(e) => {
             update_last_error(e.to_string());
@@ -542,8 +561,8 @@ pub unsafe extern "C" fn new_cuda_fee_beam(
 /// Get beam response Jones matrices for the given directions, using CUDA. The
 /// Jones matrix elements for each direction are put into a host-memory buffer
 /// `jones`. Can optionally re-define the X and Y polarisations and apply a
-/// parallactic-angle correction; see Jack's thorough investigation at
-/// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
+/// parallactic-angle correction; see
+/// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
 ///
 /// # Arguments
 ///
@@ -553,8 +572,11 @@ pub unsafe extern "C" fn new_cuda_fee_beam(
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
 ///   radians)
-/// * `parallactic` - A boolean indicating whether the parallactic angle
-///   correction should be applied.
+/// * `array_latitude_rad` - A pointer to an array latitude to use for the
+///   parallactic-angle correction. If the pointer is null, no correction is
+///   done.
+/// * `iau_order` - A boolean indicating whether the Jones matrix should be
+///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
 /// * `jones` - A pointer to a buffer with at least `num_unique_tiles *
 ///   num_unique_fee_freqs * num_azza * 8 * sizeof(FLOAT)` bytes allocated.
 ///   `FLOAT` is either `float` or `double`, depending on how `hyperbeam` was
@@ -576,14 +598,15 @@ pub unsafe extern "C" fn calc_jones_cuda(
     num_azza: u32,
     az_rad: *const CudaFloat,
     za_rad: *const CudaFloat,
-    parallactic: u8,
+    array_latitude_rad: *const f64,
+    iau_order: u8,
     jones: *mut CudaFloat,
 ) -> i32 {
-    let para_bool = match parallactic {
+    let iau_bool = match iau_order {
         0 => false,
         1 => true,
         _ => {
-            update_last_error("A value other than 0 or 1 was used for parallactic".to_string());
+            update_last_error("A value other than 0 or 1 was used for iau_order".to_string());
             return 1;
         }
     };
@@ -600,8 +623,8 @@ pub unsafe extern "C" fn calc_jones_cuda(
         ),
         jones.cast(),
     );
-
-    match beam.calc_jones_inner(az, za, para_bool, results) {
+    let array_latitude_rad = array_latitude_rad.as_ref().copied();
+    match beam.calc_jones_pair_inner(az, za, array_latitude_rad, iau_bool, results) {
         Ok(()) => 0,
         Err(e) => {
             update_last_error(e.to_string());
@@ -613,8 +636,8 @@ pub unsafe extern "C" fn calc_jones_cuda(
 /// Get beam response Jones matrices for the given directions, using CUDA. The
 /// Jones matrix elements for each direction are left on the device (the device
 /// pointer is communicated via `d_jones`). Can optionally re-define the X and Y
-/// polarisations and apply a parallactic-angle correction; see Jack's thorough
-/// investigation at <https://github.com/JLBLine/polarisation_tests_for_FEE>.
+/// polarisations and apply a parallactic-angle correction; see
+/// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
 ///
 /// # Arguments
 ///
@@ -624,14 +647,17 @@ pub unsafe extern "C" fn calc_jones_cuda(
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
 ///   radians)
-/// * `parallactic` - A boolean indicating whether the parallactic angle
-///   correction should be applied.
-/// * `d_jones` - A pointer to a device buffer with at least `8 * num_unique_tiles *
-///   num_unique_fee_freqs * num_azza * sizeof(FLOAT)` bytes allocated. `FLOAT`
-///   is either `float` or `double`, depending on how `hyperbeam` was compiled.
-///   The Jones matrix beam responses are written here. This should be set up
-///   with the `get_num_unique_tiles` and `get_num_unique_fee_freqs` functions;
-///   see the examples for more help.
+/// * `array_latitude_rad` - A pointer to an array latitude to use for the
+///   parallactic-angle correction. If the pointer is null, no correction is
+///   done.
+/// * `iau_order` - A boolean indicating whether the Jones matrix should be
+///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
+/// * `d_jones` - A pointer to a device buffer with at least `8 *
+///   num_unique_tiles * num_unique_fee_freqs * num_azza * sizeof(FLOAT)` bytes
+///   allocated. `FLOAT` is either `float` or `double`, depending on how
+///   `hyperbeam` was compiled. The Jones matrix beam responses are written
+///   here. This should be set up with the `get_num_unique_tiles` and
+///   `get_num_unique_fee_freqs` functions; see the examples for more help.
 ///
 /// # Returns
 ///
@@ -647,14 +673,15 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
     num_azza: u32,
     az_rad: *const CudaFloat,
     za_rad: *const CudaFloat,
-    parallactic: u8,
+    array_latitude_rad: *const f64,
+    iau_order: u8,
     d_jones: *mut CudaFloat,
 ) -> i32 {
-    let para_bool = match parallactic {
+    let iau_bool = match iau_order {
         0 => false,
         1 => true,
         _ => {
-            update_last_error("A value other than 0 or 1 was used for parallactic".to_string());
+            update_last_error("A value other than 0 or 1 was used for iau_order".to_string());
             return 1;
         }
     };
@@ -662,8 +689,8 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
     let beam = &mut *cuda_fee_beam;
     let az = slice::from_raw_parts(az_rad, num_azza as usize);
     let za = slice::from_raw_parts(za_rad, num_azza as usize);
-
-    match beam.calc_jones_device_inner_ptr(az, za, para_bool, d_jones.cast()) {
+    let array_latitude_rad = array_latitude_rad.as_ref().copied();
+    match beam.calc_jones_device_pair_inner(az, za, array_latitude_rad, iau_bool, d_jones.cast()) {
         Ok(()) => 0,
         Err(e) => {
             update_last_error(e.to_string());

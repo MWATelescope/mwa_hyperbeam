@@ -12,13 +12,13 @@
 //!
 //! https://crates.io/crates/mwa_hyperbeam
 
-use std::f64::consts::PI;
+use std::f64::consts::{FRAC_PI_2, PI};
 
 use clap::Parser;
-use mwa_hyperbeam::fee::FEEBeam;
+use mwa_hyperbeam::{fee::FEEBeam, AzEl};
 
 #[derive(Parser, Debug)]
-#[clap()]
+#[clap(allow_negative_numbers = true)]
 struct Args {
     /// Path to the HDF5 file.
     #[clap(short, long, parse(from_os_str))]
@@ -42,9 +42,9 @@ struct Args {
     #[clap(short, long)]
     parallel: bool,
 
-    /// Don't apply parallactic-angle correction.
+    /// If provided, use this latitude for the parallactic-angle correction.
     #[clap(short, long)]
-    no_parallactic: bool,
+    latitude_rad: Option<f64>,
 }
 
 fn main() -> Result<(), anyhow::Error> {
@@ -56,11 +56,11 @@ fn main() -> Result<(), anyhow::Error> {
     };
 
     // Set up the directions to test.
-    let mut azs = vec![];
-    let mut zas = vec![];
+    let mut azels = vec![];
     for i in 0..args.num_directions {
-        azs.push(0.9 * PI * i as f64 / args.num_directions as f64);
-        zas.push(0.1 + 0.9 * PI / 2.0 * i as f64 / args.num_directions as f64);
+        let az = 0.9 * PI * i as f64 / args.num_directions as f64;
+        let za = 0.1 + 0.9 * PI / 2.0 * i as f64 / args.num_directions as f64;
+        azels.push(AzEl::new(az, FRAC_PI_2 - za));
     }
     let freq_hz = 51200000;
     // Delays and amps correspond to dipoles in the "M&C order". See
@@ -71,29 +71,38 @@ fn main() -> Result<(), anyhow::Error> {
     let amps = args.gains.unwrap_or_else(|| vec![1.0; 16]);
     assert!(amps.len() == 16 || amps.len() == 32);
     let norm_to_zenith = false;
+    let iau_order = true;
 
     // Call hyperbeam.
     let jones = if args.parallel {
-        if args.no_parallactic {
-            beam.calc_jones_eng_array(&azs, &zas, freq_hz, &delays, &amps, norm_to_zenith)
-                .unwrap()
-        } else {
-            beam.calc_jones_array(&azs, &zas, freq_hz, &delays, &amps, norm_to_zenith)
-                .unwrap()
-        }
+        println!("Running in parallel");
+        beam.calc_jones_array(
+            &azels,
+            freq_hz,
+            &delays,
+            &amps,
+            norm_to_zenith,
+            args.latitude_rad,
+            iau_order,
+        )
+        .unwrap()
     } else {
-        let mut results = vec![];
-        for (az, za) in azs.into_iter().zip(zas.into_iter()) {
-            let j = if args.no_parallactic {
-                beam.calc_jones_eng(az, za, freq_hz, &delays, &amps, norm_to_zenith)
-                    .unwrap()
-            } else {
-                beam.calc_jones(az, za, freq_hz, &delays, &amps, norm_to_zenith)
-                    .unwrap()
-            };
-            results.push(j);
-        }
-        results
+        println!("Not running in parallel");
+        azels
+            .into_iter()
+            .map(|azel| {
+                beam.calc_jones(
+                    azel,
+                    freq_hz,
+                    &delays,
+                    &amps,
+                    norm_to_zenith,
+                    args.latitude_rad,
+                    iau_order,
+                )
+                .unwrap()
+            })
+            .collect()
     };
     println!("The first Jones matrix:");
     // This works, but the formatting for this isn't very pretty.

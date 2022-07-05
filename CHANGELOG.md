@@ -7,7 +7,19 @@ and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+- `calc_jones` functions have now been renamed to "_pair" functions, which take
+  independent arguments of azimuths and zenith angles. The original functions
+  (e.g. `FEEBeam::calc_jones`) now take `marlu::AzEl`, which may be more
+  convenient for the caller by avoiding the need to allocate new arrays.
+
 ### Changed
+- Rust function APIs have changed.
+  - Previously, the MWA latitude was hard-coded when doing the parallactic-angle
+    correction. Now, to get the correction, callers must supply a latitude.
+  - The old "eng" functions have been removed, but their behaviour can be
+    obtained by supplying `None` as the latitude.
+  - See the note above about added "pair" functions.
 - FFI function calls and error handling has changed. Please familiarise yourself
   with the new include file and/or examples.
 - Function documentation is now more consistent and hopefully more readable.

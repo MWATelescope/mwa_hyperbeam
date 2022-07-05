@@ -31,9 +31,6 @@ cuda = ["marlu/cuda", "cc"]
 # Opt-out of double precision, use only single precision.
 cuda-single = ["cuda"]
 
-# Example-only dependencies
-examples = ["anyhow", "clap"]
-
 [profile.release]
 lto = true
 codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size reduction optimizations
@@ -50,10 +47,6 @@ hdf5-sys = { version = "0.8.*", features = ["static", "threadsafe"], optional = 
 
 pyo3 = { version = "0.15.*", features = ["extension-module"], optional = true }
 numpy = { version = "0.15.*", optional = true }
-
-# Example-only dependencies.
-anyhow = { version = "1.0.*", optional = true }
-clap = { version = "3.0.*", features = ["derive"], optional = true }
 
 [dev-dependencies]
 approx = { version = "0.5.*", features = ["num-complex"] }
@@ -80,11 +73,3 @@ project-url = { homepage = "https://github.com/MWATelescope/mwa_hyperbeam" }
 [[bench]]
 name = "bench"
 harness = false
-
-[[example]]
-name = "fee"
-required-features = ["examples"]
-
-[[example]]
-name = "fee_cuda"
-required-features = ["examples", "cuda"]

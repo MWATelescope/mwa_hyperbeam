@@ -25,6 +25,13 @@ See the
 [changelog](https://github.com/MWATelescope/mwa_hyperbeam/blob/main/CHANGELOG.md)
 for the latest changes to the code.
 
+## Polarisation order
+See [this
+document](https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf)
+for details on the polarisation order of the beam-response Jones matrices. If
+the parallactic-angle correction is applied, then it is possible for the code to
+re-order the Jones matrices.
+
 ## Usage
 `hyperbeam` requires the MWA FEE HDF5 file. This can be obtained with:
 
@@ -47,11 +54,26 @@ other words, most languages. See Rust, C and Python examples of usage in the
     >>> help(beam.calc_jones)
     Help on built-in function calc_jones:
 
-    calc_jones(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic) method of builtins.FEEBeam instance
-        Calculate the Jones matrix for a single direction given a pointing.
-        `delays` must have 16 ints, and `amps` must have 16 floats.
+    calc_jones(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, array_latitude_rad, iau_order) method of builtins.FEEBeam instance
+        Calculate the beam-response Jones matrix for a given direction and
+        pointing. If `array_latitude_rad` is *not* supplied, the result will
+        match the original specification of the FEE beam code (possibly more
+        useful for engineers).
 
-    >>> print(beam.calc_jones(0, 0.7, 167e6, [0]*16, [1]*16, True, True))
+        Astronomers are more likely to want to specify `array_latitude_rad`
+        (which will apply the parallactic-angle correction) and `iau_order`. If
+        `array_latitude_rad` is not given, then `iau_reorder` does nothing. See
+        this document for more information:
+        <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
+
+        `delays` and `amps` apply to each dipole in an MWA tile in the M&C
+        order; see
+        <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
+        `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
+        elements; if 16 are given, then these map 1:1 with dipoles, otherwise
+        the first 16 are for X dipole elements, and the next 16 are for Y.
+
+    >>> In [4]: print(beam.calc_jones(0, 0.7, 167e6, [0]*16, [1]*16, True, -0.4660608448386394, True))
     [-1.51506097e-01-4.35034884e-02j -9.76099405e-06-1.21699926e-05j
       1.73003520e-05-1.53580286e-05j -2.23184781e-01-4.51051073e-02j]
 
@@ -205,7 +227,7 @@ Run your code with `hyperbeam` again, but this time with the debug build. This
 should be as simple as running:
 
     cargo build
-    
+
 and then using the results in `./target/debug`.
 
 If that doesn't help reveal the problem, report the version of the software

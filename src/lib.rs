@@ -15,3 +15,10 @@ mod python;
 
 #[cfg(test)]
 mod jones_test;
+
+// Re-exports.
+#[cfg(feature = "cuda")]
+/// The float type use in CUDA code. This depends on how `hyperbeam` was
+/// compiled (used cargo feature "cuda-single" or "cuda").
+pub use fee::CudaFloat;
+pub use marlu::{AzEl, Jones}; // So that callers can have a different version of Marlu.

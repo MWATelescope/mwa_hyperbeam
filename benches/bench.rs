@@ -6,7 +6,7 @@
 //! the project's root directory.
 
 use criterion::*;
-use marlu::{ndarray, rayon};
+use marlu::{constants::MWA_LAT_RAD, ndarray, rayon};
 use ndarray::prelude::*;
 use rayon::prelude::*;
 
@@ -26,10 +26,21 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let amps = [1.0; 16];
         let norm_to_zenith = false;
+        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let iau_order = true;
         b.iter(|| {
             let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-            beam.calc_jones(az, za, freq, &delays, &amps, norm_to_zenith)
-                .unwrap();
+            beam.calc_jones_pair(
+                az,
+                za,
+                freq,
+                &delays,
+                &amps,
+                norm_to_zenith,
+                array_latitude_rad,
+                iau_order,
+            )
+            .unwrap();
         })
     });
 
@@ -40,10 +51,21 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let amps = [1.0; 16];
         let norm_to_zenith = false;
+        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         b.iter(|| {
-            beam.calc_jones(az, za, freq, &delays, &amps, norm_to_zenith)
-                .unwrap();
+            beam.calc_jones_pair(
+                az,
+                za,
+                freq,
+                &delays,
+                &amps,
+                norm_to_zenith,
+                array_latitude_rad,
+                iau_order,
+            )
+            .unwrap();
             beam.empty_cache();
         })
     });
@@ -55,13 +77,33 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let amps = [1.0; 16];
         let norm_to_zenith = false;
+        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones(az, za, freq, &delays, &amps, norm_to_zenith)
-            .unwrap();
+        beam.calc_jones_pair(
+            az,
+            za,
+            freq,
+            &delays,
+            &amps,
+            norm_to_zenith,
+            array_latitude_rad,
+            iau_order,
+        )
+        .unwrap();
         b.iter(|| {
-            beam.calc_jones(az, za, freq, &delays, &amps, norm_to_zenith)
-                .unwrap();
+            beam.calc_jones_pair(
+                az,
+                za,
+                freq,
+                &delays,
+                &amps,
+                norm_to_zenith,
+                array_latitude_rad,
+                iau_order,
+            )
+            .unwrap();
         })
     });
 
@@ -77,13 +119,33 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let amps = [1.0; 16];
         let norm_to_zenith = false;
+        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones(az[0], za[0], freq, &delays, &amps, norm_to_zenith)
-            .unwrap();
+        beam.calc_jones_pair(
+            az[0],
+            za[0],
+            freq,
+            &delays,
+            &amps,
+            norm_to_zenith,
+            array_latitude_rad,
+            iau_order,
+        )
+        .unwrap();
         b.iter(|| {
-            beam.calc_jones_array(&az, &za, freq, &delays, &amps, norm_to_zenith)
-                .unwrap();
+            beam.calc_jones_array_pair(
+                &az,
+                &za,
+                freq,
+                &delays,
+                &amps,
+                norm_to_zenith,
+                array_latitude_rad,
+                iau_order,
+            )
+            .unwrap();
         })
     });
 
@@ -101,16 +163,36 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let amps = [1.0; 16];
         let norm_to_zenith = false;
+        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones(az[0], za[0], freq, &delays, &amps, norm_to_zenith)
-            .unwrap();
+        beam.calc_jones_pair(
+            az[0],
+            za[0],
+            freq,
+            &delays,
+            &amps,
+            norm_to_zenith,
+            array_latitude_rad,
+            iau_order,
+        )
+        .unwrap();
         b.iter(|| {
             az.par_iter()
                 .zip(za.par_iter())
                 .map(|(&a, &z)| {
-                    beam.calc_jones(a, z, freq, &delays, &amps, norm_to_zenith)
-                        .unwrap()
+                    beam.calc_jones_pair(
+                        a,
+                        z,
+                        freq,
+                        &delays,
+                        &amps,
+                        norm_to_zenith,
+                        array_latitude_rad,
+                        iau_order,
+                    )
+                    .unwrap()
                 })
                 .collect::<Vec<_>>();
         })
@@ -138,11 +220,12 @@ fn fee(c: &mut Criterion) {
             az.push(rad);
             za.push(rad);
         }
-        let parallactic_correction = false;
+        let array_latitude_rad = None;
+        let iau_order = false;
 
         b.iter(|| {
             cuda_beam
-                .calc_jones(&az, &za, parallactic_correction)
+                .calc_jones_pair(&az, &za, array_latitude_rad, iau_order)
                 .unwrap();
         })
     });
@@ -159,27 +242,33 @@ fn fee(c: &mut Criterion) {
     let delays = Array2::zeros((1, 16));
     let amps = Array2::ones((1, 16));
     let norm_to_zenith = true;
+    let array_latitude_rad = Some(MWA_LAT_RAD);
+    let iau_order = true;
 
     c.bench_function("calc_jones_array 100000 dirs", |b| {
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones(
+        beam.calc_jones_pair(
             az_double[0],
             za_double[0],
             freqs[0],
             delays.as_slice().unwrap(),
             amps.as_slice().unwrap(),
             norm_to_zenith,
+            array_latitude_rad,
+            iau_order,
         )
         .unwrap();
         b.iter(|| {
-            beam.calc_jones_array(
+            beam.calc_jones_array_pair(
                 &az_double,
                 &za_double,
                 freqs[0],
                 delays.as_slice().unwrap(),
                 amps.as_slice().unwrap(),
                 norm_to_zenith,
+                array_latitude_rad,
+                iau_order,
             )
             .unwrap();
         })
@@ -192,7 +281,7 @@ fn fee(c: &mut Criterion) {
             beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)
                 .unwrap()
         };
-        let parallactic_correction = true;
+        let array_latitude_rad = Some(MWA_LAT_RAD);
 
         #[cfg(feature = "cuda-single")]
         let (az, za): (Vec<_>, Vec<_>) = az_double
@@ -205,7 +294,7 @@ fn fee(c: &mut Criterion) {
 
         b.iter(|| {
             cuda_beam
-                .calc_jones(&az, &za, parallactic_correction)
+                .calc_jones_pair(&az, &za, array_latitude_rad, true)
                 .unwrap();
         })
     });

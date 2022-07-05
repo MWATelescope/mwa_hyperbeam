@@ -1,0 +1,30 @@
+[package]
+name = "hyperbeam_examples"
+version = "0.1.0"
+authors = ["Christopher H. Jordan <christopherjordan87@gmail.com>"]
+edition = "2021"
+
+[features]
+default = []
+hdf5-static = []
+erfa-static = ["mwa_hyperbeam/erfa-static"]
+cuda-static = ["mwa_hyperbeam/cuda-static"]
+all-static = ["hdf5-static", "erfa-static", "cuda-static"]
+
+# Provide beam functionality with CUDA, double precision.
+cuda = ["mwa_hyperbeam/cuda"]
+# Opt-out of double precision, use only single precision.
+cuda-single = ["mwa_hyperbeam/cuda-single", "cuda"]
+
+[dependencies]
+anyhow = "1"
+clap = { version = "3", features = ["derive"] }
+mwa_hyperbeam = { path = "../.." } # Replace this with the latest release version
+ndarray = "0.15.4"
+
+[[bin]]
+name = "fee"
+
+[[bin]]
+name = "fee_cuda"
+required-features = ["cuda"]

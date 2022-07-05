@@ -85,6 +85,8 @@ int main(int argc, char *argv[]) {
     int num_amps = 16;
     // Should we normalise the beam response?
     int norm_to_zenith = 1;
+    // Should the beam-response Jones matrix be in the IAU polarisation order?
+    int iau_order = 1;
 
     // Now get a new CUDA FEE beam object.
     FEEBeamCUDA *cuda_beam;
@@ -99,9 +101,10 @@ int main(int argc, char *argv[]) {
         az[i] = (-170.0 + i * 340.0 / num_azzas) * M_PI / 180.0;
         za[i] = (10.0 + i * 70.0 / num_azzas) * M_PI / 180.0;
     }
-    // Should we apply the parallactic angle correction? Read more here:
-    // https://github.com/JLBLine/polarisation_tests_for_FEE
-    int parallactic = 1;
+    // Should we apply the parallactic angle correction? If so, use this
+    // latitude for the MWA. Read more here:
+    // https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf
+    double latitude_rad = -0.4660608448386394;
 
     // Allocate a buffer for the results.
     size_t num_unique_tiles = (size_t)get_num_unique_tiles(cuda_beam);
@@ -109,7 +112,7 @@ int main(int argc, char *argv[]) {
     complex FLOAT *jones = malloc(num_unique_tiles * num_unique_fee_freqs * num_azzas * 8 * sizeof(FLOAT));
     // hyperbeam expects a pointer to our FLOAT macro. Casting the pointer works
     // fine.
-    if (calc_jones_cuda(cuda_beam, num_azzas, az, za, parallactic, (FLOAT *)jones))
+    if (calc_jones_cuda(cuda_beam, num_azzas, az, za, &latitude_rad, iau_order, (FLOAT *)jones))
         handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_cuda");
 
     printf("The first Jones matrix:\n");

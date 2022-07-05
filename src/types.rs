@@ -37,7 +37,7 @@ impl CacheKey {
     /// It hashes the input parameters for a unique hash. If these parameters
     /// are re-used, the same hash will be generated, and we can use the cache
     /// that these [`CacheKey`]s guard.
-    pub(crate) fn new(freq: u32, delays: &[u32], amps: &[f64; 32]) -> Self {
+    pub(crate) fn new(freq: u32, delays: &[u32; 16], amps: &[f64; 32]) -> Self {
         let mut hasher = DefaultHasher::new();
         freq.hash(&mut hasher);
         delays.hash(&mut hasher);

@@ -5,7 +5,7 @@
 //! Tests for CUDA FEE beam code.
 
 use approx::{assert_abs_diff_eq, assert_abs_diff_ne};
-use marlu::ndarray::prelude::*;
+use marlu::{constants::MWA_LAT_RAD, ndarray::prelude::*};
 use serial_test::serial;
 
 use super::*;
@@ -36,9 +36,9 @@ fn test_cuda_calc_jones_no_norm() {
             )
         })
         .unzip();
-    let parallactic_correction = false;
+    let array_latitude_rad = None;
 
-    let result = cuda_beam.calc_jones(&az, &za, parallactic_correction);
+    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -57,13 +57,15 @@ fn test_cuda_calc_jones_no_norm() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_eng_array(
+                .calc_jones_array_pair(
                     &az,
                     &za,
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
+                    None,
+                    false,
                 )
                 .unwrap();
 
@@ -111,9 +113,9 @@ fn test_cuda_calc_jones_w_norm() {
             )
         })
         .unzip();
-    let parallactic_correction = false;
+    let array_latitude_rad = None;
 
-    let result = cuda_beam.calc_jones(&az, &za, parallactic_correction);
+    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -132,13 +134,15 @@ fn test_cuda_calc_jones_w_norm() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_eng_array(
+                .calc_jones_array_pair(
                     &az,
                     &za,
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
+                    array_latitude_rad,
+                    false,
                 )
                 .unwrap();
 
@@ -186,9 +190,9 @@ fn test_cuda_calc_jones_w_norm_and_parallactic() {
             )
         })
         .unzip();
-    let parallactic_correction = true;
+    let array_latitude_rad = Some(MWA_LAT_RAD);
 
-    let result = cuda_beam.calc_jones(&az, &za, parallactic_correction);
+    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, true);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -207,13 +211,15 @@ fn test_cuda_calc_jones_w_norm_and_parallactic() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_array(
+                .calc_jones_array_pair(
                     &az,
                     &za,
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
+                    array_latitude_rad,
+                    true,
                 )
                 .unwrap();
 
@@ -234,6 +240,43 @@ fn test_cuda_calc_jones_w_norm_and_parallactic() {
     #[cfg(feature = "cuda-single")]
     // The errors are heavily dependent on the directions.
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-6);
+}
+
+#[test]
+#[serial]
+fn test_cuda_calc_jones_with_and_without_parallactic() {
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let freqs = [150e6 as u32];
+    let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
+    let amps =
+        array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
+    let norm_to_zenith = true;
+    let result = unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    let cuda_beam = result.unwrap();
+    assert_eq!(cuda_beam.num_coeffs, 1);
+    assert_eq!(cuda_beam.num_unique_tiles, 1);
+    assert_eq!(cuda_beam.num_unique_freqs, 1);
+
+    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+        .into_iter()
+        .map(|i| {
+            (
+                0.45 + i as CudaFloat / 10000.0,
+                0.45 + i as CudaFloat / 10000.0,
+            )
+        })
+        .unzip();
+    let array_latitude_rad = Some(MWA_LAT_RAD);
+
+    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    let pa = result.unwrap();
+    let result = cuda_beam.calc_jones_pair(&az, &za, None, false);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    let not_pa = result.unwrap();
+
+    assert_abs_diff_ne!(pa.mapv(TestJones::from), not_pa.mapv(TestJones::from));
 }
 
 #[test]
@@ -279,9 +322,9 @@ fn test_cuda_calc_jones_deduplication() {
             )
         })
         .unzip();
-    let parallactic_correction = false;
+    let array_latitude_rad = None;
 
-    let result = cuda_beam.calc_jones(&az, &za, parallactic_correction);
+    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -300,13 +343,15 @@ fn test_cuda_calc_jones_deduplication() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_eng_array(
+                .calc_jones_array_pair(
                     &az,
                     &za,
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
+                    array_latitude_rad,
+                    false,
                 )
                 .unwrap();
 
@@ -372,9 +417,9 @@ fn test_cuda_calc_jones_deduplication_w_norm() {
             )
         })
         .unzip();
-    let parallactic_correction = false;
+    let array_latitude_rad = None;
 
-    let result = cuda_beam.calc_jones(&az, &za, parallactic_correction);
+    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -393,13 +438,15 @@ fn test_cuda_calc_jones_deduplication_w_norm() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_eng_array(
+                .calc_jones_array_pair(
                     &az,
                     &za,
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
+                    array_latitude_rad,
+                    false,
                 )
                 .unwrap();
 
@@ -455,9 +502,9 @@ fn test_cuda_calc_jones_no_amps() {
             )
         })
         .unzip();
-    let parallactic_correction = false;
+    let array_latitude_rad = None;
 
-    let result = cuda_beam.calc_jones(&az, &za, parallactic_correction);
+    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -476,13 +523,15 @@ fn test_cuda_calc_jones_no_amps() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs.iter()) {
             let cpu_results = beam
-                .calc_jones_eng_array(
+                .calc_jones_array_pair(
                     &az,
                     &za,
                     *freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
+                    array_latitude_rad,
+                    false,
                 )
                 .unwrap();
 
@@ -515,4 +564,42 @@ fn test_cuda_calc_jones_no_amps() {
         jones_gpu.slice(s![0, .., ..]),
         Array2::from_elem((jones_gpu.dim().1, jones_gpu.dim().2), TestJones::default())
     );
+}
+
+#[test]
+#[serial]
+fn test_cuda_calc_jones_iau_order() {
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let freqs = [150e6 as u32];
+    let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
+    let amps =
+        array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
+    let norm_to_zenith = false;
+    let result = unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    let cuda_beam = result.unwrap();
+    assert_eq!(cuda_beam.num_coeffs, 1);
+    assert_eq!(cuda_beam.num_unique_tiles, 1);
+    assert_eq!(cuda_beam.num_unique_freqs, 1);
+
+    let (az, za): (Vec<_>, Vec<_>) = (vec![0.45 / 10000.0], vec![0.45 / 10000.0]);
+    let array_latitude_rad = Some(MWA_LAT_RAD);
+
+    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, true);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    let j_iau = result.unwrap();
+
+    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    let j_not_iau = result.unwrap();
+
+    dbg!(&j_iau, &j_not_iau);
+    assert_ne!(j_iau[(0, 0, 0)][0], j_not_iau[(0, 0, 0)][0]);
+    assert_ne!(j_iau[(0, 0, 0)][1], j_not_iau[(0, 0, 0)][1]);
+    assert_ne!(j_iau[(0, 0, 0)][2], j_not_iau[(0, 0, 0)][2]);
+    assert_ne!(j_iau[(0, 0, 0)][3], j_not_iau[(0, 0, 0)][3]);
+    assert_eq!(j_iau[(0, 0, 0)][0], j_not_iau[(0, 0, 0)][3]);
+    assert_eq!(j_iau[(0, 0, 0)][1], j_not_iau[(0, 0, 0)][2]);
+    assert_eq!(j_iau[(0, 0, 0)][2], j_not_iau[(0, 0, 0)][1]);
+    assert_eq!(j_iau[(0, 0, 0)][3], j_not_iau[(0, 0, 0)][0]);
 }

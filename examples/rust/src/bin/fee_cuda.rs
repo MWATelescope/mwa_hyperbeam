@@ -12,25 +12,22 @@
 //!
 //! https://crates.io/crates/mwa_hyperbeam
 
-use std::f64::consts::PI;
+use std::f64::consts::{FRAC_PI_2, PI};
 
 use clap::Parser;
-use marlu::{ndarray, Jones};
+use mwa_hyperbeam::{fee::FEEBeam, AzEl, CudaFloat, Jones};
 use ndarray::prelude::*;
 
-use mwa_hyperbeam::fee::FEEBeam;
-
-#[cfg(feature = "cuda-single")]
-type CudaFloat = f32;
-#[cfg(not(feature = "cuda-single"))]
-type CudaFloat = f64;
-
 #[derive(Parser, Debug)]
-#[clap()]
+#[clap(allow_negative_numbers = true)]
 struct Args {
     /// Path to the HDF5 file.
     #[clap(short, long, parse(from_os_str))]
     hdf5_file: Option<std::path::PathBuf>,
+
+    /// If provided, use this latitude for the parallactic-angle correction.
+    #[clap(short, long)]
+    latitude_rad: Option<f64>,
 
     /// The number of directions to run.
     #[clap()]
@@ -43,6 +40,11 @@ fn main() -> Result<(), anyhow::Error> {
         eprintln!("num_directions cannot be 0.");
         std::process::exit(1);
     }
+
+    println!(
+        "CUDA float precision is {} bits",
+        std::mem::size_of::<CudaFloat>() * 8
+    );
 
     // If we were given a file, use it. Otherwise, fall back on MWA_BEAM_FILE.
     let beam = match args.hdf5_file {
@@ -64,18 +66,16 @@ fn main() -> Result<(), anyhow::Error> {
         unsafe { beam.cuda_prepare(&freqs_hz, delays.view(), amps.view(), norm_to_zenith)? };
 
     // Set up the directions to test. The type depends on the CUDA precision.
-    let mut azs = Vec::with_capacity(args.num_directions);
-    let mut zas = Vec::with_capacity(args.num_directions);
+    let mut azels = Vec::with_capacity(args.num_directions);
     for i in 0..args.num_directions {
-        azs.push(0.4 + 0.3 * PI as CudaFloat * i as CudaFloat / args.num_directions as CudaFloat);
-        zas.push(
-            0.3 + 0.4 * PI as CudaFloat / 2.0 * i as CudaFloat / args.num_directions as CudaFloat,
-        );
+        let az = 0.4 + 0.3 * PI * (i / args.num_directions) as f64;
+        let za = 0.3 + 0.4 * FRAC_PI_2 * (i / args.num_directions) as f64;
+        azels.push(AzEl::new(az, FRAC_PI_2 - za));
     }
-    let parallactic_correction = true;
+    let iau_order = true;
 
     // Call hyperbeam CUDA code.
-    let jones = cuda_beam.calc_jones(&azs, &zas, parallactic_correction)?;
+    let jones = cuda_beam.calc_jones(&azels, args.latitude_rad, iau_order)?;
     println!("The first Jones matrix:");
     // This works, but the formatting for this isn't very pretty.
     // println!("{}", jones[(0, 0, 0)]);
@@ -91,22 +91,19 @@ fn main() -> Result<(), anyhow::Error> {
     // fun. `beam.calc_jones` does the parallactic correction,
     // `beam.calc_jones_eng` does not. Regenerate the direction at double
     // precision for CPU usage.
-    let az = azs[0] as f64;
-    let za = zas[0] as f64;
+    let azel = AzEl::new(azels[0].az as f64, azels[0].el as f64);
 
     let jones_cpu = beam.calc_jones(
-        az,
-        za,
+        azel,
         freqs_hz[0],
         delays.slice(s![0, ..]).as_slice().unwrap(),
         amps.slice(s![0, ..]).as_slice().unwrap(),
         norm_to_zenith,
+        args.latitude_rad,
+        iau_order,
     )?;
 
-    #[cfg(not(feature = "cuda-single"))]
-    let diff: Jones<f64> = jones[[0, 0, 0]] - jones_cpu;
-    #[cfg(feature = "cuda-single")]
-    let diff: Jones<f32> = jones[[0, 0, 0]] - Jones::<f32>::from(jones_cpu);
+    let diff = jones[(0, 0, 0)] - Jones::<CudaFloat>::from(jones_cpu);
 
     println!("Difference between first GPU and CPU Jones matrices");
     println!(

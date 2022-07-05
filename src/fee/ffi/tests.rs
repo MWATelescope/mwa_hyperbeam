@@ -3,10 +3,11 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use std::ffi::CString;
-use std::ptr::null_mut;
+use std::ptr::{null, null_mut};
 
 use approx::*;
-use marlu::ndarray::prelude::*;
+use marlu::{constants::MWA_LAT_RAD, ndarray};
+use ndarray::prelude::*;
 use serial_test::serial;
 
 use super::*;
@@ -58,6 +59,7 @@ fn test_calc_jones_via_ffi() {
             [1.0; 16].as_ptr(),
             16,
             0,
+            &MWA_LAT_RAD,
             1,
             jones.as_mut_ptr(),
         );
@@ -97,6 +99,7 @@ fn test_calc_jones_eng_via_ffi() {
             [1.0; 16].as_ptr(),
             16,
             1,
+            null(),
             0,
             jones.as_mut_ptr(),
         );
@@ -140,6 +143,7 @@ fn test_calc_jones_32_amps_via_ffi() {
             .as_ptr(),
             32,
             0,
+            null(),
             0,
             jones.as_mut_ptr(),
         );
@@ -183,6 +187,7 @@ fn test_calc_jones_array_via_ffi() {
             [1.0; 16].as_ptr(),
             16,
             0,
+            null(),
             0,
             jones.as_mut_ptr(),
         );
@@ -224,6 +229,7 @@ fn test_calc_jones_array_32_amps_via_ffi() {
             .as_ptr(),
             32,
             0,
+            null(),
             0,
             jones.as_mut_ptr(),
         );
@@ -323,7 +329,6 @@ fn test_calc_jones_cuda_via_ffi() {
         assert_eq!(result, 0);
 
         let num_azza = az.len() as u32;
-        let parallactic_correction = 1;
         let mut jones: Array3<Jones<CudaFloat>> = Array3::zeros((num_tiles, num_freqs, az.len()));
 
         let result = calc_jones_cuda(
@@ -331,7 +336,8 @@ fn test_calc_jones_cuda_via_ffi() {
             num_azza,
             az.as_ptr(),
             za.as_ptr(),
-            parallactic_correction,
+            &MWA_LAT_RAD,
+            1,
             jones.as_mut_ptr().cast(),
         );
         assert_eq!(result, 0);
@@ -356,13 +362,15 @@ fn test_calc_jones_cuda_via_ffi() {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             unsafe {
                 let cpu_results = (&*beam)
-                    .calc_jones_array(
+                    .calc_jones_array_pair(
                         &az,
                         &za,
                         freq,
                         delays.as_slice().unwrap(),
                         amps.as_slice().unwrap(),
                         norm_to_zenith,
+                        Some(MWA_LAT_RAD),
+                        true,
                     )
                     .unwrap();
 
@@ -489,6 +497,7 @@ fn test_bool_errors() {
             .as_ptr(),
             5,
             2,
+            null(),
             0,
             jones.as_mut_ptr(),
         );
@@ -516,6 +525,7 @@ fn test_bool_errors() {
             .as_ptr(),
             32,
             2,
+            null(),
             0,
             jones.as_mut_ptr(),
         );
@@ -532,35 +542,6 @@ fn test_bool_errors() {
             "A value other than 0 or 1 was used for norm_to_zenith"
         );
 
-        // Bad parallactic value.
-        let result = calc_jones(
-            beam,
-            45.0_f64.to_radians(),
-            10.0_f64.to_radians(),
-            51200000,
-            [0; 16].as_ptr(),
-            [
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-                1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0,
-            ]
-            .as_ptr(),
-            32,
-            0,
-            2,
-            jones.as_mut_ptr(),
-        );
-        assert_ne!(result, 0);
-        let err_len = hb_last_error_length();
-        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
-        let err_ptr = err.into_raw();
-        hb_last_error_message(err_ptr, err_len);
-        let err = CString::from_raw(err_ptr);
-        let err_str = err.to_str().unwrap();
-        assert_eq!(
-            err_str,
-            "A value other than 0 or 1 was used for parallactic"
-        );
-
         // Do it all again for calc_jones_array.
         let az = [0.1];
         let za = [0.1];
@@ -575,6 +556,7 @@ fn test_bool_errors() {
             [1.0; 16].as_ptr(),
             10,
             0,
+            null(),
             0,
             jones.as_mut_ptr(),
         );
@@ -598,6 +580,7 @@ fn test_bool_errors() {
             [1.0; 16].as_ptr(),
             16,
             3,
+            null(),
             0,
             jones.as_mut_ptr(),
         );
@@ -611,32 +594,6 @@ fn test_bool_errors() {
         assert_eq!(
             err_str,
             "A value other than 0 or 1 was used for norm_to_zenith"
-        );
-
-        // Bad parallactic value.
-        let result = calc_jones_array(
-            beam,
-            az.len() as _,
-            az.as_ptr(),
-            za.as_ptr(),
-            51200000,
-            [0; 16].as_ptr(),
-            [1.0; 16].as_ptr(),
-            16,
-            0,
-            255,
-            jones.as_mut_ptr(),
-        );
-        assert_ne!(result, 0);
-        let err_len = hb_last_error_length();
-        let err = CString::from_vec_unchecked(vec![1; err_len as usize]);
-        let err_ptr = err.into_raw();
-        hb_last_error_message(err_ptr, err_len);
-        let err = CString::from_raw(err_ptr);
-        let err_str = err.to_str().unwrap();
-        assert_eq!(
-            err_str,
-            "A value other than 0 or 1 was used for parallactic"
         );
     };
 }

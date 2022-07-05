@@ -57,6 +57,15 @@ pub enum FEEBeamError {
     #[error("Unexpected array shape when reading HDF5 dataset '{key}': expected {exp} rows")]
     DatasetShape { key: String, exp: usize },
 
+    #[error("The number of amps wasn't 16 or 32 (got {0}); these must either correspond to bowties or X dipoles then Y dipoles in the M&C order")]
+    IncorrectAmpsLength(usize),
+
+    #[error("The number of delays wasn't 16 (got {0}); these must either correspond to bowties in the M&C order")]
+    IncorrectDelaysLength(usize),
+
+    #[error("The number of delays wasn't 16 (got {rows} tiles with {num_delays} each); each tile's 16 delays these must correspond to bowties in the M&C order")]
+    IncorrectDelaysArrayColLength { rows: usize, num_delays: usize },
+
     /// An error associated with the hdf5 crate.
     #[error("HDF5 error: {0}")]
     Hdf5Error(#[from] hdf5::Error),

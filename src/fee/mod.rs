@@ -106,17 +106,18 @@ impl FEEBeam {
         }
 
         // Sanity checks.
-        if biggest_dip_index.is_none() {
-            return Err(InitFEEBeamError::NoDipoles);
+        match biggest_dip_index {
+            None => return Err(InitFEEBeamError::NoDipoles),
+            Some(NUM_DIPOLES) => (),
+            Some(i) => {
+                return Err(InitFEEBeamError::DipoleCountMismatch {
+                    expected: NUM_DIPOLES,
+                    got: i,
+                });
+            }
         }
         if freqs.is_empty() {
             return Err(InitFEEBeamError::NoFreqs);
-        }
-        if biggest_dip_index.unwrap() != NUM_DIPOLES {
-            return Err(InitFEEBeamError::DipoleCountMismatch {
-                expected: NUM_DIPOLES,
-                got: biggest_dip_index.unwrap(),
-            });
         }
 
         freqs.sort_unstable();
@@ -218,7 +219,7 @@ impl FEEBeam {
     fn get_modes(
         &self,
         desired_freq_hz: u32,
-        delays: &[u32],
+        delays: &[u32; 16],
         amps: &[f64; 32],
     ) -> Result<MappedRwLockReadGuard<'_, BowtieCoefficients>, FEEBeamError> {
         let fee_freq = self.find_closest_freq(desired_freq_hz);
@@ -282,7 +283,7 @@ impl FEEBeam {
     fn calc_modes(
         &self,
         freq: u32,
-        delays: &[u32],
+        delays: &[u32; 16],
         amps: &[f64; 32],
     ) -> Result<BowtieCoefficients, FEEBeamError> {
         Ok(BowtieCoefficients {
@@ -301,7 +302,7 @@ impl FEEBeam {
     fn calc_mode(
         &self,
         freq_hz: u32,
-        delays: &[u32],
+        delays: &[u32; 16],
         amps: &[f64; 32],
         pol: Pol,
     ) -> Result<DipoleCoefficients, FEEBeamError> {
@@ -431,10 +432,16 @@ impl FEEBeam {
         })
     }
 
-    /// Calculate the Jones matrix for a given direction and pointing. This
-    /// matches the original specification of the FEE beam code (hence "eng", or
-    /// "engineering"). Astronomers more likely want the `calc_jones` method
-    /// instead.
+    /// Calculate the beam-response Jones matrix for a given direction and
+    /// pointing. If `array_latitude_rad` is *not* supplied, the result will
+    /// match the original specification of the FEE beam code (possibly more
+    /// useful for engineers).
+    ///
+    /// Astronomers are more likely to want to specify `array_latitude_rad`
+    /// (which will apply the parallactic-angle correction) and `iau_order`. If
+    /// `array_latitude_rad` is `None`, then `iau_reorder` does nothing. See
+    /// this document for more information:
+    /// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
     ///
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
@@ -442,7 +449,48 @@ impl FEEBeam {
     /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
     /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
     /// the first 16 are for X dipole elements, and the next 16 are for Y.
-    pub fn calc_jones_eng(
+    #[allow(clippy::too_many_arguments)]
+    pub fn calc_jones(
+        &self,
+        azel: AzEl,
+        freq_hz: u32,
+        delays: &[u32],
+        amps: &[f64],
+        norm_to_zenith: bool,
+        array_latitude_rad: Option<f64>,
+        iau_order: bool,
+    ) -> Result<Jones<f64>, FEEBeamError> {
+        self.calc_jones_pair(
+            azel.az,
+            azel.za(),
+            freq_hz,
+            delays,
+            amps,
+            norm_to_zenith,
+            array_latitude_rad,
+            iau_order,
+        )
+    }
+
+    /// Calculate the beam-response Jones matrix for a given direction and
+    /// pointing. If `array_latitude_rad` is *not* supplied, the result will
+    /// match the original specification of the FEE beam code (possibly more
+    /// useful for engineers).
+    ///
+    /// Astronomers are more likely to want to specify `array_latitude_rad`
+    /// (which will apply the parallactic-angle correction) and `iau_order`. If
+    /// `array_latitude_rad` is `None`, then `iau_reorder` does nothing. See
+    /// this document for more information:
+    /// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
+    ///
+    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
+    /// order; see
+    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
+    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
+    /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
+    /// the first 16 are for X dipole elements, and the next 16 are for Y.
+    #[allow(clippy::too_many_arguments)]
+    pub fn calc_jones_pair(
         &self,
         az_rad: f64,
         za_rad: f64,
@@ -450,13 +498,17 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
+        array_latitude_rad: Option<f64>,
+        iau_order: bool,
     ) -> Result<Jones<f64>, FEEBeamError> {
-        // `delays` must have 16 elements...
-        debug_assert_eq!(delays.len(), 16);
-        // ... but `amps` may have either 16 or 32. 32 elements corresponds to
-        // each element of each dipole; i.e. 16 X amplitudes followed by 16 Y
-        // amplitudes.
-        debug_assert!(amps.len() == 16 || amps.len() == 32);
+        if delays.len() != 16 {
+            return Err(FEEBeamError::IncorrectDelaysLength(delays.len()));
+        }
+        let delays: &[u32; 16] = delays.try_into().unwrap();
+        if !(amps.len() == 16 || amps.len() == 32) {
+            return Err(FEEBeamError::IncorrectAmpsLength(amps.len()));
+        }
+        let full_amps = fix_amps(amps, delays);
 
         // If we're normalising the beam, get the normalisation Jones matrix here.
         let norm_jones = match norm_to_zenith {
@@ -465,20 +517,20 @@ impl FEEBeam {
         };
 
         // Populate the coefficients cache if it isn't already populated.
-        let full_amps = fix_amps(amps, delays);
         let coeffs = self.get_modes(freq_hz, delays, &full_amps)?;
 
-        let jones = calc_jones_direct(az_rad, za_rad, &coeffs, norm_jones);
+        let mut jones = calc_jones_direct(az_rad, za_rad, &coeffs, norm_jones);
+        if let Some(array_latitude_rad) = array_latitude_rad {
+            apply_parallactic_correction(az_rad, za_rad, array_latitude_rad, iau_order, &mut jones);
+        }
+
         Ok(jones)
     }
 
-    /// Calculate the Jones matrices for many directions given a pointing. This
-    /// matches the original specification of the FEE beam code (hence "eng", or
-    /// "engineering"). Astronomers more likely want the `calc_jones_array`
-    /// method instead.
-    ///
-    /// This is basically a wrapper around `calc_jones_eng`; this function
-    /// calculates the Jones matrices in parallel.
+    /// Calculate the beam-response Jones matrices for many directions given a
+    /// pointing. This is basically a wrapper around `calc_jones` that
+    /// efficiently calculates the Jones matrices in parallel. The number of
+    /// parallel threads used can be controlled by setting `RAYON_NUM_THREADS`.
     ///
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
@@ -486,49 +538,60 @@ impl FEEBeam {
     /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
     /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
     /// the first 16 are for X dipole elements, and the next 16 are for Y.
-    pub fn calc_jones_eng_array(
+    #[allow(clippy::too_many_arguments)]
+    pub fn calc_jones_array(
         &self,
-        az_rad: &[f64],
-        za_rad: &[f64],
+        azels: &[AzEl],
         freq_hz: u32,
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
+        array_latitude_rad: Option<f64>,
+        iau_order: bool,
     ) -> Result<Vec<Jones<f64>>, FEEBeamError> {
-        let mut results = vec![Jones::default(); az_rad.len()];
-        self.calc_jones_eng_array_inner(
-            az_rad,
-            za_rad,
+        let mut results = vec![Jones::default(); azels.len()];
+        self.calc_jones_array_inner(
+            azels,
             freq_hz,
             delays,
             amps,
             norm_to_zenith,
+            array_latitude_rad,
+            iau_order,
             &mut results,
         )?;
         Ok(results)
     }
 
+    /// Calculate the Jones matrices for many directions given a pointing. This
+    /// is the same as `calc_jones_array` but uses pre-allocated memory.
+    ///
+    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
+    /// order; see
+    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
+    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
+    /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
+    /// the first 16 are for X dipole elements, and the next 16 are for Y.
     #[allow(clippy::too_many_arguments)]
-    pub fn calc_jones_eng_array_inner(
+    pub fn calc_jones_array_inner(
         &self,
-        az_rad: &[f64],
-        za_rad: &[f64],
+        azels: &[AzEl],
         freq_hz: u32,
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
+        array_latitude_rad: Option<f64>,
+        iau_order: bool,
         results: &mut [Jones<f64>],
     ) -> Result<(), FEEBeamError> {
-        // `delays` must have 16 elements...
-        debug_assert_eq!(delays.len(), 16);
-        // ... but `amps` may have either 16 or 32. 32 elements corresponds to
-        // each element of each dipole; i.e. 16 X amplitudes followed by 16 Y
-        // amplitudes.
-        debug_assert!(amps.len() == 16 || amps.len() == 32);
-
-        // Populate the coefficients cache if it isn't already populated.
+        if delays.len() != 16 {
+            return Err(FEEBeamError::IncorrectDelaysLength(delays.len()));
+        }
+        let delays: &[u32; 16] = delays.try_into().unwrap();
+        if !(amps.len() == 16 || amps.len() == 32) {
+            return Err(FEEBeamError::IncorrectAmpsLength(amps.len()));
+        }
         let full_amps = fix_amps(amps, delays);
-        let coeffs = self.get_modes(freq_hz, delays, &full_amps)?;
 
         // If we're normalising the beam, get the normalisation Jones matrix here.
         let norm_jones = match norm_to_zenith {
@@ -536,21 +599,27 @@ impl FEEBeam {
             false => None,
         };
 
-        az_rad
+        // Populate the coefficients cache if it isn't already populated.
+        let coeffs = self.get_modes(freq_hz, delays, &full_amps)?;
+
+        azels
             .par_iter()
-            .zip(za_rad.par_iter())
             .zip(results.par_iter_mut())
-            .for_each(|((&az, &za), result)| {
-                *result = calc_jones_direct(az, za, &coeffs, norm_jones)
+            .for_each(|(&azel, result)| {
+                let az = azel.az;
+                let za = azel.za();
+                let mut jones = calc_jones_direct(az, za, &coeffs, norm_jones);
+                if let Some(array_latitude_rad) = array_latitude_rad {
+                    apply_parallactic_correction(az, za, array_latitude_rad, iau_order, &mut jones);
+                }
+                *result = jones;
             });
         Ok(())
     }
 
-    /// Calculate the Jones matrix for a given direction and pointing. Compared
-    /// to the original specification of the FEE beam code, this method has
-    /// re-defined the X and Y polarisations and applies a parallactic-angle
-    /// correction; see Jack's thorough investigation at
-    /// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
+    /// Calculate the Jones matrices for many directions given a pointing. This
+    /// is basically a wrapper around `calc_jones` that efficiently calculates
+    /// the Jones matrices in parallel.
     ///
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
@@ -558,37 +627,8 @@ impl FEEBeam {
     /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
     /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
     /// the first 16 are for X dipole elements, and the next 16 are for Y.
-    pub fn calc_jones(
-        &self,
-        az_rad: f64,
-        za_rad: f64,
-        freq_hz: u32,
-        delays: &[u32],
-        amps: &[f64],
-        norm_to_zenith: bool,
-    ) -> Result<Jones<f64>, FEEBeamError> {
-        let mut j = self.calc_jones_eng(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith)?;
-        apply_parallactic_correction(az_rad, za_rad, &mut j);
-
-        Ok(j)
-    }
-
-    /// Calculate the Jones matrices for many directions given a pointing.
-    /// Compared to the original specification of the FEE beam code, this method
-    /// has re-defined the X and Y polarisations and applies a parallactic-angle
-    /// correction; see Jack's thorough investigation at
-    /// <https://github.com/JLBLine/polarisation_tests_for_FEE>.
-    ///
-    /// This is basically a wrapper around `calc_jones`; this function
-    /// calculates the Jones matrices in parallel.
-    ///
-    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
-    /// order; see
-    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
-    /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
-    /// the first 16 are for X dipole elements, and the next 16 are for Y.
-    pub fn calc_jones_array(
+    #[allow(clippy::too_many_arguments)]
+    pub fn calc_jones_array_pair(
         &self,
         az_rad: &[f64],
         za_rad: &[f64],
@@ -596,22 +636,35 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
+        array_latitude_rad: Option<f64>,
+        iau_order: bool,
     ) -> Result<Vec<Jones<f64>>, FEEBeamError> {
         let mut results = vec![Jones::default(); az_rad.len()];
-        self.calc_jones_array_inner(
+        self.calc_jones_array_pair_inner(
             az_rad,
             za_rad,
             freq_hz,
             delays,
             amps,
             norm_to_zenith,
+            array_latitude_rad,
+            iau_order,
             &mut results,
         )?;
         Ok(results)
     }
 
+    /// Calculate the Jones matrices for many directions given a pointing. This
+    /// is the same as `calc_jones_array_pair` but uses pre-allocated memory.
+    ///
+    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
+    /// order; see
+    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
+    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
+    /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
+    /// the first 16 are for X dipole elements, and the next 16 are for Y.
     #[allow(clippy::too_many_arguments)]
-    fn calc_jones_array_inner(
+    pub fn calc_jones_array_pair_inner(
         &self,
         az_rad: &[f64],
         za_rad: &[f64],
@@ -619,14 +672,18 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
+        array_latitude_rad: Option<f64>,
+        iau_order: bool,
         results: &mut [Jones<f64>],
     ) -> Result<(), FEEBeamError> {
-        // `delays` must have 16 elements...
-        debug_assert_eq!(delays.len(), 16);
-        // ... but `amps` may have either 16 or 32. 32 elements corresponds to
-        // each element of each dipole; i.e. 16 X amplitudes followed by 16 Y
-        // amplitudes.
-        debug_assert!(amps.len() == 16 || amps.len() == 32);
+        if delays.len() != 16 {
+            return Err(FEEBeamError::IncorrectDelaysLength(delays.len()));
+        }
+        let delays: &[u32; 16] = delays.try_into().unwrap();
+        if !(amps.len() == 16 || amps.len() == 32) {
+            return Err(FEEBeamError::IncorrectAmpsLength(amps.len()));
+        }
+        let full_amps = fix_amps(amps, delays);
 
         // If we're normalising the beam, get the normalisation Jones matrix here.
         let norm_jones = match norm_to_zenith {
@@ -635,7 +692,6 @@ impl FEEBeam {
         };
 
         // Populate the coefficients cache if it isn't already populated.
-        let full_amps = fix_amps(amps, delays);
         let coeffs = self.get_modes(freq_hz, delays, &full_amps)?;
 
         az_rad
@@ -644,7 +700,9 @@ impl FEEBeam {
             .zip(results.par_iter_mut())
             .for_each(|((&az, &za), result)| {
                 let mut jones = calc_jones_direct(az, za, &coeffs, norm_jones);
-                apply_parallactic_correction(az, za, &mut jones);
+                if let Some(array_latitude_rad) = array_latitude_rad {
+                    apply_parallactic_correction(az, za, array_latitude_rad, iau_order, &mut jones);
+                }
                 *result = jones;
             });
         Ok(())
@@ -770,7 +828,7 @@ fn calc_zenith_norm_jones(coeffs: &BowtieCoefficients) -> Jones<f64> {
 /// Ensure that any delays of 32 have an amplitude (dipole gain) of 0. The
 /// results are bad otherwise! Also ensure that we have 32 dipole gains (amps)
 /// here.
-pub(super) fn fix_amps(amps: &[f64], delays: &[u32]) -> [f64; 32] {
+fn fix_amps(amps: &[f64], delays: &[u32; 16]) -> [f64; 32] {
     let mut full_amps: [f64; 32] = [1.0; 32];
     full_amps
         .iter_mut()
@@ -780,27 +838,44 @@ pub(super) fn fix_amps(amps: &[f64], delays: &[u32]) -> [f64; 32] {
             if delay == 32 {
                 *out_amp = 0.0;
             } else {
-                *out_amp = in_amp
+                *out_amp = in_amp;
             }
         });
     full_amps
 }
 
-/// Apply the parallactic angle correction to a beam-response Jones matrix
-/// (when also given its corresponding direction). This function also
-/// re-arranges the Jones matrix to conform with Jack's investigation.
-fn apply_parallactic_correction(az_rad: f64, za_rad: f64, jones: &mut Jones<f64>) {
-    // Re-order the polarisations.
-    let j = [-jones[3], jones[2], -jones[1], jones[0]];
-    // Parallactic-angle correction.
+/// Apply the parallactic angle correction to a beam-response Jones matrix (when
+/// also given its corresponding direction). Also re-arrange the Jones matrix if
+/// we need to; when `iau_order` is `true`, then the beam response is [NS-NS
+/// NS-EW EW-NS EW-EW](). Otherwise it is [EW-EW EW-NS NS-EW NS-NS]();
+///
+/// See for how/why this is done:
+/// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
+fn apply_parallactic_correction(
+    az_rad: f64,
+    za_rad: f64,
+    array_latitude_rad: f64,
+    iau_order: bool,
+    jones: &mut Jones<f64>,
+) {
+    // Get the parallactic-angle and find its sine and cosine.
     let para_angle = AzEl::new(az_rad, FRAC_PI_2 - za_rad)
-        .to_hadec_mwa()
-        .get_parallactic_angle_mwa();
-    let (s_rot, c_rot) = (para_angle + FRAC_PI_2).sin_cos();
-    *jones = Jones::from([
-        j[0] * c_rot - j[1] * s_rot,
-        j[0] * s_rot + j[1] * c_rot,
-        j[2] * c_rot - j[3] * s_rot,
-        j[2] * s_rot + j[3] * c_rot,
-    ]);
+        .to_hadec(array_latitude_rad)
+        .get_parallactic_angle(array_latitude_rad);
+    let (s_rot, c_rot) = para_angle.sin_cos();
+    *jones = if iau_order {
+        Jones::from([
+            jones[2] * -c_rot + jones[3] * s_rot,
+            jones[2] * -s_rot + jones[3] * -c_rot,
+            jones[0] * -c_rot + jones[1] * s_rot,
+            jones[0] * -s_rot + jones[1] * -c_rot,
+        ])
+    } else {
+        Jones::from([
+            jones[0] * -s_rot + jones[1] * -c_rot,
+            jones[0] * -c_rot + jones[1] * s_rot,
+            jones[2] * -s_rot + jones[3] * -c_rot,
+            jones[2] * -c_rot + jones[3] * s_rot,
+        ])
+    };
 }

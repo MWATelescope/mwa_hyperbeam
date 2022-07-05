@@ -4,14 +4,12 @@
 
 //! Python interface to hyperbeam FEE code.
 
+use marlu::ndarray::prelude::*;
 use numpy::*;
 use pyo3::create_exception;
 use pyo3::prelude::*;
 
 use crate::fee::{FEEBeam as FEEBeamRust, FEEBeamError, InitFEEBeamError};
-
-#[cfg(feature = "cuda")]
-use marlu::ndarray::prelude::*;
 
 // Add a python exception for hyperbeam.
 create_exception!(mwa_hyperbeam, HyperbeamError, pyo3::exceptions::PyException);
@@ -48,115 +46,115 @@ impl FEEBeam {
         Ok(FEEBeam { beam: strct })
     }
 
-    /// Calculate the Jones matrix for a single direction given a pointing.
-    /// `delays` must have 16 ints, and `amps` must have either 16 or 32 floats.
-    /// If there are 16, then the dipole gains apply to both X and Y elements of
-    /// dipoles. If there are 32, the first 16 amps are for the X elements, the
-    /// next 16 the Y elements.
-    #[pyo3(text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)")]
+    /// Calculate the beam-response Jones matrix for a given direction and
+    /// pointing. If `array_latitude_rad` is *not* supplied, the result will
+    /// match the original specification of the FEE beam code (possibly more
+    /// useful for engineers).
+    ///
+    /// Astronomers are more likely to want to specify `array_latitude_rad`
+    /// (which will apply the parallactic-angle correction) and `iau_order`. If
+    /// `array_latitude_rad` is not given, then `iau_reorder` does nothing. See
+    /// this document for more information:
+    /// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
+    ///
+    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
+    /// order; see
+    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
+    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
+    /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
+    /// the first 16 are for X dipole elements, and the next 16 are for Y.
+    #[pyo3(
+        text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, array_latitude_rad, iau_order)"
+    )]
     #[allow(clippy::too_many_arguments)]
-    fn calc_jones(
+    fn calc_jones<'py>(
         &mut self,
+        py: Python<'py>,
         az_rad: f64,
         za_rad: f64,
         freq_hz: f64,
         delays: [u32; 16],
         amps: Vec<f64>,
         norm_to_zenith: bool,
-        parallactic: bool,
-    ) -> PyResult<Py<PyArray1<numpy::c64>>> {
-        let jones = if parallactic {
-            self.beam.calc_jones(
-                az_rad,
-                za_rad,
-                // hyperbeam expects an int for the frequency. By specifying
-                // that Python should pass in a float, it also allows an int to
-                // be passed in (!?). Convert the float here in Rust for usage
-                // in hyperbeam.
-                freq_hz.round() as _,
-                &delays,
-                &amps,
-                norm_to_zenith,
-            )
-        } else {
-            self.beam.calc_jones_eng(
-                az_rad,
-                za_rad,
-                freq_hz.round() as _,
-                &delays,
-                &amps,
-                norm_to_zenith,
-            )
-        }?;
+        array_latitude_rad: Option<f64>,
+        iau_order: Option<bool>,
+    ) -> PyResult<&'py PyArray1<numpy::c64>> {
+        let jones = self.beam.calc_jones_pair(
+            az_rad,
+            za_rad,
+            // hyperbeam expects an int for the frequency. By specifying that
+            // Python should pass in a float, it also allows an int to be passed
+            // in (!?). Convert the float here in Rust for usage in hyperbeam.
+            freq_hz.round() as _,
+            &delays,
+            &amps,
+            norm_to_zenith,
+            array_latitude_rad,
+            iau_order.unwrap_or(false),
+        )?;
         // Ensure that the numpy crate's c64 is being used.
         let jones_py: Vec<numpy::c64> = jones.iter().map(|c| numpy::c64::new(c.re, c.im)).collect();
 
-        let gil = pyo3::Python::acquire_gil();
-        let np_array = PyArray1::from_vec(gil.python(), jones_py).to_owned();
+        let np_array = PyArray1::from_vec(py, jones_py);
         Ok(np_array)
     }
 
-    /// Calculate the Jones matrices for multiple directions given a pointing.
-    /// Each direction is calculated in parallel by Rust. The number of parallel
-    /// threads used can be controlled by setting `RAYON_NUM_THREADS`. `delays`
-    /// must have 16 ints, and `amps` must have 16 or 32 floats.
-    #[pyo3(text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, parallactic)")]
+    /// Calculate the beam-response Jones matrices for many directions given a
+    /// pointing. This is basically a wrapper around `calc_jones` that
+    /// efficiently calculates the Jones matrices in parallel. The number of
+    /// parallel threads used can be controlled by setting `RAYON_NUM_THREADS`
+    ///
+    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
+    /// order; see
+    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
+    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
+    /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
+    /// the first 16 are for X dipole elements, and the next 16 are for Y.
+    #[pyo3(
+        text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, array_latitude_rad, iau_order)"
+    )]
     #[allow(clippy::too_many_arguments)]
-    fn calc_jones_array(
+    fn calc_jones_array<'py>(
         &mut self,
+        py: Python<'py>,
         az_rad: Vec<f64>,
         za_rad: Vec<f64>,
         freq_hz: f64,
         delays: [u32; 16],
         amps: Vec<f64>,
         norm_to_zenith: bool,
-        parallactic: bool,
-    ) -> PyResult<Py<PyArray2<numpy::c64>>> {
-        let jones = if parallactic {
-            self.beam.calc_jones_array(
-                &az_rad,
-                &za_rad,
-                freq_hz.round() as _,
-                &delays,
-                &amps,
-                norm_to_zenith,
-            )
-        } else {
-            self.beam.calc_jones_eng_array(
-                &az_rad,
-                &za_rad,
-                freq_hz.round() as _,
-                &delays,
-                &amps,
-                norm_to_zenith,
-            )
-        }?;
-        // Flatten the four-element arrays into a single vector.
-        let jones: Vec<numpy::c64> = jones
-            .into_iter()
-            .flat_map(|j| {
-                [
-                    numpy::c64::new(j[0].re, j[0].im),
-                    numpy::c64::new(j[1].re, j[1].im),
-                    numpy::c64::new(j[2].re, j[2].im),
-                    numpy::c64::new(j[3].re, j[3].im),
-                ]
-            })
-            .collect();
-        // Now populate a numpy array.
-        let gil = pyo3::Python::acquire_gil();
-        let np_array1 = PyArray1::from_vec(gil.python(), jones);
-        // Reshape with the second dimension being each Jones matrix (as a
-        // 4-element sub-array).
-        let np_array2 = np_array1.reshape([np_array1.len() / 4, 4]).unwrap();
+        array_latitude_rad: Option<f64>,
+        iau_order: Option<bool>,
+    ) -> PyResult<&'py PyArray2<numpy::c64>> {
+        let jones = self.beam.calc_jones_array_pair(
+            &az_rad,
+            &za_rad,
+            freq_hz.round() as _,
+            &delays,
+            &amps,
+            norm_to_zenith,
+            array_latitude_rad,
+            iau_order.unwrap_or(false),
+        )?;
 
-        Ok(np_array2.to_owned())
+        // Convert to a 2D array of c64 from Jones (one row per beam response).
+        // Use unsafe code to ensure that no useless copying is done!
+        // https://users.rust-lang.org/t/sound-conversion-from-vec-num-complex-complex64-4-to-ndarray-array2-num-complex-complex64-without-copying/78973/2
+        let mut jones = std::mem::ManuallyDrop::new(jones);
+
+        let old_len = jones.len();
+        let new_len = old_len * 4;
+        let new_cap = jones.capacity() * 4;
+        let new_ptr = jones.as_mut_ptr() as *mut numpy::c64;
+        // SAFETY: new_cap == old_cap * N, align_of::<C64>() == align_of::<Jones>()
+        let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
+        let a2 = Array2::from_shape_vec((old_len, 4), flat).unwrap();
+        Ok(a2.into_pyarray(py))
     }
 
     /// Get the available frequencies inside the HDF5 file.
-    fn get_fee_beam_freqs(&self) -> Py<PyArray1<u32>> {
-        let gil = pyo3::Python::acquire_gil();
-        self.beam.get_freqs().to_pyarray(gil.python()).to_owned()
+    fn get_fee_beam_freqs<'py>(&self, py: Python<'py>) -> &'py PyArray1<u32> {
+        self.beam.get_freqs().to_vec().into_pyarray(py)
     }
 
     /// Given a frequency in Hz, get the closest available frequency inside the
@@ -174,21 +172,85 @@ impl FEEBeam {
     /// distinct delays and amps). `delays_array` must have 16 elements per row,
     /// but `amps_array` can have 16 or 32 elements per row (see `calc_jones`
     /// for an explanation).
-    #[cfg(feature = "cuda")]
+    #[cfg(all(feature = "cuda", not(feature = "cuda-single")))]
     #[pyo3(
-        text_signature = "(az_rad, za_rad, freq_hz, delays_array, amps_array, norm_to_zenith, parallactic)"
+        text_signature = "(az_rad, za_rad, freq_hz, delays_array, amps_array, norm_to_zenith, array_latitude_rad, iau_order)"
     )]
     #[allow(clippy::too_many_arguments)]
-    fn calc_jones_cuda(
+    fn calc_jones_cuda<'py>(
         &mut self,
+        py: Python<'py>,
         az_rad: Vec<f64>,
         za_rad: Vec<f64>,
         freqs_hz: Vec<f64>,
         delays_array: Vec<u32>,
         amps_array: Vec<f64>,
         norm_to_zenith: bool,
-        parallactic: bool,
-    ) -> PyResult<Py<PyArray4<numpy::c64>>> {
+        array_latitude_rad: Option<f64>,
+        iau_order: Option<bool>,
+    ) -> PyResult<&'py PyArray4<numpy::c64>> {
+        // hyperbeam expects ints for the frequencies. Convert them to make sure
+        // everything's OK.
+        let freqs: Vec<u32> = freqs_hz.iter().map(|&f| f.round() as _).collect();
+        // We assume that there are 16 delays per row of delays, so we can get
+        // the number of tiles.
+        let num_tiles = delays_array.len() / 16;
+        let delays = Array2::from_shape_vec((num_tiles, 16), delays_array).unwrap();
+        // We then know how many amps per tile are provided.
+        let amps =
+            Array2::from_shape_vec((num_tiles, amps_array.len() / num_tiles), amps_array).unwrap();
+
+        let cuda_beam = unsafe {
+            self.beam
+                .cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)?
+        };
+        let jones = cuda_beam.calc_jones_pair(
+            &az_rad,
+            &za_rad,
+            array_latitude_rad,
+            iau_order.unwrap_or(false),
+        )?;
+
+        // Convert to a 4D array of c64 from Jones.
+        // Use unsafe code to ensure that no useless copying is done!
+        // https://users.rust-lang.org/t/sound-conversion-from-vec-num-complex-complex64-4-to-ndarray-array2-num-complex-complex64-without-copying/78973/2
+        let old_dim = jones.dim();
+        let mut jones = std::mem::ManuallyDrop::new(jones.into_raw_vec());
+
+        let new_len = jones.len() * 4;
+        let new_cap = jones.capacity() * 4;
+        let new_ptr = jones.as_mut_ptr() as *mut numpy::c64;
+        // SAFETY: new_cap == old_cap * N, align_of::<C64>() == align_of::<Jones>()
+        let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
+        let a4 = Array4::from_shape_vec((old_dim.0, old_dim.1, old_dim.2, 4), flat).unwrap();
+        Ok(a4.into_pyarray(py))
+    }
+
+    /// Calculate the Jones matrices for multiple directions given a pointing on
+    /// a CUDA-capable device.
+    ///
+    /// `delays_array` and `amps_array` must have the same number of rows; these
+    /// correspond to tile configurations (i.e. each tile is allowed to have
+    /// distinct delays and amps). `delays_array` must have 16 elements per row,
+    /// but `amps_array` can have 16 or 32 elements per row (see `calc_jones`
+    /// for an explanation).
+    #[cfg(feature = "cuda-single")]
+    #[pyo3(
+        text_signature = "(az_rad, za_rad, freq_hz, delays_array, amps_array, norm_to_zenith, array_latitude_rad, iau_order)"
+    )]
+    #[allow(clippy::too_many_arguments)]
+    fn calc_jones_cuda<'py>(
+        &mut self,
+        py: Python<'py>,
+        az_rad: Vec<f64>,
+        za_rad: Vec<f64>,
+        freqs_hz: Vec<f64>,
+        delays_array: Vec<u32>,
+        amps_array: Vec<f64>,
+        norm_to_zenith: bool,
+        array_latitude_rad: Option<f64>,
+        iau_order: Option<bool>,
+    ) -> PyResult<&'py PyArray4<numpy::c32>> {
         // hyperbeam expects ints for the frequencies. Convert them to make sure
         // everything's OK.
         let freqs: Vec<u32> = freqs_hz.iter().map(|&f| f.round() as _).collect();
@@ -207,36 +269,26 @@ impl FEEBeam {
             self.beam
                 .cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)?
         };
-        let jones = cuda_beam.calc_jones(&azs, &zas, parallactic)?;
+        let jones = cuda_beam.calc_jones_pair(
+            &azs,
+            &zas,
+            array_latitude_rad,
+            iau_order.unwrap_or(false),
+        )?;
 
-        // Convert the Rust Jones type into numpy::c64.
-        let d = jones.dim();
-        let jones: Vec<numpy::c64> = jones
-            .into_iter()
-            .flat_map(|j| {
-                [
-                    numpy::c64::new(j[0].re as _, j[0].im as _),
-                    numpy::c64::new(j[1].re as _, j[1].im as _),
-                    numpy::c64::new(j[2].re as _, j[2].im as _),
-                    numpy::c64::new(j[3].re as _, j[3].im as _),
-                ]
-            })
-            .collect();
-        // Now populate a numpy array.
-        let gil = pyo3::Python::acquire_gil();
-        let np_array1 = PyArray1::from_vec(gil.python(), jones);
-        // Reshape with the fourth dimension being each Jones matrix (as a
-        // 4-element sub-array).
-        let np_array4 = np_array1
-            .reshape([
-                np_array1.len() / (d.1 * d.2 * 4),
-                np_array1.len() / (d.0 * d.2 * 4),
-                np_array1.len() / (d.0 * d.1 * 4),
-                4,
-            ])
-            .unwrap();
+        // Convert to a 4D array of c64 from Jones.
+        // Use unsafe code to ensure that no useless copying is done!
+        // https://users.rust-lang.org/t/sound-conversion-from-vec-num-complex-complex64-4-to-ndarray-array2-num-complex-complex64-without-copying/78973/2
+        let old_dim = jones.dim();
+        let mut jones = std::mem::ManuallyDrop::new(jones.into_raw_vec());
 
-        Ok(np_array4.to_owned())
+        let new_len = jones.len() * 4;
+        let new_cap = jones.capacity() * 4;
+        let new_ptr = jones.as_mut_ptr() as *mut numpy::c32;
+        // SAFETY: new_cap == old_cap * N, align_of::<C32>() == align_of::<Jones>()
+        let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
+        let a4 = Array4::from_shape_vec((old_dim.0, old_dim.1, old_dim.2, 4), flat).unwrap();
+        Ok(a4.into_pyarray(py))
     }
 }
 

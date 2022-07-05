@@ -14,10 +14,10 @@
 cfg_if::cfg_if! {
     if #[cfg(feature = "cuda-single")] {
         include!("single.rs");
-        pub(crate) type CudaFloat = f32;
+        pub type CudaFloat = f32;
     } else {
         include!("double.rs");
-        pub(crate) type CudaFloat = f64;
+        pub type CudaFloat = f64;
     }
 }
 
@@ -32,11 +32,11 @@ use std::hash::{Hash, Hasher};
 use marlu::{
     c64,
     cuda::{cuda_status_to_error, DevicePointer},
-    ndarray, Jones,
+    ndarray, AzEl, Jones,
 };
 use ndarray::prelude::*;
 
-use super::{fix_amps, FEEBeam, FEEBeamError};
+use super::{FEEBeam, FEEBeamError};
 use crate::types::CacheKey;
 
 /// A CUDA beam object ready to calculate beam responses. It uses the
@@ -109,8 +109,8 @@ impl FEEBeamCUDA {
     /// `delays_array` and `amps_array` must have the same number of rows; these
     /// correspond to tile configurations (i.e. each tile is allowed to have
     /// distinct delays and amps). `delays_array` must have 16 elements per row,
-    /// but `amps_array` can have 16 or 32 elements per row (see `calc_jones`
-    /// for an explanation).
+    /// but `amps_array` can have 16 or 32 elements per row (see
+    /// [`FEEBeam::calc_jones`] for an explanation).
     ///
     /// The code will automatically de-duplicate tile configurations so that no
     /// redundant calculations are done.
@@ -121,12 +121,17 @@ impl FEEBeamCUDA {
         amps_array: ArrayView2<f64>,
         norm_to_zenith: bool,
     ) -> Result<FEEBeamCUDA, FEEBeamError> {
-        // `delays` must have 16 elements...
-        debug_assert_eq!(delays_array.dim().1, 16);
-        // ... but `amps` may have either 16 or 32. 32 elements corresponds to
-        // each element of each dipole; i.e. 16 X amplitudes followed by 16 Y
-        // amplitudes.
-        debug_assert!(amps_array.dim().1 == 16 || amps_array.dim().1 == 32);
+        if delays_array.len_of(Axis(1)) != 16 {
+            return Err(FEEBeamError::IncorrectDelaysArrayColLength {
+                rows: delays_array.len_of(Axis(0)),
+                num_delays: delays_array.len_of(Axis(1)),
+            });
+        }
+        if !(amps_array.len_of(Axis(1)) == 16 || amps_array.len_of(Axis(1)) == 32) {
+            return Err(FEEBeamError::IncorrectAmpsLength(
+                amps_array.len_of(Axis(1)),
+            ));
+        }
 
         // Prepare the cache with all unique combinations of tiles and
         // frequencies. Track all of the unique tiles and frequencies to allow
@@ -143,9 +148,7 @@ impl FEEBeamCUDA {
             .zip(amps_array.outer_iter())
             .enumerate()
         {
-            // unwrap is safe as these collections are contiguous (outer iter).
-            let delays = delays.as_slice().unwrap();
-            let full_amps = fix_amps(amps.as_slice().unwrap(), delays);
+            let (full_amps, delays) = fix_amps_ndarray(amps, delays);
 
             let mut unique_tile_hasher = DefaultHasher::new();
             delays.hash(&mut unique_tile_hasher);
@@ -175,10 +178,10 @@ impl FEEBeamCUDA {
                     fee_beam.get_norm_jones(*freq)?;
                 }
 
-                let _ = fee_beam.get_modes(*freq, delays, &full_amps)?;
+                let _ = fee_beam.get_modes(*freq, &delays, &full_amps)?;
 
                 let fee_freq = fee_beam.find_closest_freq(*freq);
-                let hash = CacheKey::new(fee_freq, delays, &full_amps);
+                let hash = CacheKey::new(fee_freq, &delays, &full_amps);
                 if !unique_hashes.contains(&(hash, fee_freq)) {
                     unique_hashes.push((hash, fee_freq));
                 }
@@ -355,73 +358,120 @@ impl FEEBeamCUDA {
 
     /// Given directions, calculate beam-response Jones matrices on the device
     /// and return a pointer to them.
+    ///
+    /// Note that this function needs to allocate two vectors for azimuths and
+    /// zenith angles from the supplied `azels`.
     pub fn calc_jones_device(
         &self,
-        az_rad: &[CudaFloat],
-        za_rad: &[CudaFloat],
-        parallactic: bool,
+        azels: &[AzEl],
+        array_latitude_rad: Option<f64>,
+        iau_reorder: bool,
     ) -> Result<DevicePointer<Jones<CudaFloat>>, FEEBeamError> {
         unsafe {
             // Allocate a buffer on the device for results.
-            let mut d_results = DevicePointer::malloc(
+            let d_results = DevicePointer::malloc(
+                self.num_unique_tiles as usize
+                    * self.num_unique_freqs as usize
+                    * azels.len()
+                    * std::mem::size_of::<Jones<CudaFloat>>(),
+            )?;
+
+            let (azs, zas): (Vec<CudaFloat>, Vec<CudaFloat>) = azels
+                .iter()
+                .map(|&azel| (azel.az as CudaFloat, azel.za() as CudaFloat))
+                .unzip();
+            self.calc_jones_device_pair_inner(
+                &azs,
+                &zas,
+                array_latitude_rad,
+                iau_reorder,
+                d_results.get_mut() as *mut std::ffi::c_void,
+            )?;
+            Ok(d_results)
+        }
+    }
+
+    /// Given directions, calculate beam-response Jones matrices on the device
+    /// and return a pointer to them.
+    pub fn calc_jones_device_pair(
+        &self,
+        az_rad: &[CudaFloat],
+        za_rad: &[CudaFloat],
+        array_latitude_rad: Option<f64>,
+        iau_reorder: bool,
+    ) -> Result<DevicePointer<Jones<CudaFloat>>, FEEBeamError> {
+        unsafe {
+            // Allocate a buffer on the device for results.
+            let d_results = DevicePointer::malloc(
                 self.num_unique_tiles as usize
                     * self.num_unique_freqs as usize
                     * az_rad.len()
                     * std::mem::size_of::<Jones<CudaFloat>>(),
             )?;
 
-            self.calc_jones_device_inner(az_rad, za_rad, parallactic, &mut d_results)?;
+            self.calc_jones_device_pair_inner(
+                az_rad,
+                za_rad,
+                array_latitude_rad,
+                iau_reorder,
+                d_results.get_mut() as *mut std::ffi::c_void,
+            )?;
             Ok(d_results)
         }
     }
 
-    pub fn calc_jones_device_inner(
+    /// Given directions, calculate beam-response Jones matrices into the
+    /// supplied pre-allocated device pointer. This buffer should have a shape
+    /// of (`total_num_tiles`, `total_num_freqs`, `az_rad_length`). The first
+    /// two dimensions can be accessed with `FEEBeamCUDA::get_total_num_tiles`
+    /// and `FEEBeamCUDA::get_total_num_freqs`.
+    ///
+    /// # Safety
+    ///
+    /// If `d_results` isn't the right size (described above), then undefined
+    /// behaviour looms.
+    pub unsafe fn calc_jones_device_pair_inner(
         &self,
         az_rad: &[CudaFloat],
         za_rad: &[CudaFloat],
-        parallactic: bool,
-        d_results: &mut DevicePointer<Jones<CudaFloat>>,
-    ) -> Result<(), FEEBeamError> {
-        self.calc_jones_device_inner_ptr(
-            az_rad,
-            za_rad,
-            parallactic,
-            d_results.get_mut() as *mut std::ffi::c_void,
-        )
-    }
-
-    /// This function only exists for FFI purposes.
-    pub(crate) fn calc_jones_device_inner_ptr(
-        &self,
-        az_rad: &[CudaFloat],
-        za_rad: &[CudaFloat],
-        parallactic: bool,
+        array_latitude_rad: Option<f64>,
+        iau_reorder: bool,
         d_results: *mut std::ffi::c_void,
     ) -> Result<(), FEEBeamError> {
-        unsafe {
-            let d_azs = DevicePointer::copy_to_device(az_rad)?;
-            let d_zas = DevicePointer::copy_to_device(za_rad)?;
-            let error_str =
-                CString::from_vec_unchecked(vec![1; marlu::cuda::ERROR_STR_LENGTH]).into_raw();
+        let d_azs = DevicePointer::copy_to_device(az_rad)?;
+        let d_zas = DevicePointer::copy_to_device(za_rad)?;
+        let error_str =
+            CString::from_vec_unchecked(vec![1; marlu::cuda::ERROR_STR_LENGTH]).into_raw();
 
-            let result = cuda_calc_jones(
-                d_azs.get(),
-                d_zas.get(),
-                az_rad.len().try_into().unwrap(),
-                &self.get_fee_coeffs(),
-                self.num_coeffs,
-                match self.d_norm_jones.as_ref() {
-                    Some(n) => (*n).get().cast(),
-                    None => std::ptr::null_mut(),
-                },
-                parallactic as i8,
-                d_results,
-                error_str,
-            );
-            cuda_status_to_error(result, error_str)?;
+        let result = cuda_calc_jones(
+            d_azs.get(),
+            d_zas.get(),
+            az_rad.len().try_into().unwrap(),
+            &self.get_fee_coeffs(),
+            self.num_coeffs,
+            match self.d_norm_jones.as_ref() {
+                Some(n) => (*n).get().cast(),
+                None => std::ptr::null(),
+            },
+            // I've lost like 3 days finding a bug associated with copying the
+            // array latitude to the device in Rust (as we do with the Azimuths,
+            // for example). Doing this would *sometimes* cause the beam results
+            // to change. And probably not when only running one particular
+            // test; usually when running many tests concurrently. Giving the
+            // pointer-to-a-host-float to C to then copy to the device works
+            // fine. I think this is because cudaMalloc is behaving like an
+            // async function. Maddening.
+            match array_latitude_rad.map(|f| f as CudaFloat).as_ref() {
+                Some(l) => l,
+                None => std::ptr::null(),
+            },
+            iau_reorder.into(),
+            d_results,
+            error_str,
+        );
+        cuda_status_to_error(result, error_str)?;
 
-            Ok(())
-        }
+        Ok(())
     }
 
     /// Given directions, calculate beam-response Jones matrices on the device,
@@ -429,33 +479,74 @@ impl FEEBeamCUDA {
     /// "expanded"; tile and frequency de-duplication is undone to give an array
     /// with the same number of tiles and frequencies as was specified when this
     /// [`FEEBeamCUDA`] was created.
+    ///
+    /// Note that this function needs to allocate two vectors for azimuths and
+    /// zenith angles from the supplied `azels`.
     pub fn calc_jones(
+        &self,
+        azels: &[AzEl],
+        array_latitude_rad: Option<f64>,
+        iau_reorder: bool,
+    ) -> Result<Array3<Jones<CudaFloat>>, FEEBeamError> {
+        let mut results = Array3::from_elem(
+            (self.tile_map.len(), self.freq_map.len(), azels.len()),
+            Jones::default(),
+        );
+
+        let (azs, zas): (Vec<CudaFloat>, Vec<CudaFloat>) = azels
+            .iter()
+            .map(|&azel| (azel.az as CudaFloat, azel.za() as CudaFloat))
+            .unzip();
+        self.calc_jones_pair_inner(
+            &azs,
+            &zas,
+            array_latitude_rad,
+            iau_reorder,
+            results.view_mut(),
+        )?;
+        Ok(results)
+    }
+
+    /// Given directions, calculate beam-response Jones matrices on the device,
+    /// copy them to the host, and free the device memory. The returned array is
+    /// "expanded"; tile and frequency de-duplication is undone to give an array
+    /// with the same number of tiles and frequencies as was specified when this
+    /// [`FEEBeamCUDA`] was created.
+    pub fn calc_jones_pair(
         &self,
         az_rad: &[CudaFloat],
         za_rad: &[CudaFloat],
-        parallactic: bool,
+        array_latitude_rad: Option<f64>,
+        iau_reorder: bool,
     ) -> Result<Array3<Jones<CudaFloat>>, FEEBeamError> {
         let mut results = Array3::from_elem(
             (self.tile_map.len(), self.freq_map.len(), az_rad.len()),
             Jones::default(),
         );
 
-        self.calc_jones_inner(az_rad, za_rad, parallactic, results.view_mut())?;
+        self.calc_jones_pair_inner(
+            az_rad,
+            za_rad,
+            array_latitude_rad,
+            iau_reorder,
+            results.view_mut(),
+        )?;
         Ok(results)
     }
 
     /// Given directions, calculate beam-response Jones matrices on the device,
     /// copy them to the host, and free the device memory. This function is the
-    /// same as [`FEEBeamCUDA::calc_jones`], but the results are stored in a
-    /// pre-allocated array. This array should have a shape of
+    /// same as [`FEEBeamCUDA::calc_jones_pair`], but the results are stored in
+    /// a pre-allocated array. This array should have a shape of
     /// (`total_num_tiles`, `total_num_freqs`, `az_rad_length`). The first two
     /// dimensions can be accessed with `FEEBeamCUDA::get_total_num_tiles` and
     /// `FEEBeamCUDA::get_total_num_freqs`.
-    pub fn calc_jones_inner(
+    pub fn calc_jones_pair_inner(
         &self,
         az_rad: &[CudaFloat],
         za_rad: &[CudaFloat],
-        parallactic: bool,
+        array_latitude_rad: Option<f64>,
+        iau_reorder: bool,
         mut results: ArrayViewMut3<Jones<CudaFloat>>,
     ) -> Result<(), FEEBeamError> {
         // Allocate an array matching the deduplicated device memory.
@@ -468,7 +559,8 @@ impl FEEBeamCUDA {
             Jones::default(),
         );
         // Calculate the beam responses. and copy them to the host.
-        let device_ptr = self.calc_jones_device(az_rad, za_rad, parallactic)?;
+        let device_ptr =
+            self.calc_jones_device_pair(az_rad, za_rad, array_latitude_rad, iau_reorder)?;
         unsafe {
             // The unwrap is safe, as `dedup_results` is a contiguous block of
             // memory.
@@ -548,4 +640,32 @@ impl FEEBeamCUDA {
     pub fn get_num_unique_freqs(&self) -> i32 {
         self.num_unique_freqs
     }
+}
+
+/// Ensure that any delays of 32 have an amplitude (dipole gain) of 0. The
+/// results are bad otherwise! Also ensure that we have 32 dipole gains (amps)
+/// here. Also return a Rust array of delays for convenience.
+pub(super) fn fix_amps_ndarray(
+    amps: ArrayView1<f64>,
+    delays: ArrayView1<u32>,
+) -> ([f64; 32], [u32; 16]) {
+    let mut full_amps: [f64; 32] = [1.0; 32];
+    full_amps
+        .iter_mut()
+        .zip(amps.iter().cycle())
+        .zip(delays.iter().cycle())
+        .for_each(|((out_amp, &in_amp), &delay)| {
+            if delay == 32 {
+                *out_amp = 0.0;
+            } else {
+                *out_amp = in_amp;
+            }
+        });
+
+    // So that we don't have to do .as_slice().unwrap() on our ndarrays outside
+    // of this function, return a Rust array of delays here.
+    let mut delays_a: [u32; 16] = [0; 16];
+    delays_a.iter_mut().zip(delays).for_each(|(da, d)| *da = *d);
+
+    (full_amps, delays_a)
 }

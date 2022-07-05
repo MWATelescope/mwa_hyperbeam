@@ -29,8 +29,10 @@ fn test_file(beam_file: &str) -> Result<(), InitFEEBeamError> {
     for &file_freq in beam.get_freqs() {
         println!("Testing freq {}", file_freq);
         // If this blows up, we know there's a problem...
-        beam.calc_jones_eng(0.0, 0.0, file_freq, &[0; 16], &[1.0; 16], false)
-            .unwrap();
+        beam.calc_jones_pair(
+            0.0, 0.0, file_freq, &[0; 16], &[1.0; 16], false, None, false,
+        )
+        .unwrap();
     }
 
     println!("File '{}' is all good!", beam_file);

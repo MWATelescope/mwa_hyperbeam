@@ -7,6 +7,7 @@
 use super::*;
 use crate::jones_test::TestJones;
 use approx::*;
+use marlu::constants::MWA_LAT_RAD;
 use ndarray::prelude::*;
 use serial_test::serial;
 
@@ -575,12 +576,14 @@ fn test_get_modes2() {
 #[serial]
 fn test_calc_jones_eng() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_eng(
+    let result = beam.calc_jones_pair(
         45.0_f64.to_radians(),
         10.0_f64.to_radians(),
         51200000,
         &[0; 16],
         &[1.0; 16],
+        false,
+        None,
         false,
     );
     assert!(result.is_ok());
@@ -601,7 +604,7 @@ fn test_calc_jones_eng() {
 #[serial]
 fn test_calc_jones_eng_2() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_eng(
+    let result = beam.calc_jones_pair(
         70.0_f64.to_radians(),
         10.0_f64.to_radians(),
         51200000,
@@ -609,6 +612,8 @@ fn test_calc_jones_eng_2() {
         &[
             1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
         ],
+        false,
+        None,
         false,
     );
     assert!(result.is_ok());
@@ -629,7 +634,9 @@ fn test_calc_jones_eng_2() {
 #[serial]
 fn test_calc_jones_eng_norm() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_eng(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true);
+    let result = beam.calc_jones_pair(
+        0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true, None, false,
+    );
     assert!(result.is_ok());
     let jones = result.unwrap();
 
@@ -648,7 +655,7 @@ fn test_calc_jones_eng_norm() {
 #[serial]
 fn test_calc_jones_eng_norm_2() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_eng(
+    let result = beam.calc_jones_pair(
         0.1_f64,
         0.1_f64,
         150000000,
@@ -657,6 +664,8 @@ fn test_calc_jones_eng_norm_2() {
             1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
         ],
         true,
+        None,
+        false,
     );
     assert!(result.is_ok());
     let jones = result.unwrap();
@@ -676,13 +685,15 @@ fn test_calc_jones_eng_norm_2() {
 #[serial]
 fn test_calc_jones() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones(
+    let result = beam.calc_jones_pair(
         45.0_f64.to_radians(),
         10.0_f64.to_radians(),
         51200000,
         &[0; 16],
         &[1.0; 16],
         false,
+        Some(MWA_LAT_RAD),
+        true,
     );
     assert!(result.is_ok());
     let jones = result.unwrap();
@@ -702,7 +713,16 @@ fn test_calc_jones() {
 #[serial]
 fn test_calc_jones_norm() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones(0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true);
+    let result = beam.calc_jones_pair(
+        0.1_f64,
+        0.1_f64,
+        150000000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+        Some(MWA_LAT_RAD),
+        true,
+    );
     assert!(result.is_ok());
     let jones = result.unwrap();
 
@@ -715,29 +735,113 @@ fn test_calc_jones_norm() {
     let jones = TestJones::from(jones);
     let expected = TestJones::from(expected);
     assert_abs_diff_eq!(jones, expected, epsilon = 1e-6);
+
+    // Ensure that FEEBeam::calc_jones is the same as FEEBeam::calc_jones_pair.
+    let result = beam.calc_jones(
+        AzEl::new(0.1, FRAC_PI_2 - 0.1),
+        150000000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+        Some(MWA_LAT_RAD),
+        true,
+    );
+    assert!(result.is_ok());
+    let jones2 = result.unwrap();
+    assert_abs_diff_eq!(TestJones::from(jones2), jones, epsilon = 1e-14);
+}
+
+#[test]
+#[serial]
+fn test_calc_jones_pa() {
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let result = beam.calc_jones_pair(
+        0.1_f64,
+        0.1_f64,
+        150000000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+        Some(MWA_LAT_RAD),
+        false,
+    );
+    assert!(result.is_ok());
+    let pa = result.unwrap();
+
+    let result = beam.calc_jones_pair(
+        0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true, None, false,
+    );
+    assert!(result.is_ok());
+    let not_pa = result.unwrap();
+
+    assert_abs_diff_ne!(TestJones::from(pa), TestJones::from(not_pa));
+}
+
+#[test]
+#[serial]
+fn test_calc_jones_iau() {
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let result = beam.calc_jones_pair(
+        0.1_f64,
+        0.1_f64,
+        150000000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+        Some(MWA_LAT_RAD),
+        true,
+    );
+    assert!(result.is_ok());
+    let j_iau = result.unwrap();
+
+    let result = beam.calc_jones_pair(
+        0.1_f64,
+        0.1_f64,
+        150000000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+        Some(MWA_LAT_RAD),
+        false,
+    );
+    assert!(result.is_ok());
+    let j_not_iau = result.unwrap();
+
+    assert_ne!(j_iau[0], j_not_iau[0]);
+    assert_ne!(j_iau[1], j_not_iau[1]);
+    assert_ne!(j_iau[2], j_not_iau[2]);
+    assert_ne!(j_iau[3], j_not_iau[3]);
+    assert_eq!(j_iau[0], j_not_iau[3]);
+    assert_eq!(j_iau[1], j_not_iau[2]);
+    assert_eq!(j_iau[2], j_not_iau[1]);
+    assert_eq!(j_iau[3], j_not_iau[0]);
 }
 
 #[test]
 #[serial]
 fn test_calc_jones_array() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones(
+    let result = beam.calc_jones_pair(
         45.0_f64.to_radians(),
         10.0_f64.to_radians(),
         51200000,
         &[0; 16],
         &[1.0; 16],
         true,
+        Some(MWA_LAT_RAD),
+        true,
     );
     assert!(result.is_ok());
     let jones = result.unwrap();
 
-    let result = beam.calc_jones_array(
+    let result = beam.calc_jones_array_pair(
         &[45.0_f64.to_radians()],
         &[10.0_f64.to_radians()],
         51200000,
         &[0; 16],
         &[1.0; 16],
+        true,
+        Some(MWA_LAT_RAD),
         true,
     );
     assert!(result.is_ok());
@@ -747,19 +851,37 @@ fn test_calc_jones_array() {
     let jones = TestJones::from(jones);
     let jones_array = TestJones::from(jones_array[0]);
     assert_eq!(jones, jones_array);
+
+    // Ensure that FEEBeam::calc_jones_array is the same as
+    // FEEBeam::calc_jones_array_pair.
+    let result = beam.calc_jones_array(
+        &[AzEl::new_degrees(45.0, 80.0)],
+        51200000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+        Some(MWA_LAT_RAD),
+        true,
+    );
+    assert!(result.is_ok());
+    let jones2 = result.unwrap();
+    assert_eq!(jones2.len(), 1);
+    assert_abs_diff_eq!(TestJones::from(jones2[0]), jones, epsilon = 1e-15);
 }
 
 #[test]
 #[serial]
 fn test_empty_cache() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones(
+    let result = beam.calc_jones_pair(
         45.0_f64.to_radians(),
         10.0_f64.to_radians(),
         51200000,
         &[0; 16],
         &[1.0; 16],
         true,
+        None,
+        false,
     );
     assert!(result.is_ok());
     result.unwrap();
@@ -786,24 +908,28 @@ fn test_get_freqs() {
 #[serial]
 fn test_cache_is_used() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones(
+    let result = beam.calc_jones_pair(
         45.0_f64.to_radians(),
         10.0_f64.to_radians(),
         51200000,
         &[0; 16],
         &[1.0; 16],
         true,
+        None,
+        false,
     );
     assert!(result.is_ok());
     result.unwrap();
 
-    let result = beam.calc_jones(
+    let result = beam.calc_jones_pair(
         45.0_f64.to_radians(),
         10.0_f64.to_radians(),
         51200000,
         &[0; 16],
         &[1.0; 16],
         true,
+        None,
+        false,
     );
     assert!(result.is_ok());
     result.unwrap();

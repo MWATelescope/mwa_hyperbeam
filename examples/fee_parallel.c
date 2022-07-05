@@ -56,16 +56,19 @@ int main(int argc, char *argv[]) {
     int freq_hz = 51200000;
     // Should we normalise the beam response?
     int norm_to_zenith = 1;
-    // Should we apply the parallactic angle correction? Read more here:
-    // https://github.com/JLBLine/polarisation_tests_for_FEE
-    int parallactic = 1;
+    // Should we apply the parallactic angle correction? If so, use this
+    // latitude for the MWA. Read more here:
+    // https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf
+    double latitude_rad = -0.4660608448386394;
+    // Should the beam-response Jones matrix be in the IAU polarisation order?
+    int iau_order = 1;
 
     // Calculate the Jones matrices for all directions. Rust will do this in
     // parallel.
     complex double *jones = malloc(num_directions * 4 * sizeof(complex double));
     // hyperbeam expects a pointer to doubles. Casting the pointer works fine.
-    if (calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps, 16, norm_to_zenith, parallactic,
-                         (double *)jones))
+    if (calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps, 16, norm_to_zenith, &latitude_rad,
+                         iau_order, (double *)jones))
         handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_array");
 
     printf("The first Jones matrix:\n");
@@ -77,8 +80,8 @@ int main(int argc, char *argv[]) {
     double amps_2[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0};
     complex double *jones_2 = malloc(num_directions * 4 * sizeof(complex double));
-    if (calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps_2, 32, norm_to_zenith, parallactic,
-                         (double *)jones_2))
+    if (calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps_2, 32, norm_to_zenith, &latitude_rad,
+                         iau_order, (double *)jones_2))
         handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_array");
 
     printf("The first Jones matrix with altered Y amps:\n");

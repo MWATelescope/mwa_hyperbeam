@@ -350,7 +350,8 @@ extern "C" {
         d_coeffs: *const FEECoeffs,
         num_coeffs: ::std::os::raw::c_int,
         norm_jones: *const ::std::os::raw::c_void,
-        parallactic: i8,
+        array_latitude_rad: *const f32,
+        iau_reorder: ::std::os::raw::c_int,
         d_results: *mut ::std::os::raw::c_void,
         error_str: *mut ::std::os::raw::c_char,
     ) -> ::std::os::raw::c_int;
