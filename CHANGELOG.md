@@ -8,6 +8,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 ### Fixed
+- CUDA compilation on ozstar failed because of an arithmetic operation between
+  two different types. Compilation has succeeded elsewhere, such as on Ubuntu,
+  Arch, Pawsey's garrawarla and DUG. The code has changed to prevent the issue
+  in the first place and no compilation issues have been spotted.
 - CUDA function prototypes were being included in the C header, even if no CUDA
   feature was enabled.
 - The CUDA library libcudart was always statically linked by mistake. It is now

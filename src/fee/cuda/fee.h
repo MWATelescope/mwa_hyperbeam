@@ -35,23 +35,25 @@ extern "C" {
 #endif // __cplusplus
 
 typedef struct FEECoeffs {
-    FLOAT *x_q1_accum;
-    FLOAT *x_q2_accum;
-    int8_t *x_m_accum;
-    int8_t *x_n_accum;
-    int8_t *x_m_signs;
-    unsigned char *x_n_max;
-    int *x_lengths;
-    int *x_offsets;
+    const FLOAT *x_q1_accum;
+    const FLOAT *x_q2_accum;
+    const int8_t *x_m_accum;
+    const int8_t *x_n_accum;
+    const int8_t *x_m_signs;
+    const int8_t *x_m_abs_m;
+    const unsigned char *x_n_max;
+    const int *x_lengths;
+    const int *x_offsets;
 
-    FLOAT *y_q1_accum;
-    FLOAT *y_q2_accum;
-    int8_t *y_m_accum;
-    int8_t *y_n_accum;
-    int8_t *y_m_signs;
-    unsigned char *y_n_max;
-    int *y_lengths;
-    int *y_offsets;
+    const FLOAT *y_q1_accum;
+    const FLOAT *y_q2_accum;
+    const int8_t *y_m_accum;
+    const int8_t *y_n_accum;
+    const int8_t *y_m_signs;
+    const int8_t *y_m_abs_m;
+    const unsigned char *y_n_max;
+    const int *y_lengths;
+    const int *y_offsets;
 } FEECoeffs;
 
 /**
@@ -459,8 +461,8 @@ inline __device__ int jones_p1sin_device(const int nmax, const FLOAT theta, FLOA
 
 __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT theta, const CUCOMPLEX *q1_accum,
                                          const CUCOMPLEX *q2_accum, const int8_t *m_accum, const int8_t *n_accum,
-                                         const int8_t *m_signs, const int coeff_length, const int nmax, const char pol,
-                                         FEEJones *jm) {
+                                         const int8_t *m_signs, const int8_t *m_abs_m, const int coeff_length,
+                                         const int nmax, const char pol, FEEJones *jm) {
     FLOAT u = COS(theta);
     FLOAT P1sin_arr[NMAX * NMAX + 2 * NMAX], P1_arr[NMAX * NMAX + 2 * NMAX];
     int P1sin_arr_size, P1_arr_size;
@@ -481,7 +483,8 @@ __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT theta, con
         FLOAT N = n;
         FLOAT M = m;
         FLOAT m_sign = m_signs[i];
-        FLOAT c_mn_sqr = 0.5 * (2 * N + 1) * (FACTORIAL[n - abs(m)] / FACTORIAL[n + abs(m)]);
+        int8_t m_abs = m_abs_m[i];
+        FLOAT c_mn_sqr = 0.5 * (2 * N + 1) * (FACTORIAL[n - m_abs] / FACTORIAL[n + m_abs]);
         FLOAT c_mn = SQRT(c_mn_sqr);
         SINCOS(M * phi, &ejm_phi.y, &ejm_phi.x);
         CUCOMPLEX phi_comp = CUCMUL(ejm_phi, MAKE_CUCOMPLEX(c_mn / (SQRT(N * (N + 1))) * m_sign, 0));
@@ -518,12 +521,14 @@ inline __device__ FEEJones calc_jones_direct_device(const FLOAT az_rad, const FL
     FEEJones jm;
     FLOAT phi_rad = M_PI_2 - az_rad;
 
-    jones_calc_sigmas_device(phi_rad, za_rad, (CUCOMPLEX *)d_coeffs->x_q1_accum, (CUCOMPLEX *)d_coeffs->x_q2_accum,
-                             d_coeffs->x_m_accum, d_coeffs->x_n_accum, d_coeffs->x_m_signs, *d_coeffs->x_lengths,
-                             *d_coeffs->x_n_max, 'x', &jm);
-    jones_calc_sigmas_device(phi_rad, za_rad, (CUCOMPLEX *)d_coeffs->y_q1_accum, (CUCOMPLEX *)d_coeffs->y_q2_accum,
-                             d_coeffs->y_m_accum, d_coeffs->y_n_accum, d_coeffs->y_m_signs, *d_coeffs->y_lengths,
-                             *d_coeffs->y_n_max, 'y', &jm);
+    jones_calc_sigmas_device(phi_rad, za_rad, (const CUCOMPLEX *)d_coeffs->x_q1_accum,
+                             (const CUCOMPLEX *)d_coeffs->x_q2_accum, d_coeffs->x_m_accum, d_coeffs->x_n_accum,
+                             d_coeffs->x_m_signs, d_coeffs->x_m_abs_m, *d_coeffs->x_lengths, *d_coeffs->x_n_max, 'x',
+                             &jm);
+    jones_calc_sigmas_device(phi_rad, za_rad, (const CUCOMPLEX *)d_coeffs->y_q1_accum,
+                             (const CUCOMPLEX *)d_coeffs->y_q2_accum, d_coeffs->y_m_accum, d_coeffs->y_n_accum,
+                             d_coeffs->y_m_signs, d_coeffs->y_m_abs_m, *d_coeffs->y_lengths, *d_coeffs->y_n_max, 'y',
+                             &jm);
 
     return jm;
 }
@@ -537,40 +542,41 @@ __global__ void fee_kernel(const FEECoeffs d_coeffs, const int num_coeffs, const
                            const int num_directions, const FEEJones *d_norm_jones, const bool parallactic,
                            FEEJones *d_fee_jones) {
     int i_direction = blockIdx.y * blockDim.x + threadIdx.x;
-    if (i_direction < num_directions) {
-        FLOAT az = d_azs[i_direction];
-        FLOAT za = d_zas[i_direction];
-        FLOAT phi = M_PI_2 - az;
-        int x_offset = d_coeffs.x_offsets[blockIdx.x];
-        int y_offset = d_coeffs.y_offsets[blockIdx.x];
-        FEEJones jm;
+    if (i_direction >= num_directions)
+        return;
 
-        jones_calc_sigmas_device(phi, za, (CUCOMPLEX *)d_coeffs.x_q1_accum + x_offset,
-                                 (CUCOMPLEX *)d_coeffs.x_q2_accum + x_offset, d_coeffs.x_m_accum + x_offset,
-                                 d_coeffs.x_n_accum + x_offset, d_coeffs.x_m_signs + x_offset,
-                                 d_coeffs.x_lengths[blockIdx.x], d_coeffs.x_n_max[blockIdx.x], 'x', &jm);
-        jones_calc_sigmas_device(phi, za, (CUCOMPLEX *)d_coeffs.y_q1_accum + y_offset,
-                                 (CUCOMPLEX *)d_coeffs.y_q2_accum + y_offset, d_coeffs.y_m_accum + y_offset,
-                                 d_coeffs.y_n_accum + y_offset, d_coeffs.y_m_signs + y_offset,
-                                 d_coeffs.y_lengths[blockIdx.x], d_coeffs.y_n_max[blockIdx.x], 'y', &jm);
+    FLOAT az = d_azs[i_direction];
+    FLOAT za = d_zas[i_direction];
+    FLOAT phi = M_PI_2 - az;
+    int x_offset = d_coeffs.x_offsets[blockIdx.x];
+    int y_offset = d_coeffs.y_offsets[blockIdx.x];
+    FEEJones jm;
 
-        if (d_norm_jones != NULL) {
-            FEEJones norm = d_norm_jones[blockIdx.x];
-            jm.j00 = CUCDIV(jm.j00, norm.j00);
-            jm.j01 = CUCDIV(jm.j01, norm.j01);
-            jm.j10 = CUCDIV(jm.j10, norm.j10);
-            jm.j11 = CUCDIV(jm.j11, norm.j11);
-        }
+    jones_calc_sigmas_device(
+        phi, za, (const CUCOMPLEX *)d_coeffs.x_q1_accum + x_offset, (const CUCOMPLEX *)d_coeffs.x_q2_accum + x_offset,
+        d_coeffs.x_m_accum + x_offset, d_coeffs.x_n_accum + x_offset, d_coeffs.x_m_signs + x_offset,
+        d_coeffs.x_m_abs_m + x_offset, d_coeffs.x_lengths[blockIdx.x], d_coeffs.x_n_max[blockIdx.x], 'x', &jm);
+    jones_calc_sigmas_device(
+        phi, za, (const CUCOMPLEX *)d_coeffs.y_q1_accum + y_offset, (const CUCOMPLEX *)d_coeffs.y_q2_accum + y_offset,
+        d_coeffs.y_m_accum + y_offset, d_coeffs.y_n_accum + y_offset, d_coeffs.y_m_signs + y_offset,
+        d_coeffs.y_m_abs_m + y_offset, d_coeffs.y_lengths[blockIdx.x], d_coeffs.y_n_max[blockIdx.x], 'y', &jm);
 
-        if (parallactic) {
-            HADec hadec = azel_to_hadec_mwa(az, M_PI_2 - za);
-            FLOAT pa = get_parallactic_angle_mwa(hadec.ha, hadec.dec);
-            rotate_jones(&jm, pa);
-        }
-
-        // Copy the Jones matrix to global memory.
-        d_fee_jones[blockIdx.x * num_directions + i_direction] = jm;
+    if (d_norm_jones != NULL) {
+        FEEJones norm = d_norm_jones[blockIdx.x];
+        jm.j00 = CUCDIV(jm.j00, norm.j00);
+        jm.j01 = CUCDIV(jm.j01, norm.j01);
+        jm.j10 = CUCDIV(jm.j10, norm.j10);
+        jm.j11 = CUCDIV(jm.j11, norm.j11);
     }
+
+    if (parallactic) {
+        HADec hadec = azel_to_hadec_mwa(az, M_PI_2 - za);
+        FLOAT pa = get_parallactic_angle_mwa(hadec.ha, hadec.dec);
+        rotate_jones(&jm, pa);
+    }
+
+    // Copy the Jones matrix to global memory.
+    d_fee_jones[blockIdx.x * num_directions + i_direction] = jm;
 }
 
 // Modified from

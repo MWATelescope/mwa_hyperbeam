@@ -7,9 +7,6 @@
 
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-// This is needed only because tests inside bindgen-produced files (cuda_*.rs)
-// trigger the warning.
-#![allow(deref_nullptr)]
 
 // Include Rust bindings to the CUDA code and set a compile-time variable type
 // (this makes things a lot cleaner than having a #[cfg(...)] on many struct
@@ -51,6 +48,7 @@ pub struct FEEBeamCUDA {
     x_m_accum: DevicePointer<i8>,
     x_n_accum: DevicePointer<i8>,
     x_m_signs: DevicePointer<i8>,
+    x_m_abs_m: DevicePointer<i8>,
     x_n_max: DevicePointer<u8>,
     x_lengths: DevicePointer<i32>,
     x_offsets: DevicePointer<i32>,
@@ -61,6 +59,7 @@ pub struct FEEBeamCUDA {
     y_m_accum: DevicePointer<i8>,
     y_n_accum: DevicePointer<i8>,
     y_m_signs: DevicePointer<i8>,
+    y_m_abs_m: DevicePointer<i8>,
     y_n_max: DevicePointer<u8>,
     y_lengths: DevicePointer<i32>,
     y_offsets: DevicePointer<i32>,
@@ -208,6 +207,7 @@ impl FEEBeamCUDA {
         let mut x_m_accum = vec![];
         let mut x_n_accum = vec![];
         let mut x_m_signs = vec![];
+        let mut x_m_abs_m = vec![];
         let mut x_n_max = vec![];
         let mut x_lengths = vec![];
         let mut x_offsets = vec![];
@@ -216,6 +216,7 @@ impl FEEBeamCUDA {
         let mut y_m_accum = vec![];
         let mut y_n_accum = vec![];
         let mut y_m_signs = vec![];
+        let mut y_m_abs_m = vec![];
         let mut y_n_max = vec![];
         let mut y_lengths = vec![];
         let mut y_offsets = vec![];
@@ -250,6 +251,7 @@ impl FEEBeamCUDA {
             x_m_accum.extend_from_slice(&coeffs.x.m_accum[..current_x_len]);
             x_n_accum.extend_from_slice(&coeffs.x.n_accum[..current_x_len]);
             x_m_signs.extend_from_slice(&coeffs.x.m_signs[..current_x_len]);
+            x_m_abs_m.extend(coeffs.y.m_accum[..current_y_len].iter().map(|i| i.abs()));
             x_n_max.push(coeffs.x.n_max.try_into().unwrap());
             x_lengths.push(current_x_len.try_into().unwrap());
             x_offsets.push(x_offset);
@@ -259,6 +261,7 @@ impl FEEBeamCUDA {
             y_m_accum.extend_from_slice(&coeffs.y.m_accum[..current_y_len]);
             y_n_accum.extend_from_slice(&coeffs.y.n_accum[..current_y_len]);
             y_m_signs.extend_from_slice(&coeffs.y.m_signs[..current_y_len]);
+            y_m_abs_m.extend(coeffs.y.m_accum[..current_y_len].iter().map(|i| i.abs()));
             y_n_max.push(coeffs.y.n_max.try_into().unwrap());
             y_lengths.push(current_y_len.try_into().unwrap());
             y_offsets.push(y_offset);
@@ -273,6 +276,7 @@ impl FEEBeamCUDA {
         let x_m_accum = DevicePointer::copy_to_device(&x_m_accum)?;
         let x_n_accum = DevicePointer::copy_to_device(&x_n_accum)?;
         let x_m_signs = DevicePointer::copy_to_device(&x_m_signs)?;
+        let x_m_abs_m = DevicePointer::copy_to_device(&x_m_abs_m)?;
         let x_n_max = DevicePointer::copy_to_device(&x_n_max)?;
         let x_lengths = DevicePointer::copy_to_device(&x_lengths)?;
         let x_offsets = DevicePointer::copy_to_device(&x_offsets)?;
@@ -282,6 +286,7 @@ impl FEEBeamCUDA {
         let y_m_accum = DevicePointer::copy_to_device(&y_m_accum)?;
         let y_n_accum = DevicePointer::copy_to_device(&y_n_accum)?;
         let y_m_signs = DevicePointer::copy_to_device(&y_m_signs)?;
+        let y_m_abs_m = DevicePointer::copy_to_device(&y_m_abs_m)?;
         let y_n_max = DevicePointer::copy_to_device(&y_n_max)?;
         let y_lengths = DevicePointer::copy_to_device(&y_lengths)?;
         let y_offsets = DevicePointer::copy_to_device(&y_offsets)?;
@@ -313,12 +318,13 @@ impl FEEBeamCUDA {
             Some(DevicePointer::copy_to_device(&norm_jones_unpacked)?)
         };
 
-        Ok(Self {
+        Ok(FEEBeamCUDA {
             x_q1_accum,
             x_q2_accum,
             x_m_accum,
             x_n_accum,
             x_m_signs,
+            x_m_abs_m,
             x_n_max,
             x_lengths,
             x_offsets,
@@ -328,6 +334,7 @@ impl FEEBeamCUDA {
             y_m_accum,
             y_n_accum,
             y_m_signs,
+            y_m_abs_m,
             y_n_max,
             y_lengths,
             y_offsets,
@@ -437,22 +444,24 @@ impl FEEBeamCUDA {
     /// wants.
     fn get_fee_coeffs(&self) -> FEECoeffs {
         FEECoeffs {
-            x_q1_accum: self.x_q1_accum.get_mut(),
-            x_q2_accum: self.x_q2_accum.get_mut(),
-            x_m_accum: self.x_m_accum.get_mut(),
-            x_n_accum: self.x_n_accum.get_mut(),
-            x_m_signs: self.x_m_signs.get_mut(),
-            x_n_max: self.x_n_max.get_mut(),
-            x_lengths: self.x_lengths.get_mut(),
-            x_offsets: self.x_offsets.get_mut(),
-            y_q1_accum: self.y_q1_accum.get_mut(),
-            y_q2_accum: self.y_q2_accum.get_mut(),
-            y_m_accum: self.y_m_accum.get_mut(),
-            y_n_accum: self.y_n_accum.get_mut(),
-            y_m_signs: self.y_m_signs.get_mut(),
-            y_n_max: self.y_n_max.get_mut(),
-            y_lengths: self.y_lengths.get_mut(),
-            y_offsets: self.y_offsets.get_mut(),
+            x_q1_accum: self.x_q1_accum.get(),
+            x_q2_accum: self.x_q2_accum.get(),
+            x_m_accum: self.x_m_accum.get(),
+            x_n_accum: self.x_n_accum.get(),
+            x_m_signs: self.x_m_signs.get(),
+            x_m_abs_m: self.x_m_abs_m.get(),
+            x_n_max: self.x_n_max.get(),
+            x_lengths: self.x_lengths.get(),
+            x_offsets: self.x_offsets.get(),
+            y_q1_accum: self.y_q1_accum.get(),
+            y_q2_accum: self.y_q2_accum.get(),
+            y_m_accum: self.y_m_accum.get(),
+            y_n_accum: self.y_n_accum.get(),
+            y_m_signs: self.y_m_signs.get(),
+            y_m_abs_m: self.y_m_abs_m.get(),
+            y_n_max: self.y_n_max.get(),
+            y_lengths: self.y_lengths.get(),
+            y_offsets: self.y_offsets.get(),
         }
     }
 
