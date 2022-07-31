@@ -26,12 +26,12 @@ mod tests;
 
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryInto;
-use std::ffi::CString;
+use std::ffi::CStr;
 use std::hash::{Hash, Hasher};
 
 use marlu::{
     c64,
-    cuda::{cuda_status_to_error, DevicePointer},
+    cuda::{CudaError, DevicePointer},
     ndarray, AzEl, Jones,
 };
 use ndarray::prelude::*;
@@ -178,7 +178,7 @@ impl FEEBeamCUDA {
                     fee_beam.get_norm_jones(*freq)?;
                 }
 
-                let _ = fee_beam.get_modes(*freq, &delays, &full_amps)?;
+                drop(fee_beam.get_modes(*freq, &delays, &full_amps)?);
 
                 let fee_freq = fee_beam.find_closest_freq(*freq);
                 let hash = CacheKey::new(fee_freq, &delays, &full_amps);
@@ -440,9 +440,12 @@ impl FEEBeamCUDA {
     ) -> Result<(), FEEBeamError> {
         let d_azs = DevicePointer::copy_to_device(az_rad)?;
         let d_zas = DevicePointer::copy_to_device(za_rad)?;
-        let error_str =
-            CString::from_vec_unchecked(vec![1; marlu::cuda::ERROR_STR_LENGTH]).into_raw();
 
+        // The return value corresponds to a CUDA error ID. The value is 0 if
+        // everything is fine. If the value is non-zero, then `cuda_error_ptr`
+        // is populated; this is a pointer to a null-terminated program-memory
+        // string.
+        let mut cuda_error_ptr = std::ptr::null();
         let result = cuda_calc_jones(
             d_azs.get(),
             d_zas.get(),
@@ -467,11 +470,17 @@ impl FEEBeamCUDA {
             },
             iau_reorder.into(),
             d_results,
-            error_str,
+            &mut cuda_error_ptr,
         );
-        cuda_status_to_error(result, error_str)?;
-
-        Ok(())
+        if result == 0 {
+            Ok(())
+        } else {
+            // Assume the CUDA error message is well behaved and UTF-8
+            // compliant.
+            let cuda_error_str = CStr::from_ptr(cuda_error_ptr).to_str().unwrap();
+            let our_error_str = format!("fee.h:cuda_calc_jones failed with: {cuda_error_str}");
+            Err(FEEBeamError::Cuda(CudaError::Kernel(our_error_str)))
+        }
     }
 
     /// Given directions, calculate beam-response Jones matrices on the device,

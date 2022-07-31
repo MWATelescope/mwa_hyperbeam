@@ -353,6 +353,6 @@ extern "C" {
         array_latitude_rad: *const f32,
         iau_reorder: ::std::os::raw::c_int,
         d_results: *mut ::std::os::raw::c_void,
-        error_str: *mut ::std::os::raw::c_char,
+        error_str: *mut *const ::std::os::raw::c_char,
     ) -> ::std::os::raw::c_int;
 }

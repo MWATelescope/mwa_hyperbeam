@@ -78,7 +78,7 @@ typedef struct AzZA {
 
 int cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
                     int num_coeffs, const void *norm_jones, const FLOAT *array_latitude_rad, const int iau_reorder,
-                    void *d_results, char *error_str);
+                    void *d_results, const char **error_str);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -585,24 +585,9 @@ __global__ void fee_kernel(const FEECoeffs d_coeffs, const int num_coeffs, const
     d_fee_jones[blockIdx.x * num_directions + i_direction] = jm;
 }
 
-// Modified from
-// https://stackoverflow.com/questions/14038589/what-is-the-canonical-way-to-check-for-errors-using-the-cuda-runtime-api
-//
-// In the event of an error, modify the supplied string with details on the
-// error and return EXIT_FAILURE. Otherwise return EXIT_SUCCESS.
-inline int gpuAssert(cudaError_t code, const char *file, int line, char *error_str) {
-    if (code != cudaSuccess) {
-        // Don't modify the string if it's NULL.
-        if (error_str != NULL)
-            sprintf(error_str, "%s:%d: %s", file, line, cudaGetErrorString(code));
-        return EXIT_FAILURE;
-    }
-    return EXIT_SUCCESS;
-}
-
 extern "C" int cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *coeffs,
                                int num_coeffs, const void *d_norm_jones, const FLOAT *array_latitude_rad,
-                               const int iau_order, void *d_results, char *error_str) {
+                               const int iau_order, void *d_results, const char **error_str) {
     FLOAT *d_array_latitude_rad = NULL;
     if (array_latitude_rad != NULL) {
         cudaMalloc(&d_array_latitude_rad, sizeof(FLOAT));
@@ -618,16 +603,22 @@ extern "C" int cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_d
     fee_kernel<<<gridDim, blockDim>>>(*coeffs, num_coeffs, d_azs, d_zas, num_directions, (FEEJones *)d_norm_jones,
                                       d_array_latitude_rad, iau_order, (FEEJones *)d_results);
 
-    if (gpuAssert(cudaPeekAtLastError(), __FILE__, __LINE__, error_str))
-        return EXIT_FAILURE;
-    if (gpuAssert(cudaDeviceSynchronize(), __FILE__, __LINE__, error_str))
-        return EXIT_FAILURE;
+    cudaError_t error_id = cudaPeekAtLastError();
+    if (error_id != cudaSuccess) {
+        *error_str = cudaGetErrorString(error_id);
+        return (int)error_id;
+    }
+    error_id = cudaDeviceSynchronize();
+    if (error_id != cudaSuccess) {
+        *error_str = cudaGetErrorString(error_id);
+        return (int)error_id;
+    }
 
     if (array_latitude_rad != NULL) {
         cudaFree(d_array_latitude_rad);
     }
 
-    return EXIT_SUCCESS;
+    return (int)cudaSuccess;
 }
 
 #endif // BINDGEN
