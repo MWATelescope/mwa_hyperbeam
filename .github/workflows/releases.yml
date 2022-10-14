@@ -14,13 +14,25 @@ env:
 jobs:
   build-linux-release:
     name: Build release for Linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
 
     steps:
     - name: Checkout sources
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
       with:
         fetch-depth: 0
+
+    - name: Install CUDA
+      run: |
+        wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
+        sudo dpkg -i cuda-keyring_1.0-1_all.deb
+        sudo apt -y update
+        sudo apt -y install cuda --no-install-recommends
+
+    - name: Check semver
+      uses: obi1kenobi/cargo-semver-checks-action@v2
+      env:
+        NVCC: /usr/local/cuda/bin/nvcc
 
     - name: Build hyperbeam
       uses: docker://chjordan/maturin:latest

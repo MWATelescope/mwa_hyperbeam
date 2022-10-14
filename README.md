@@ -7,9 +7,9 @@
   <img src="https://img.shields.io/crates/v/mwa_hyperbeam?logo=rust" alt="crates.io"></a>
 <a href="https://docs.rs/crate/mwa_hyperbeam">
   <img src="https://img.shields.io/docsrs/mwa_hyperbeam?logo=rust" alt="docs.rs"></a>
-<img src="https://img.shields.io/github/workflow/status/MWATelescope/mwa_hyperbeam/Cross-platform%20tests?label=Cross-platform%20tests&logo=github" alt="Cross-platform%20tests">
-<a href="https://codecov.io/gh/MWATelescope/mwa_hyperbeam">
-  <img src="https://codecov.io/gh/MWATelescope/mwa_hyperbeam/branch/main/graph/badge.svg?token=61JYU54DG2"/></a>
+<img src="https://img.shields.io/github/actions/workflow/status/MWATelescope/mwa_hyperbeam/run-tests.yml?label=Cross-platform%20tests&logo=github" alt="Cross-platform%20tests">
+<a href="https://codecov.io/github/MWATelescope/mwa_hyperbeam">
+  <img src="https://codecov.io/github/MWATelescope/mwa_hyperbeam/branch/main/graph/badge.svg?token=61JYU54DG2"/></a>
 </div>
 
 Primary beam code for the Murchison Widefield Array (MWA) radio telescope.

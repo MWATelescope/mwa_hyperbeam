@@ -1,0 +1,127 @@
+---
+name: Cross-platform testing examples
+
+# Do this on every push that isn't tagged
+on:
+  push:
+    tags-ignore:
+      - "**"
+    branches:
+      - "**"
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  DEBIAN_FRONTEND: noninteractive
+  MWA_BEAM_FILE: mwa_full_embedded_element_pattern.h5
+
+jobs:
+  test:
+    name: Examples on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-20.04, macos-latest]
+        include:
+          - os: macos-latest
+            python-version: [3.7, 3.8, 3.9, 3.10]
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Install Dependencies
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt -y update
+            sudo apt -y install libhdf5-dev liberfa-dev
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            brew install pkg-config
+            # 1.12 doesn't work?
+            brew install hdf5@1.10
+            wget https://github.com/MWATelescope/homebrew-tap/releases/download/v2021.07.20.10.17/erfa--2.0.0.catalina.bottle.1.tar.gz -O erfa--2.0.0.catalina.bottle.1.tar.gz
+            brew install -f erfa--2.0.0.catalina.bottle.1.tar.gz
+          else
+            echo "$RUNNER_OS not supported"
+            exit 1
+          fi
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+
+      - name: Get the HDF5 file
+        run: curl http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5
+
+      - name: Run Rust example
+        run: cargo run --example fee 10
+
+      - name: Run C examples
+        run: |
+          cargo build
+
+          echo "*** Compiling C examples ***"
+          # The macOS runner has clang symlinked as gcc, and attempting to alias
+          # gcc as /usr/local/bin/gcc doesn't work! Why???
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            gcc -O3 examples/fee.c -o fee -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            gcc -O3 examples/fee_parallel.c -o fee_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            gcc -O3 -fopenmp examples/fee_parallel_omp.c -o fee_parallel_omp -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            gcc -O3 examples/get_freqs.c -o get_freqs -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          else
+            /usr/local/bin/gcc-12 -O3 examples/fee.c -o fee -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            /usr/local/bin/gcc-12 -O3 examples/fee_parallel.c -o fee_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            /usr/local/bin/gcc-12 -O3 -fopenmp examples/fee_parallel_omp.c -o fee_parallel_omp -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            /usr/local/bin/gcc-12 -O3 examples/get_freqs.c -o get_freqs -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          fi
+          echo "*** Running C examples ***"
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee_parallel mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee_parallel_omp mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./get_freqs mwa_full_embedded_element_pattern.h5
+
+      - name: Run Python example
+        run: |
+          python3 -m venv venv
+          . ./venv/bin/activate
+          pip install numpy maturin
+          echo "*** Compiling Python hyperbeam ***"
+          maturin develop -b pyo3 --features=python
+          echo "*** Running Python example ***"
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./examples/fee.py mwa_full_embedded_element_pattern.h5
+
+      - name: CUDA examples
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: |
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
+          sudo dpkg -i cuda-keyring_1.0-1_all.deb
+          sudo apt -y update
+          sudo apt -y install cuda --no-install-recommends
+          PATH+=:/usr/local/cuda/bin
+
+          # Examples may fail because there's no GPU
+          cargo run --features=cuda --example fee_cuda 10
+          cargo run --features=cuda-single --example fee_cuda 10
+
+          cargo build --release --features=cuda
+          gcc -O3 examples/fee_cuda.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5
+          nvcc -O3 examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5
+
+          cargo build --release --features=cuda-single
+          gcc -O3 -D SINGLE examples/fee_cuda.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5
+          nvcc -O3 -D SINGLE examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5
+
+          maturin develop -b pyo3 --features=python,cuda
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_cuda.py mwa_full_embedded_element_pattern.h5
+          maturin develop -b pyo3 --features=python,cuda-single
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_cuda.py mwa_full_embedded_element_pattern.h5
