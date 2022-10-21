@@ -3,32 +3,78 @@
 #include <stdlib.h>
 
 #ifdef SINGLE
-#define FLOAT        float
-#define SINCOS       sincosf
-#define COS          cosf
-#define FABS         fabsf
-#define ATAN2        atan2f
-#define SQRT         sqrtf
-#define COMPLEX      cuFloatComplex
-#define MAKE_COMPLEX make_cuFloatComplex
+#define FLOAT  float
+#define SINCOS sincosf
+#define COS    cosf
+#define FABS   fabsf
+#define ATAN2  atan2f
+#define SQRT   sqrtf
+#else
+#define FLOAT  double
+#define SINCOS sincos
+#define COS    cos
+#define FABS   fabs
+#define ATAN2  atan2
+#define SQRT   sqrt
+#endif // SINGLE
+
+// HIP-specific defines.
+#if __HIPCC__
+#define gpuMalloc             hipMalloc
+#define gpuFree               hipFree
+#define gpuMemcpy             hipMemcpy
+#define gpuMemcpyHostToDevice hipMemcpyHostToDevice
+#define gpuGetErrorString     hipGetErrorString
+#define gpuGetLastError       hipGetLastError
+#define gpuDeviceSynchronize  hipDeviceSynchronize
+#define gpuError_t            hipError_t
+#define gpuSuccess            hipSuccess
+
+#ifdef SINGLE
+#define CADD         hipCaddf
+#define CSUB         hipCsubf
+#define CMUL         hipCmulf
+#define CDIV         hipCdivf
+#define COMPLEX      hipFloatComplex
+#define MAKE_COMPLEX make_hipFloatComplex
+#else
+#define CADD         hipCadd
+#define CSUB         hipCsub
+#define CMUL         hipCmul
+#define CDIV         hipCdiv
+#define COMPLEX      hipDoubleComplex
+#define MAKE_COMPLEX make_hipDoubleComplex
+#endif // SINGLE
+
+// CUDA-specific defines.
+#elif __CUDACC__
+#define gpuMalloc             cudaMalloc
+#define gpuFree               cudaFree
+#define gpuMemcpy             cudaMemcpy
+#define gpuMemcpyHostToDevice cudaMemcpyHostToDevice
+#define gpuGetErrorString     cudaGetErrorString
+#define gpuGetLastError       cudaGetLastError
+#define gpuDeviceSynchronize  cudaDeviceSynchronize
+#define gpuError_t            cudaError_t
+#define gpuSuccess            cudaSuccess
+#define warpSize              32
+
+#ifdef SINGLE
 #define CADD         cuCaddf
 #define CSUB         cuCsubf
 #define CMUL         cuCmulf
 #define CDIV         cuCdivf
+#define COMPLEX      cuFloatComplex
+#define MAKE_COMPLEX make_cuFloatComplex
 #else
-#define FLOAT        double
-#define SINCOS       sincos
-#define COS          cos
-#define FABS         fabs
-#define ATAN2        atan2
-#define SQRT         sqrt
-#define COMPLEX      cuDoubleComplex
-#define MAKE_COMPLEX make_cuDoubleComplex
 #define CADD         cuCadd
 #define CSUB         cuCsub
 #define CMUL         cuCmul
 #define CDIV         cuCdiv
-#endif
+#define COMPLEX      cuDoubleComplex
+#define MAKE_COMPLEX make_cuDoubleComplex
+#endif // SINGLE
+#endif // __HIPCC__
 
 #ifdef __cplusplus
 extern "C" {
@@ -76,9 +122,9 @@ typedef struct AzZA {
     FLOAT za;
 } AzZA;
 
-const char *cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
-                            int num_coeffs, const void *d_norm_jones, const FLOAT *d_array_latitude_rad,
-                            const int iau_reorder, void *d_results);
+const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
+                           int num_coeffs, const void *d_norm_jones, const FLOAT *d_array_latitude_rad,
+                           const int iau_reorder, void *d_results);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -91,7 +137,12 @@ const char *cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_dire
 #include <math.h>
 #include <stdio.h>
 
+#ifdef __CUDACC__
 #include <cuComplex.h>
+#elif __HIPCC__
+#include <hip/hip_complex.h>
+#include <hip/hip_runtime.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -224,12 +275,7 @@ typedef struct FEEJones {
     COMPLEX j11;
 } FEEJones;
 
-inline __device__ COMPLEX operator*(COMPLEX a, FLOAT b) {
-    return COMPLEX{
-        .x = a.x * b,
-        .y = a.y * b,
-    };
-}
+inline __device__ COMPLEX operator*(COMPLEX a, FLOAT b) { return MAKE_COMPLEX(a.x * b, a.y * b); }
 
 inline __device__ void operator+=(COMPLEX &a, COMPLEX b) {
     a.x += b.x;
@@ -549,26 +595,26 @@ __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT
     }
 }
 
-extern "C" const char *cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions,
-                                       const FEECoeffs *d_coeffs, int num_coeffs, const void *d_norm_jones,
-                                       const FLOAT *d_array_latitude_rad, const int iau_order, void *d_results) {
+extern "C" const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions,
+                                      const FEECoeffs *d_coeffs, int num_coeffs, const void *d_norm_jones,
+                                      const FLOAT *d_array_latitude_rad, const int iau_order, void *d_results) {
     dim3 gridDim, blockDim;
-    blockDim.x = 32;
+    blockDim.x = warpSize;
     gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
     gridDim.y = num_coeffs;
     fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (FEEJones *)d_norm_jones,
                                       d_array_latitude_rad, iau_order, (FEEJones *)d_results);
 
-    cudaError_t error_id;
+    gpuError_t error_id;
 #ifdef DEBUG
-    error_id = cudaDeviceSynchronize();
-    if (error_id != cudaSuccess) {
-        return cudaGetErrorString(error_id);
+    error_id = gpuDeviceSynchronize();
+    if (error_id != gpuSuccess) {
+        return gpuGetErrorString(error_id);
     }
 #endif
-    error_id = cudaGetLastError();
-    if (error_id != cudaSuccess) {
-        return cudaGetErrorString(error_id);
+    error_id = gpuGetLastError();
+    if (error_id != gpuSuccess) {
+        return gpuGetErrorString(error_id);
     }
 
     return NULL;

@@ -8,27 +8,29 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 ### Added
-- FFI function `calc_jones_cuda_device_inner`
-  - This is the same as `calc_jones_cuda_device`, but allows the caller to pass
+- Support for compiling GPU code with HIP
+- FFI function `calc_jones_gpu_device_inner`
+  - This is the same as `calc_jones_gpu_device`, but allows the caller to pass
     in their own device buffers, so that `hyperbeam` doesn't need to allocate
     its own.
 
 ### Changed
 - The minimum required Rust version is now 1.64.
+- Using single-precision floating point calculations on a GPU (CUDA or HIP) is
+  now done with the `gpu-single` feature, not `cuda-single`.
 - `hyperbeam` no longer depends on `ERFA`.
   - The [pure-Rust version](https://github.com/cjordan/rust-erfa) is now used
     instead, and this means that the C library is no longer required.
 - CPU code now runs significantly faster.
 - CUDA code now runs significantly faster.
-- CUDA FFI functions now take `i32` instead of `u32` for the number of
+- GPU FFI functions now take `i32` instead of `u32` for the number of
   directions.
   - This isn't a downgrade; the internal code always used an `i32`, so it was
     dishonest for the code to look like it accepted more than `i32::MAX`
     directions.
 
 ### Fixed
-- Calling CUDA FEE functions without any directions no longer causes a CUDA
-  error.
+- Calling GPU FEE functions without any directions no longer causes a GPU error.
 
 ## [0.5.1] - 2023-02-19
 ### Fixed

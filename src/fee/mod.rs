@@ -9,8 +9,8 @@ mod error;
 mod ffi;
 mod types;
 
-#[cfg(feature = "cuda")]
-mod cuda;
+#[cfg(any(feature = "cuda", feature = "hip"))]
+mod gpu;
 
 #[cfg(test)]
 mod tests;
@@ -18,8 +18,8 @@ mod tests;
 pub use error::{FEEBeamError, InitFEEBeamError};
 use types::*;
 
-#[cfg(feature = "cuda")]
-pub use cuda::FEEBeamCUDA;
+#[cfg(any(feature = "cuda", feature = "hip"))]
+pub use gpu::FEEBeamGpu;
 
 use std::{
     f64::consts::{FRAC_PI_2, TAU},
@@ -730,9 +730,9 @@ impl FEEBeam {
         self.norm_cache.write().clear();
     }
 
-    /// Prepare a CUDA-capable device for beam-response computations given the
-    /// frequencies, delays and amps to be used. The resulting object takes
-    /// directions and computes the beam responses on the device.
+    /// Prepare a compute-capable GPU device for beam-response computations
+    /// given the frequencies, delays and amps to be used. The resulting object
+    /// takes directions and computes the beam responses on the device.
     ///
     /// `delays_array` and `amps_array` must have the same number of rows; these
     /// correspond to tile configurations (i.e. each tile is allowed to have
@@ -745,19 +745,19 @@ impl FEEBeam {
     ///
     /// # Safety
     ///
-    /// This function interfaces directly with the CUDA API. Rust errors attempt
-    /// to catch problems but there are no guarantees.
-    #[cfg(feature = "cuda")]
-    pub unsafe fn cuda_prepare(
+    /// This function interfaces directly with the CUDA/HIP API. Rust errors
+    /// attempt to catch problems but there are no guarantees.
+    #[cfg(any(feature = "cuda", feature = "hip"))]
+    pub unsafe fn gpu_prepare(
         &self,
         freqs_hz: &[u32],
         delays_array: ArrayView2<u32>,
         amps_array: ArrayView2<f64>,
         norm_to_zenith: bool,
-    ) -> Result<cuda::FEEBeamCUDA, FEEBeamError> {
+    ) -> Result<gpu::FEEBeamGpu, FEEBeamError> {
         // This function is deliberately kept thin to keep the focus of this
         // module on the CPU code.
-        cuda::FEEBeamCUDA::new(self, freqs_hz, delays_array, amps_array, norm_to_zenith)
+        gpu::FEEBeamGpu::new(self, freqs_hz, delays_array, amps_array, norm_to_zenith)
     }
 }
 

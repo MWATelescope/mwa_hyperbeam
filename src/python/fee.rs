@@ -4,15 +4,15 @@
 
 //! Python interface to hyperbeam FEE code.
 
-use marlu::{ndarray, num_complex};
+use marlu::ndarray;
 use ndarray::prelude::*;
 use num_complex::Complex64 as c64;
 use numpy::*;
 use pyo3::{create_exception, prelude::*};
 
 use crate::fee::{FEEBeam as FEEBeamRust, FEEBeamError, InitFEEBeamError};
-#[cfg(feature = "cuda")]
-use crate::CudaComplex;
+#[cfg(any(feature = "cuda", feature = "hip"))]
+use crate::GpuComplex;
 
 // Add a python exception for hyperbeam.
 create_exception!(mwa_hyperbeam, HyperbeamError, pyo3::exceptions::PyException);
@@ -168,19 +168,19 @@ impl FEEBeam {
     }
 
     /// Calculate the Jones matrices for multiple directions given a pointing on
-    /// a CUDA-capable device.
+    /// a GPU.
     ///
     /// `delays_array` and `amps_array` must have the same number of rows; these
     /// correspond to tile configurations (i.e. each tile is allowed to have
     /// distinct delays and amps). `delays_array` must have 16 elements per row,
     /// but `amps_array` can have 16 or 32 elements per row (see `calc_jones`
     /// for an explanation).
-    #[cfg(feature = "cuda")]
+    #[cfg(any(feature = "cuda", feature = "hip"))]
     #[pyo3(
         text_signature = "(az_rad, za_rad, freq_hz, delays_array, amps_array, norm_to_zenith, array_latitude_rad, iau_order)"
     )]
     #[allow(clippy::too_many_arguments)]
-    fn calc_jones_cuda<'py>(
+    fn calc_jones_gpu<'py>(
         &mut self,
         py: Python<'py>,
         az_rad: Vec<f64>,
@@ -191,7 +191,7 @@ impl FEEBeam {
         norm_to_zenith: bool,
         array_latitude_rad: Option<f64>,
         iau_order: Option<bool>,
-    ) -> PyResult<&'py PyArray4<CudaComplex>> {
+    ) -> PyResult<&'py PyArray4<GpuComplex>> {
         // hyperbeam expects ints for the frequencies. Convert them to make sure
         // everything's OK.
         let freqs: Vec<u32> = freqs_hz.iter().map(|&f| f.round() as _).collect();
@@ -202,20 +202,16 @@ impl FEEBeam {
         // We then know how many amps per tile are provided.
         let amps =
             Array2::from_shape_vec((num_tiles, amps_array.len() / num_tiles), amps_array).unwrap();
-        // Convert the direction type to match the CUDA precision.
+        // Convert the direction type to match the GPU precision.
         let azs: Vec<_> = az_rad.into_iter().map(|f| f as _).collect();
         let zas: Vec<_> = za_rad.into_iter().map(|f| f as _).collect();
 
-        let cuda_beam = unsafe {
+        let gpu_beam = unsafe {
             self.beam
-                .cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)?
+                .gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)?
         };
-        let jones = cuda_beam.calc_jones_pair(
-            &azs,
-            &zas,
-            array_latitude_rad,
-            iau_order.unwrap_or(false),
-        )?;
+        let jones =
+            gpu_beam.calc_jones_pair(&azs, &zas, array_latitude_rad, iau_order.unwrap_or(false))?;
 
         // Convert to a 4D array of Complex from Jones.
         // Use unsafe code to ensure that no useless copying is done!
@@ -225,7 +221,7 @@ impl FEEBeam {
 
         let new_len = jones.len() * 4;
         let new_cap = jones.capacity() * 4;
-        let new_ptr = jones.as_mut_ptr() as *mut CudaComplex;
+        let new_ptr = jones.as_mut_ptr() as *mut GpuComplex;
         // SAFETY: new_cap == old_cap * N, align_of::<Complex>() == align_of::<Jones>()
         let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
         let a4 = Array4::from_shape_vec((old_dim.0, old_dim.1, old_dim.2, 4), flat).unwrap();

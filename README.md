@@ -77,10 +77,11 @@ other words, most languages. See Rust, C and Python examples of usage in the
     [-1.51506097e-01-4.35034884e-02j -9.76099405e-06-1.21699926e-05j
       1.73003520e-05-1.53580286e-05j -2.23184781e-01-4.51051073e-02j]
 
-### CUDA
-`hyperbeam` also can also be run on NVIDIA GPUs. To see an example of usage, see
-any of the examples with "cuda" in the name. CUDA functionality is only provided
-with one of two Cargo features; see installing from source instructions below.
+### CUDA / HIP
+`hyperbeam` also can also be run on NVIDIA GPUs, or AMD GPUs. To see an example
+of usage, see any of the examples with "cuda" or "hip" in the name. GPU
+functionality is provided with Cargo features; see installing from source
+instructions below.
 
 ## Installation
 ### Python PyPI
@@ -132,14 +133,16 @@ directory, along with C-compatible shared and static objects in the
 `target/release` directory.
 
 #### CUDA
-Are you running `hyperbeam` on a desktop NVIDIA GPU? Then you probably want to
-compile with single-precision floats:
+Are you running `hyperbeam` on a desktop GPU? Then you probably want to compile
+with single-precision floats:
 
-    cargo build --release --features=cuda-single
+    cargo build --release --features=cuda,gpu-single
+    cargo build --release --features=hip,gpu-single
 
 Otherwise, go ahead with double-precision floats:
 
     cargo build --release --features=cuda
+    cargo build --release --features=hip
 
 Desktop GPUs (e.g. NVIDIA GeForce RTX 2070) have significantly less
 double-precision compute capability than "data center" GPUs (e.g. NVIDIA V100).
@@ -149,6 +152,11 @@ between the performance and precision compromise.
 `CUDA` can also be linked statically:
 
     cargo build --release --features=cuda,cuda-static
+
+#### HIP
+The situation with `HIP` is similar to that of `CUDA`; use the `hip` feature and
+use `gpu-single` if you want the code to use single-precision floats. `HIP` does
+not appear to offer static libraries, so no static feature is provided.
 
 #### Static dependencies
 To make `hyperbeam` without a dependence on a system `HDF5` library, give the

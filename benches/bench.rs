@@ -203,24 +203,24 @@ fn fee(c: &mut Criterion) {
         })
     });
 
-    #[cfg(feature = "cuda")]
-    c.bench_function("cuda_calc_jones", |b| {
+    #[cfg(any(feature = "cuda", feature = "hip"))]
+    c.bench_function("gpu_calc_jones", |b| {
         let freqs = [51200000];
         let delays = Array2::zeros((1, 16));
         let amps = Array2::ones((1, 32));
         let norm_to_zenith = false;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let cuda_beam = unsafe {
-            beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)
+        let gpu_beam = unsafe {
+            beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)
                 .unwrap()
         };
 
         let mut az = vec![];
         let mut za = vec![];
         for d in 5..85 {
-            #[cfg(feature = "cuda-single")]
+            #[cfg(feature = "gpu-single")]
             let rad = (d as f32).to_radians();
-            #[cfg(not(feature = "cuda-single"))]
+            #[cfg(not(feature = "gpu-single"))]
             let rad = (d as f64).to_radians();
             az.push(rad);
             za.push(rad);
@@ -229,7 +229,7 @@ fn fee(c: &mut Criterion) {
         let iau_order = false;
 
         b.iter(|| {
-            cuda_beam
+            gpu_beam
                 .calc_jones_pair(&az, &za, array_latitude_rad, iau_order)
                 .unwrap();
         })
@@ -279,26 +279,26 @@ fn fee(c: &mut Criterion) {
         })
     });
 
-    #[cfg(feature = "cuda")]
-    c.bench_function("cuda_calc_jones 100000 dirs", |b| {
+    #[cfg(any(feature = "cuda", feature = "hip"))]
+    c.bench_function("gpu_calc_jones 100000 dirs", |b| {
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-        let cuda_beam = unsafe {
-            beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)
+        let gpu_beam = unsafe {
+            beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)
                 .unwrap()
         };
         let array_latitude_rad = Some(MWA_LAT_RAD);
 
-        #[cfg(feature = "cuda-single")]
+        #[cfg(feature = "gpu-single")]
         let (az, za): (Vec<_>, Vec<_>) = az_double
             .iter()
             .zip(za_double.iter())
             .map(|(&az, &za)| (az as f32, za as f32))
             .unzip();
-        #[cfg(not(feature = "cuda-single"))]
+        #[cfg(not(feature = "gpu-single"))]
         let (az, za) = (az_double.clone(), za_double.clone());
 
         b.iter(|| {
-            cuda_beam
+            gpu_beam
                 .calc_jones_pair(&az, &za, array_latitude_rad, true)
                 .unwrap();
         })

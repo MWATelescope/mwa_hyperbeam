@@ -13,14 +13,14 @@ use super::*;
 
 #[test]
 #[serial]
-fn test_cuda_calc_jones_no_norm() {
+fn test_gpu_calc_jones_no_norm() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let freqs = [150e6 as u32];
     let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
     let amps =
         array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
     let norm_to_zenith = false;
-    let result = unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
+    let result = unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let cuda_beam = result.unwrap();
     assert_eq!(cuda_beam.num_coeffs, 1);
@@ -30,8 +30,8 @@ fn test_cuda_calc_jones_no_norm() {
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
         .map(|i| {
             (
-                0.45 + i as CudaFloat / 10000.0,
-                0.45 + i as CudaFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
             )
         })
         .unzip();
@@ -68,31 +68,31 @@ fn test_cuda_calc_jones_no_norm() {
                 .unwrap();
 
             // Demote the CPU results if we have to.
-            #[cfg(feature = "cuda-single")]
+            #[cfg(feature = "gpu-single")]
             let cpu_results: Vec<Jones<f32>> = cpu_results.into_iter().map(|j| j.into()).collect();
 
             out.assign(&Array1::from(cpu_results));
         }
     }
 
-    #[cfg(not(feature = "cuda-single"))]
+    #[cfg(not(feature = "gpu-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
-    #[cfg(feature = "cuda-single")]
+    #[cfg(feature = "gpu-single")]
     // The errors are heavily dependent on the directions.
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-7);
 }
 
 #[test]
 #[serial]
-fn test_cuda_calc_jones_w_norm() {
+fn test_gpu_calc_jones_w_norm() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let freqs = [150e6 as u32];
     let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
     let amps =
         array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
     let norm_to_zenith = true;
-    let result = unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
+    let result = unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let cuda_beam = result.unwrap();
     assert_eq!(cuda_beam.num_coeffs, 1);
@@ -102,8 +102,8 @@ fn test_cuda_calc_jones_w_norm() {
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
         .map(|i| {
             (
-                0.45 + i as CudaFloat / 10000.0,
-                0.45 + i as CudaFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
             )
         })
         .unzip();
@@ -140,31 +140,31 @@ fn test_cuda_calc_jones_w_norm() {
                 .unwrap();
 
             // Demote the CPU results if we have to.
-            #[cfg(feature = "cuda-single")]
+            #[cfg(feature = "gpu-single")]
             let cpu_results: Vec<Jones<f32>> = cpu_results.into_iter().map(|j| j.into()).collect();
 
             out.assign(&Array1::from(cpu_results));
         }
     }
 
-    #[cfg(not(feature = "cuda-single"))]
+    #[cfg(not(feature = "gpu-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
-    #[cfg(feature = "cuda-single")]
+    #[cfg(feature = "gpu-single")]
     // The errors are heavily dependent on the directions.
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-6);
 }
 
 #[test]
 #[serial]
-fn test_cuda_calc_jones_w_norm_and_parallactic() {
+fn test_gpu_calc_jones_w_norm_and_parallactic() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let freqs = [150e6 as u32];
     let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
     let amps =
         array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
     let norm_to_zenith = true;
-    let result = unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
+    let result = unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let cuda_beam = result.unwrap();
     assert_eq!(cuda_beam.num_coeffs, 1);
@@ -174,8 +174,8 @@ fn test_cuda_calc_jones_w_norm_and_parallactic() {
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
         .map(|i| {
             (
-                0.45 + i as CudaFloat / 10000.0,
-                0.45 + i as CudaFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
             )
         })
         .unzip();
@@ -212,31 +212,31 @@ fn test_cuda_calc_jones_w_norm_and_parallactic() {
                 .unwrap();
 
             // Demote the CPU results if we have to.
-            #[cfg(feature = "cuda-single")]
+            #[cfg(feature = "gpu-single")]
             let cpu_results: Vec<Jones<f32>> = cpu_results.into_iter().map(|j| j.into()).collect();
 
             out.assign(&Array1::from(cpu_results));
         }
     }
 
-    #[cfg(not(feature = "cuda-single"))]
+    #[cfg(not(feature = "gpu-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
-    #[cfg(feature = "cuda-single")]
+    #[cfg(feature = "gpu-single")]
     // The errors are heavily dependent on the directions.
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-6);
 }
 
 #[test]
 #[serial]
-fn test_cuda_calc_jones_with_and_without_parallactic() {
+fn test_gpu_calc_jones_with_and_without_parallactic() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let freqs = [150e6 as u32];
     let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
     let amps =
         array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
     let norm_to_zenith = true;
-    let result = unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
+    let result = unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let cuda_beam = result.unwrap();
     assert_eq!(cuda_beam.num_coeffs, 1);
@@ -246,8 +246,8 @@ fn test_cuda_calc_jones_with_and_without_parallactic() {
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
         .map(|i| {
             (
-                0.45 + i as CudaFloat / 10000.0,
-                0.45 + i as CudaFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
             )
         })
         .unzip();
@@ -265,7 +265,7 @@ fn test_cuda_calc_jones_with_and_without_parallactic() {
 
 #[test]
 #[serial]
-fn test_cuda_calc_jones_deduplication() {
+fn test_gpu_calc_jones_deduplication() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
     // 6 freqs here, but only 3 unique ones.
     let freqs = [
@@ -290,7 +290,7 @@ fn test_cuda_calc_jones_deduplication() {
         [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     ];
     let norm_to_zenith = false;
-    let result = unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
+    let result = unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let cuda_beam = result.unwrap();
     assert_eq!(cuda_beam.num_coeffs, 9);
@@ -300,8 +300,8 @@ fn test_cuda_calc_jones_deduplication() {
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
         .map(|i| {
             (
-                0.45 + i as CudaFloat / 10000.0,
-                0.45 + i as CudaFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
             )
         })
         .unzip();
@@ -338,24 +338,24 @@ fn test_cuda_calc_jones_deduplication() {
                 .unwrap();
 
             // Demote the CPU results if we have to.
-            #[cfg(feature = "cuda-single")]
+            #[cfg(feature = "gpu-single")]
             let cpu_results: Vec<Jones<f32>> = cpu_results.into_iter().map(|j| j.into()).collect();
 
             out.assign(&Array1::from(cpu_results));
         }
     }
 
-    #[cfg(not(feature = "cuda-single"))]
+    #[cfg(not(feature = "gpu-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
-    #[cfg(feature = "cuda-single")]
+    #[cfg(feature = "gpu-single")]
     // The errors are heavily dependent on the directions.
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-6);
 }
 
 #[test]
 #[serial]
-fn test_cuda_calc_jones_deduplication_w_norm() {
+fn test_gpu_calc_jones_deduplication_w_norm() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
     // 6 freqs here, but only 3 unique ones.
     let freqs = [
@@ -380,7 +380,7 @@ fn test_cuda_calc_jones_deduplication_w_norm() {
         [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     ];
     let norm_to_zenith = true;
-    let result = unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
+    let result = unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let cuda_beam = result.unwrap();
     assert_eq!(cuda_beam.num_coeffs, 9);
@@ -390,8 +390,8 @@ fn test_cuda_calc_jones_deduplication_w_norm() {
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
         .map(|i| {
             (
-                0.45 + i as CudaFloat / 10000.0,
-                0.45 + i as CudaFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
             )
         })
         .unzip();
@@ -428,24 +428,24 @@ fn test_cuda_calc_jones_deduplication_w_norm() {
                 .unwrap();
 
             // Demote the CPU results if we have to.
-            #[cfg(feature = "cuda-single")]
+            #[cfg(feature = "gpu-single")]
             let cpu_results: Vec<Jones<f32>> = cpu_results.into_iter().map(|j| j.into()).collect();
 
             out.assign(&Array1::from(cpu_results));
         }
     }
 
-    #[cfg(not(feature = "cuda-single"))]
+    #[cfg(not(feature = "gpu-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
-    #[cfg(feature = "cuda-single")]
+    #[cfg(feature = "gpu-single")]
     // The errors are heavily dependent on the directions.
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-6);
 }
 
 #[test]
 #[serial]
-fn test_cuda_calc_jones_no_amps() {
+fn test_gpu_calc_jones_no_amps() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let freqs: Vec<u32> = [50e6, 75e6, 100e6, 125e6, 150e6, 175e6, 200e6]
         .into_iter()
@@ -460,7 +460,7 @@ fn test_cuda_calc_jones_no_amps() {
         [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     ];
     let norm_to_zenith = false;
-    let result = unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
+    let result = unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let cuda_beam = result.unwrap();
     assert_eq!(cuda_beam.num_coeffs, 14);
@@ -470,8 +470,8 @@ fn test_cuda_calc_jones_no_amps() {
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
         .map(|i| {
             (
-                0.45 + i as CudaFloat / 10000.0,
-                0.45 + i as CudaFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
             )
         })
         .unzip();
@@ -508,17 +508,17 @@ fn test_cuda_calc_jones_no_amps() {
                 .unwrap();
 
             // Demote the CPU results if we have to.
-            #[cfg(feature = "cuda-single")]
+            #[cfg(feature = "gpu-single")]
             let cpu_results: Vec<Jones<f32>> = cpu_results.into_iter().map(|j| j.into()).collect();
 
             out.assign(&Array1::from(cpu_results));
         }
     }
 
-    #[cfg(not(feature = "cuda-single"))]
+    #[cfg(not(feature = "gpu-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
-    #[cfg(feature = "cuda-single")]
+    #[cfg(feature = "gpu-single")]
     // The errors are heavily dependent on the directions.
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-6);
 
@@ -537,14 +537,14 @@ fn test_cuda_calc_jones_no_amps() {
 
 #[test]
 #[serial]
-fn test_cuda_calc_jones_iau_order() {
+fn test_gpu_calc_jones_iau_order() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let freqs = [150e6 as u32];
     let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
     let amps =
         array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
     let norm_to_zenith = false;
-    let result = unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
+    let result = unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) };
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let cuda_beam = result.unwrap();
     assert_eq!(cuda_beam.num_coeffs, 1);
@@ -585,7 +585,7 @@ fn test_cuda_calc_jones_pathological() {
     let delays = Array2::zeros((amps.len_of(Axis(0)), 16));
     let norm_to_zenith = true;
     let cuda_beam =
-        unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) }.unwrap();
+        unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) }.unwrap();
 
     let azs = [3.5279431];
     let zas = [0.19745648];
@@ -605,7 +605,7 @@ fn test_no_directions_doesnt_fail() {
         array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
     let norm_to_zenith = true;
     let cuda_beam =
-        unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) }.unwrap();
+        unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) }.unwrap();
 
     let array_latitude_rad = Some(MWA_LAT_RAD);
     let result = cuda_beam

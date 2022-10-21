@@ -12,7 +12,7 @@ use serial_test::serial;
 
 use super::*;
 
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 use marlu::Jones;
 
 #[test]
@@ -286,9 +286,9 @@ fn test_ffi_fee_freq_functions() {
 }
 
 #[test]
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 #[serial]
-fn test_calc_jones_cuda_via_ffi() {
+fn test_calc_jones_gpu_via_ffi() {
     let file = CString::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let freqs = [150e6 as u32];
     let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
@@ -297,8 +297,8 @@ fn test_calc_jones_cuda_via_ffi() {
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
         .map(|i| {
             (
-                0.45 + i as CudaFloat / 10000.0,
-                0.45 + i as CudaFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
             )
         })
         .unzip();
@@ -312,9 +312,9 @@ fn test_calc_jones_cuda_via_ffi() {
         let num_freqs = freqs.len();
         let num_tiles = delays.dim().0;
         let num_amps = amps.dim().1;
-        let mut cuda_beam = null_mut();
+        let mut gpu_beam = null_mut();
 
-        let result = new_cuda_fee_beam(
+        let result = new_gpu_fee_beam(
             beam,
             freqs.as_ptr(),
             delays.as_ptr(),
@@ -323,15 +323,15 @@ fn test_calc_jones_cuda_via_ffi() {
             num_tiles as u32,
             num_amps as u32,
             norm_to_zenith as u8,
-            &mut cuda_beam,
+            &mut gpu_beam,
         );
         assert_eq!(result, 0);
 
         let num_azza = az.len() as u32;
-        let mut jones: Array3<Jones<CudaFloat>> = Array3::zeros((num_tiles, num_freqs, az.len()));
+        let mut jones: Array3<Jones<GpuFloat>> = Array3::zeros((num_tiles, num_freqs, az.len()));
 
-        let result = calc_jones_cuda(
-            cuda_beam,
+        let result = calc_jones_gpu(
+            gpu_beam,
             num_azza,
             az.as_ptr(),
             za.as_ptr(),
@@ -341,14 +341,14 @@ fn test_calc_jones_cuda_via_ffi() {
         );
         assert_eq!(result, 0);
 
-        free_cuda_fee_beam(cuda_beam);
+        free_gpu_fee_beam(gpu_beam);
 
         jones
     };
 
     // Compare with CPU results.
     let mut jones_cpu = Array3::zeros((delays.dim().0, freqs.len(), az.len()));
-    // Maybe need to regenerate the directions, depending on the CUDA precision.
+    // Maybe need to regenerate the directions, depending on the GPU precision.
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
@@ -373,7 +373,7 @@ fn test_calc_jones_cuda_via_ffi() {
                     .unwrap();
 
                 // Demote the CPU results if we have to.
-                #[cfg(feature = "cuda-single")]
+                #[cfg(feature = "gpu-single")]
                 let cpu_results: Vec<Jones<f32>> =
                     cpu_results.into_iter().map(|j| j.into()).collect();
 
@@ -386,10 +386,10 @@ fn test_calc_jones_cuda_via_ffi() {
         free_fee_beam(beam);
     }
 
-    #[cfg(not(feature = "cuda-single"))]
+    #[cfg(not(feature = "gpu-single"))]
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
 
-    #[cfg(feature = "cuda-single")]
+    #[cfg(feature = "gpu-single")]
     // The errors are heavily dependent on the directions.
     assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-6);
 }

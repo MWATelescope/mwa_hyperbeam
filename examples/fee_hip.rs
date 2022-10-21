@@ -5,8 +5,8 @@
 //! Example code using hyperbeam's GPU code with Rust.
 //!
 //! Build and run with something like:
-//! `cargo run --release --features=cuda --example fee_cuda -- 1000000 mwa_full_embedded_element_pattern.h5`
-//! `cargo run --release --features=cuda,gpu-single --example fee_cuda -- 1000000 mwa_full_embedded_element_pattern.h5`
+//! `cargo run --release --features=hip --example fee_hip -- 1000000 mwa_full_embedded_element_pattern.h5`
+//! `cargo run --release --features=hip,gpu-single --example fee_hip -- 1000000 mwa_full_embedded_element_pattern.h5`
 //!
 //! If the "gpu-single" feature is given, then single-precision floats are used
 //! on the GPU. This trades precision for speed. The speed gain is considerable if

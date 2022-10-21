@@ -20,9 +20,9 @@ use rayon::iter::Either;
 use super::FEEBeam;
 
 cfg_if::cfg_if! {
-    if #[cfg(feature = "cuda")] {
+    if #[cfg(any(feature = "cuda", feature = "hip"))] {
         use ndarray::prelude::*;
-        use crate::{cuda::{CudaFloat, DevicePointer}, fee::FEEBeamCUDA};
+        use crate::{gpu::{DevicePointer, GpuFloat}, fee::FEEBeamGpu};
     }
 }
 
@@ -486,8 +486,8 @@ pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
     drop(Box::from_raw(fee_beam));
 }
 
-/// Get a `FEEBeamCUDA` struct, which is used to calculate beam responses on a
-/// CUDA-capable device.
+/// Get a `FEEBeamGpu` struct, which is used to calculate beam responses on a
+/// GPU (CUDA- or HIP-capable device).
 ///
 /// # Arguments
 ///
@@ -506,9 +506,9 @@ pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
 ///   more explanation.
 /// * `norm_to_zenith` - A boolean indicating whether the beam responses should
 ///   be normalised with respect to zenith.
-/// * `cuda_fee_beam` - a double pointer to the `FEEBeamCUDA` struct which is
-///   set by this function. This struct must be freed by calling
-///   `free_cuda_fee_beam`.
+/// * `gpu_fee_beam` - a double pointer to the `FEEBeamGpu` struct which is set
+///   by this function. This struct must be freed by calling
+///   `free_gpu_fee_beam`.
 ///
 /// # Returns
 ///
@@ -517,9 +517,9 @@ pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
 ///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
 ///   with a string buffer with a length at least equal to the error length.
 ///
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn new_cuda_fee_beam(
+pub unsafe extern "C" fn new_gpu_fee_beam(
     fee_beam: *mut FEEBeam,
     freqs_hz: *const u32,
     delays: *const u32,
@@ -528,7 +528,7 @@ pub unsafe extern "C" fn new_cuda_fee_beam(
     num_tiles: u32,
     num_amps: u32,
     norm_to_zenith: u8,
-    cuda_fee_beam: *mut *mut FEEBeamCUDA,
+    gpu_fee_beam: *mut *mut FEEBeamGpu,
 ) -> i32 {
     match num_amps {
         16 | 32 => (),
@@ -552,12 +552,12 @@ pub unsafe extern "C" fn new_cuda_fee_beam(
     let delays = ArrayView2::from_shape_ptr((num_tiles as usize, 16), delays);
 
     let beam = &mut *fee_beam;
-    let cuda_beam = ffi_error!(beam.cuda_prepare(freqs, delays, amps, norm_bool));
-    *cuda_fee_beam = Box::into_raw(Box::new(cuda_beam));
+    let gpu_beam = ffi_error!(beam.gpu_prepare(freqs, delays, amps, norm_bool));
+    *gpu_fee_beam = Box::into_raw(Box::new(gpu_beam));
     0
 }
 
-/// Get beam response Jones matrices for the given directions, using CUDA. The
+/// Get beam response Jones matrices for the given directions, using a GPU. The
 /// Jones matrix elements for each direction are put into a host-memory buffer
 /// `jones`. Can optionally re-define the X and Y polarisations and apply a
 /// parallactic-angle correction; see
@@ -565,8 +565,8 @@ pub unsafe extern "C" fn new_cuda_fee_beam(
 ///
 /// # Arguments
 ///
-/// * `cuda_fee_beam` - A pointer to a `FEEBeamCUDA` struct created with the
-///   `new_cuda_fee_beam` function
+/// * `gpu_fee_beam` - A pointer to a `FEEBeamGpu` struct created with the
+///   `new_gpu_fee_beam` function
 /// * `az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
@@ -590,16 +590,16 @@ pub unsafe extern "C" fn new_cuda_fee_beam(
 ///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
 ///   with a string buffer with a length at least equal to the error length.
 ///
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones_cuda(
-    cuda_fee_beam: *mut FEEBeamCUDA,
+pub unsafe extern "C" fn calc_jones_gpu(
+    gpu_fee_beam: *mut FEEBeamGpu,
     num_azza: u32,
-    az_rad: *const CudaFloat,
-    za_rad: *const CudaFloat,
+    az_rad: *const GpuFloat,
+    za_rad: *const GpuFloat,
     array_latitude_rad: *const f64,
     iau_order: u8,
-    jones: *mut CudaFloat,
+    jones: *mut GpuFloat,
 ) -> i32 {
     let iau_bool = match iau_order {
         0 => false,
@@ -611,7 +611,7 @@ pub unsafe extern "C" fn calc_jones_cuda(
     };
 
     // Turn the pointers into slices and/or arrays.
-    let beam = &mut *cuda_fee_beam;
+    let beam = &mut *gpu_fee_beam;
     let az = slice::from_raw_parts(az_rad, num_azza as usize);
     let za = slice::from_raw_parts(za_rad, num_azza as usize);
     let results = ArrayViewMut3::from_shape_ptr(
@@ -627,7 +627,7 @@ pub unsafe extern "C" fn calc_jones_cuda(
     0
 }
 
-/// Get beam response Jones matrices for the given directions, using CUDA. The
+/// Get beam response Jones matrices for the given directions, using a GPU. The
 /// Jones matrix elements for each direction are left on the device (the device
 /// pointer is communicated via `d_jones`). Can optionally re-define the X and Y
 /// polarisations and apply a parallactic-angle correction; see
@@ -635,8 +635,8 @@ pub unsafe extern "C" fn calc_jones_cuda(
 ///
 /// # Arguments
 ///
-/// * `cuda_fee_beam` - A pointer to a `FEEBeamCUDA` struct created with the
-///   `new_cuda_fee_beam` function
+/// * `gpu_fee_beam` - A pointer to a `FEEBeamGpu` struct created with the
+///   `new_gpu_fee_beam` function
 /// * `az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
@@ -660,16 +660,16 @@ pub unsafe extern "C" fn calc_jones_cuda(
 ///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
 ///   with a string buffer with a length at least equal to the error length.
 ///
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones_cuda_device(
-    cuda_fee_beam: *mut FEEBeamCUDA,
+pub unsafe extern "C" fn calc_jones_gpu_device(
+    gpu_fee_beam: *mut FEEBeamGpu,
     num_azza: i32,
-    az_rad: *const CudaFloat,
-    za_rad: *const CudaFloat,
+    az_rad: *const GpuFloat,
+    za_rad: *const GpuFloat,
     array_latitude_rad: *const f64,
     iau_order: u8,
-    d_jones: *mut CudaFloat,
+    d_jones: *mut GpuFloat,
 ) -> i32 {
     let iau_bool = match iau_order {
         0 => false,
@@ -680,14 +680,14 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
         }
     };
 
-    let beam = &mut *cuda_fee_beam;
+    let beam = &mut *gpu_fee_beam;
     let az = slice::from_raw_parts(az_rad, num_azza as usize);
     let za = slice::from_raw_parts(za_rad, num_azza as usize);
     let d_az = ffi_error!(DevicePointer::copy_to_device(az));
     let d_za = ffi_error!(DevicePointer::copy_to_device(za));
     let d_array_latitude_rad = ffi_error!(array_latitude_rad
         .as_ref()
-        .map(|f| DevicePointer::copy_to_device(&[*f as CudaFloat]))
+        .map(|f| DevicePointer::copy_to_device(&[*f as GpuFloat]))
         .transpose());
     ffi_error!(beam.calc_jones_device_pair_inner(
         d_az.get(),
@@ -702,14 +702,14 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
     0
 }
 
-/// The same as `calc_jones_cuda_device`, but with the directions already
+/// The same as `calc_jones_gpu_device`, but with the directions already
 /// allocated on the device. As with `d_jones`, the precision of the floats
 /// depends on how `hyperbeam` was compiled.
 ///
 /// # Arguments
 ///
-/// * `cuda_fee_beam` - A pointer to a `FEEBeamCUDA` struct created with the
-///   `new_cuda_fee_beam` function
+/// * `gpu_fee_beam` - A pointer to a `FEEBeamGpu` struct created with the
+///   `new_gpu_fee_beam` function
 /// * `d_az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `d_za_rad` - The zenith angle directions to get the beam response (units
@@ -733,16 +733,16 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
 ///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
 ///   with a string buffer with a length at least equal to the error length.
 ///
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones_cuda_device_inner(
-    cuda_fee_beam: *mut FEEBeamCUDA,
+pub unsafe extern "C" fn calc_jones_gpu_device_inner(
+    gpu_fee_beam: *mut FEEBeamGpu,
     num_azza: i32,
-    d_az_rad: *const CudaFloat,
-    d_za_rad: *const CudaFloat,
-    d_array_latitude_rad: *const CudaFloat,
+    d_az_rad: *const GpuFloat,
+    d_za_rad: *const GpuFloat,
+    d_array_latitude_rad: *const GpuFloat,
     iau_order: u8,
-    d_jones: *mut CudaFloat,
+    d_jones: *mut GpuFloat,
 ) -> i32 {
     let iau_bool = match iau_order {
         0 => false,
@@ -753,7 +753,7 @@ pub unsafe extern "C" fn calc_jones_cuda_device_inner(
         }
     };
 
-    let beam = &mut *cuda_fee_beam;
+    let beam = &mut *gpu_fee_beam;
     ffi_error!(beam.calc_jones_device_pair_inner(
         d_az_rad,
         d_za_rad,
@@ -770,17 +770,17 @@ pub unsafe extern "C" fn calc_jones_cuda_device_inner(
 ///
 /// # Arguments
 ///
-/// * `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
 ///
 /// # Returns
 ///
 /// * A pointer to the device beam Jones map. The const annotation is
 ///   deliberate; the caller does not own the map.
 ///
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn get_tile_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const i32 {
-    let beam = &mut *cuda_fee_beam;
+pub unsafe extern "C" fn get_tile_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i32 {
+    let beam = &mut *gpu_fee_beam;
     beam.get_tile_map()
 }
 
@@ -789,64 +789,64 @@ pub unsafe extern "C" fn get_tile_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const
 ///
 /// # Arguments
 ///
-/// * `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
 ///
 /// # Returns
 ///
 /// * A pointer to the device beam Jones map. The const annotation is
 ///   deliberate; the caller does not own the map.
 ///
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn get_freq_map(cuda_fee_beam: *mut FEEBeamCUDA) -> *const i32 {
-    let beam = &mut *cuda_fee_beam;
+pub unsafe extern "C" fn get_freq_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i32 {
+    let beam = &mut *gpu_fee_beam;
     beam.get_freq_map()
 }
 
-/// Get the number of de-duplicated tiles associated with this `FEEBeamCUDA`.
+/// Get the number of de-duplicated tiles associated with this `FEEBeamGpu`.
 ///
 /// # Arguments
 ///
-/// * `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
 ///
 /// # Returns
 ///
-/// * The number of de-duplicated tiles associated with this `FEEBeamCUDA`.
+/// * The number of de-duplicated tiles associated with this `FEEBeamGpu`.
 ///
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn get_num_unique_tiles(cuda_fee_beam: *mut FEEBeamCUDA) -> i32 {
-    let beam = &mut *cuda_fee_beam;
+pub unsafe extern "C" fn get_num_unique_tiles(gpu_fee_beam: *mut FEEBeamGpu) -> i32 {
+    let beam = &mut *gpu_fee_beam;
     beam.num_unique_tiles
 }
 
 /// Get the number of de-duplicated frequencies associated with this
-/// `FEEBeamCUDA`.
+/// `FEEBeamGpu`.
 ///
 /// # Arguments
 ///
-/// * `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
 ///
 /// # Returns
 ///
 /// * The number of de-duplicated frequencies associated with this
-///   `FEEBeamCUDA`.
+///   `FEEBeamGpu`.
 ///
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn get_num_unique_fee_freqs(cuda_fee_beam: *mut FEEBeamCUDA) -> i32 {
-    let beam = &mut *cuda_fee_beam;
+pub unsafe extern "C" fn get_num_unique_fee_freqs(gpu_fee_beam: *mut FEEBeamGpu) -> i32 {
+    let beam = &mut *gpu_fee_beam;
     beam.num_unique_freqs
 }
 
-/// Free the memory associated with an `FEEBeamCUDA` beam.
+/// Free the memory associated with an `FEEBeamGpu` beam.
 ///
 /// # Arguments
 ///
-/// * `cuda_fee_beam` - the pointer to the `FEEBeamCUDA` struct.
+/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
 ///
-#[cfg(feature = "cuda")]
+#[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn free_cuda_fee_beam(fee_beam: *mut FEEBeamCUDA) {
+pub unsafe extern "C" fn free_gpu_fee_beam(fee_beam: *mut FEEBeamGpu) {
     drop(Box::from_raw(fee_beam));
 }

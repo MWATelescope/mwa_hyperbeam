@@ -2,20 +2,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! CUDA code to implement the MWA Fully Embedded Element (FEE) beam, a.k.a.
-//! "the 2016 beam".
+//! GPU code to implement the MWA Fully Embedded Element (FEE) beam, a.k.a. "the
+//! 2016 beam".
 
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-// Include Rust bindings to the CUDA code, depending on the precision used.
-cfg_if::cfg_if! {
-    if #[cfg(feature = "cuda-single")] {
-        include!("single.rs");
-    } else {
-        include!("double.rs");
-    }
-}
+// Include Rust bindings to the GPU code, depending on the precision used.
+#[cfg(feature = "gpu-single")]
+include!("single.rs");
+#[cfg(not(feature = "gpu-single"))]
+include!("double.rs");
 
 #[cfg(test)]
 mod tests;
@@ -32,15 +29,15 @@ use ndarray::prelude::*;
 
 use super::{FEEBeam, FEEBeamError};
 use crate::{
-    cuda::{CudaError, CudaFloat, DevicePointer},
+    gpu::{DevicePointer, GpuError, GpuFloat},
     types::CacheKey,
 };
 
-/// A CUDA beam object ready to calculate beam responses.
+/// A GPU beam object ready to calculate beam responses.
 #[derive(Debug)]
-pub struct FEEBeamCUDA {
-    x_q1_accum: DevicePointer<CudaFloat>,
-    x_q2_accum: DevicePointer<CudaFloat>,
+pub struct FEEBeamGpu {
+    x_q1_accum: DevicePointer<GpuFloat>,
+    x_q2_accum: DevicePointer<GpuFloat>,
 
     x_m_accum: DevicePointer<i8>,
     x_n_accum: DevicePointer<i8>,
@@ -49,8 +46,8 @@ pub struct FEEBeamCUDA {
     x_lengths: DevicePointer<i32>,
     x_offsets: DevicePointer<i32>,
 
-    y_q1_accum: DevicePointer<CudaFloat>,
-    y_q2_accum: DevicePointer<CudaFloat>,
+    y_q1_accum: DevicePointer<GpuFloat>,
+    y_q2_accum: DevicePointer<GpuFloat>,
 
     y_m_accum: DevicePointer<i8>,
     y_n_accum: DevicePointer<i8>,
@@ -94,11 +91,11 @@ pub struct FEEBeamCUDA {
     /// `num_unique_tiles`, `num_unique_freqs`, `num_directions`, in that order.
     /// If this is `None`, then no normalisation is done (a null pointer is
     /// given to the CUDA code).
-    pub(super) d_norm_jones: Option<DevicePointer<CudaFloat>>,
+    pub(super) d_norm_jones: Option<DevicePointer<GpuFloat>>,
 }
 
-impl FEEBeamCUDA {
-    /// Prepare a CUDA-capable device for beam-response computations given the
+impl FEEBeamGpu {
+    /// Prepare a GPU-capable device for beam-response computations given the
     /// frequencies, delays and amps to be used. The resulting object takes
     /// directions and computes the beam responses on the device.
     ///
@@ -112,14 +109,14 @@ impl FEEBeamCUDA {
     /// redundant calculations are done.
     ///
     /// This function is intentionally kept private. Use
-    /// [`FEEBeam::cuda_prepare`] to create a `FEEBeamCUDA`.
+    /// [`FEEBeam::gpu_prepare`] to create a `FEEBeamGpu`.
     pub(super) unsafe fn new(
         fee_beam: &FEEBeam,
         freqs_hz: &[u32],
         delays_array: ArrayView2<u32>,
         amps_array: ArrayView2<f64>,
         norm_to_zenith: bool,
-    ) -> Result<FEEBeamCUDA, FEEBeamError> {
+    ) -> Result<FEEBeamGpu, FEEBeamError> {
         if delays_array.len_of(Axis(1)) != 16 {
             return Err(FEEBeamError::IncorrectDelaysArrayColLength {
                 rows: delays_array.len_of(Axis(0)),
@@ -205,7 +202,7 @@ impl FEEBeamCUDA {
             }
         }
 
-        // Now populate the CUDA-flavoured dipole coefficients. Start by
+        // Now populate the GPU-flavoured dipole coefficients. Start by
         // determining the lengths of the following vectors (saves a lot of
         // re-allocs) as well as the largest `n_max` (We don't need information
         // on x or y n_max, only the biggest one across all coefficients).
@@ -261,12 +258,12 @@ impl FEEBeamCUDA {
             x_q1_accum.extend(
                 coeffs.x.q1_accum[..current_x_len]
                     .iter()
-                    .flat_map(|c| [c.re as CudaFloat, c.im as CudaFloat]),
+                    .flat_map(|c| [c.re as GpuFloat, c.im as GpuFloat]),
             );
             x_q2_accum.extend(
                 coeffs.x.q2_accum[..current_x_len]
                     .iter()
-                    .flat_map(|c| [c.re as CudaFloat, c.im as CudaFloat]),
+                    .flat_map(|c| [c.re as GpuFloat, c.im as GpuFloat]),
             );
             x_m_accum.extend(&coeffs.x.m_accum[..current_x_len]);
             x_n_accum.extend(&coeffs.x.n_accum[..current_x_len]);
@@ -282,12 +279,12 @@ impl FEEBeamCUDA {
             y_q1_accum.extend(
                 coeffs.y.q1_accum[..current_y_len]
                     .iter()
-                    .flat_map(|c| [c.re as CudaFloat, c.im as CudaFloat]),
+                    .flat_map(|c| [c.re as GpuFloat, c.im as GpuFloat]),
             );
             y_q2_accum.extend(
                 coeffs.y.q2_accum[..current_y_len]
                     .iter()
-                    .flat_map(|c| [c.re as CudaFloat, c.im as CudaFloat]),
+                    .flat_map(|c| [c.re as GpuFloat, c.im as GpuFloat]),
             );
             y_m_accum.extend(&coeffs.y.m_accum[..current_y_len]);
             y_n_accum.extend(&coeffs.y.n_accum[..current_y_len]);
@@ -308,7 +305,7 @@ impl FEEBeamCUDA {
         let d_norm_jones = if norm_jones.is_empty() {
             None
         } else {
-            let norm_jones_unpacked: Vec<CudaFloat> = norm_jones
+            let norm_jones_unpacked: Vec<GpuFloat> = norm_jones
                 .into_iter()
                 .flat_map(|j| {
                     [
@@ -328,7 +325,7 @@ impl FEEBeamCUDA {
 
         let d_tile_map = DevicePointer::copy_to_device(&tile_map)?;
         let d_freq_map = DevicePointer::copy_to_device(&freq_map)?;
-        Ok(FEEBeamCUDA {
+        Ok(FEEBeamGpu {
             x_q1_accum: DevicePointer::copy_to_device(&x_q1_accum)?,
             x_q2_accum: DevicePointer::copy_to_device(&x_q2_accum)?,
             x_m_accum: DevicePointer::copy_to_device(&x_m_accum)?,
@@ -379,27 +376,27 @@ impl FEEBeamCUDA {
         azels: &[AzEl],
         array_latitude_rad: Option<f64>,
         iau_reorder: bool,
-    ) -> Result<DevicePointer<Jones<CudaFloat>>, FEEBeamError> {
+    ) -> Result<DevicePointer<Jones<GpuFloat>>, FEEBeamError> {
         unsafe {
             // Allocate a buffer on the device for results.
             let d_results = DevicePointer::malloc(
                 self.num_unique_tiles as usize
                     * self.num_unique_freqs as usize
                     * azels.len()
-                    * std::mem::size_of::<Jones<CudaFloat>>(),
+                    * std::mem::size_of::<Jones<GpuFloat>>(),
             )?;
 
             // Also copy the directions to the device.
-            let (azs, zas): (Vec<CudaFloat>, Vec<CudaFloat>) = azels
+            let (azs, zas): (Vec<GpuFloat>, Vec<GpuFloat>) = azels
                 .iter()
-                .map(|&azel| (azel.az as CudaFloat, azel.za() as CudaFloat))
+                .map(|&azel| (azel.az as GpuFloat, azel.za() as GpuFloat))
                 .unzip();
             let d_azs = DevicePointer::copy_to_device(&azs)?;
             let d_zas = DevicePointer::copy_to_device(&zas)?;
 
             // Allocate the latitude if we have to.
             let d_latitude_rad = array_latitude_rad
-                .map(|f| DevicePointer::copy_to_device(&[f as CudaFloat]))
+                .map(|f| DevicePointer::copy_to_device(&[f as GpuFloat]))
                 .transpose()?;
 
             self.calc_jones_device_pair_inner(
@@ -418,18 +415,18 @@ impl FEEBeamCUDA {
     /// and return a pointer to them.
     pub fn calc_jones_device_pair(
         &self,
-        az_rad: &[CudaFloat],
-        za_rad: &[CudaFloat],
+        az_rad: &[GpuFloat],
+        za_rad: &[GpuFloat],
         array_latitude_rad: Option<f64>,
         iau_reorder: bool,
-    ) -> Result<DevicePointer<Jones<CudaFloat>>, FEEBeamError> {
+    ) -> Result<DevicePointer<Jones<GpuFloat>>, FEEBeamError> {
         unsafe {
             // Allocate a buffer on the device for results.
             let d_results = DevicePointer::malloc(
                 self.num_unique_tiles as usize
                     * self.num_unique_freqs as usize
                     * az_rad.len()
-                    * std::mem::size_of::<Jones<CudaFloat>>(),
+                    * std::mem::size_of::<Jones<GpuFloat>>(),
             )?;
 
             // Also copy the directions to the device.
@@ -438,7 +435,7 @@ impl FEEBeamCUDA {
 
             // Allocate the latitude if we have to.
             let d_latitude_rad = array_latitude_rad
-                .map(|f| DevicePointer::copy_to_device(&[f as CudaFloat]))
+                .map(|f| DevicePointer::copy_to_device(&[f as GpuFloat]))
                 .transpose()?;
 
             self.calc_jones_device_pair_inner(
@@ -453,12 +450,11 @@ impl FEEBeamCUDA {
         }
     }
 
-    /// Given directions, calculate beam-response Jones matrices into
-    /// the supplied pre-allocated device pointer. This buffer should
-    /// have a shape of (`num_unique_tiles`, `num_unique_freqs`,
-    /// `az_rad_length`). The first two dimensions can be
-    /// accessed with [`FEEBeamCUDA::get_num_unique_tiles`] and
-    /// [`FEEBeamCUDA::get_num_unique_freqs`]. `d_array_latitude_rad` is
+    /// Given directions, calculate beam-response Jones matrices into the
+    /// supplied pre-allocated device pointer. This buffer should have a shape
+    /// of (`num_unique_tiles`, `num_unique_freqs`, `az_rad_length`). The first
+    /// two dimensions can be accessed with [`FEEBeamGpu::get_num_unique_tiles`]
+    /// and [`FEEBeamGpu::get_num_unique_freqs`]. `d_array_latitude_rad` is
     /// populated with the array latitude, if the caller wants the parallactic-
     /// angle correction to be applied. If the pointer is null, then no
     /// correction is applied.
@@ -469,10 +465,10 @@ impl FEEBeamCUDA {
     /// undefined behaviour looms.
     pub unsafe fn calc_jones_device_pair_inner(
         &self,
-        d_az_rad: *const CudaFloat,
-        d_za_rad: *const CudaFloat,
+        d_az_rad: *const GpuFloat,
+        d_za_rad: *const GpuFloat,
         num_directions: i32,
-        d_array_latitude_rad: *const CudaFloat,
+        d_array_latitude_rad: *const GpuFloat,
         iau_reorder: bool,
         d_results: *mut std::ffi::c_void,
     ) -> Result<(), FEEBeamError> {
@@ -481,9 +477,9 @@ impl FEEBeamCUDA {
             return Ok(());
         }
 
-        // The return value is a pointer to a CUDA error string. If it's null
+        // The return value is a pointer to a CUDA/HIP error string. If it's null
         // then everything is fine.
-        let error_message_ptr = cuda_calc_jones(
+        let error_message_ptr = gpu_calc_jones(
             d_az_rad,
             d_za_rad,
             num_directions,
@@ -500,12 +496,11 @@ impl FEEBeamCUDA {
         if error_message_ptr.is_null() {
             Ok(())
         } else {
-            // Get the CUDA error message associated with the enum variant.
             let error_message = CStr::from_ptr(error_message_ptr)
                 .to_str()
-                .unwrap_or("<cannot read CUDA error string>");
-            let our_error_str = format!("fee.h:cuda_calc_jones failed with: {error_message}");
-            Err(FEEBeamError::Cuda(CudaError::Kernel {
+                .unwrap_or("<cannot read GPU error string>");
+            let our_error_str = format!("fee.h:gpu_calc_jones failed with: {error_message}");
+            Err(FEEBeamError::Gpu(GpuError::Kernel {
                 msg: our_error_str.into(),
                 file: file!(),
                 line: line!(),
@@ -517,7 +512,7 @@ impl FEEBeamCUDA {
     /// copy them to the host, and free the device memory. The returned array is
     /// "expanded"; tile and frequency de-duplication is undone to give an array
     /// with the same number of tiles and frequencies as was specified when this
-    /// [`FEEBeamCUDA`] was created.
+    /// [`FEEBeamGpu`] was created.
     ///
     /// Note that this function needs to allocate two vectors for azimuths and
     /// zenith angles from the supplied `azels`.
@@ -526,15 +521,15 @@ impl FEEBeamCUDA {
         azels: &[AzEl],
         array_latitude_rad: Option<f64>,
         iau_reorder: bool,
-    ) -> Result<Array3<Jones<CudaFloat>>, FEEBeamError> {
+    ) -> Result<Array3<Jones<GpuFloat>>, FEEBeamError> {
         let mut results = Array3::from_elem(
             (self.tile_map.len(), self.freq_map.len(), azels.len()),
             Jones::default(),
         );
 
-        let (azs, zas): (Vec<CudaFloat>, Vec<CudaFloat>) = azels
+        let (azs, zas): (Vec<GpuFloat>, Vec<GpuFloat>) = azels
             .iter()
-            .map(|&azel| (azel.az as CudaFloat, azel.za() as CudaFloat))
+            .map(|&azel| (azel.az as GpuFloat, azel.za() as GpuFloat))
             .unzip();
         self.calc_jones_pair_inner(
             &azs,
@@ -550,14 +545,14 @@ impl FEEBeamCUDA {
     /// copy them to the host, and free the device memory. The returned array is
     /// "expanded"; tile and frequency de-duplication is undone to give an array
     /// with the same number of tiles and frequencies as was specified when this
-    /// [`FEEBeamCUDA`] was created.
+    /// [`FEEBeamGpu`] was created.
     pub fn calc_jones_pair(
         &self,
-        az_rad: &[CudaFloat],
-        za_rad: &[CudaFloat],
+        az_rad: &[GpuFloat],
+        za_rad: &[GpuFloat],
         array_latitude_rad: Option<f64>,
         iau_reorder: bool,
-    ) -> Result<Array3<Jones<CudaFloat>>, FEEBeamError> {
+    ) -> Result<Array3<Jones<GpuFloat>>, FEEBeamError> {
         let mut results = Array3::from_elem(
             (self.tile_map.len(), self.freq_map.len(), az_rad.len()),
             Jones::default(),
@@ -575,21 +570,21 @@ impl FEEBeamCUDA {
 
     /// Given directions, calculate beam-response Jones matrices on the device,
     /// copy them to the host, and free the device memory. This function is the
-    /// same as [`FEEBeamCUDA::calc_jones_pair`], but the results are stored in
+    /// same as [`FEEBeamGpu::calc_jones_pair`], but the results are stored in
     /// a pre-allocated array. This array should have a shape of
     /// (`total_num_tiles`, `total_num_freqs`, `az_rad_length`). The first two
-    /// dimensions can be accessed with [`FEEBeamCUDA::get_total_num_tiles`] and
-    /// [`FEEBeamCUDA::get_total_num_freqs`].
+    /// dimensions can be accessed with `FEEBeamGpu::get_total_num_tiles` and
+    /// `FEEBeamGpu::get_total_num_freqs`.
     pub fn calc_jones_pair_inner(
         &self,
-        az_rad: &[CudaFloat],
-        za_rad: &[CudaFloat],
+        az_rad: &[GpuFloat],
+        za_rad: &[GpuFloat],
         array_latitude_rad: Option<f64>,
         iau_reorder: bool,
-        mut results: ArrayViewMut3<Jones<CudaFloat>>,
+        mut results: ArrayViewMut3<Jones<GpuFloat>>,
     ) -> Result<(), FEEBeamError> {
         // Allocate an array matching the deduplicated device memory.
-        let mut dedup_results: Array3<Jones<CudaFloat>> = Array3::from_elem(
+        let mut dedup_results: Array3<Jones<GpuFloat>> = Array3::from_elem(
             (
                 self.num_unique_tiles as usize,
                 self.num_unique_freqs as usize,
@@ -623,7 +618,7 @@ impl FEEBeamCUDA {
         Ok(())
     }
 
-    /// Convenience function to get the `FEECoeffs` C struct that the CUDA code
+    /// Convenience function to get the `FEECoeffs` C struct that the GPU code
     /// wants.
     fn get_fee_coeffs(&self) -> FEECoeffs {
         FEECoeffs {
@@ -647,38 +642,38 @@ impl FEEBeamCUDA {
         }
     }
 
-    /// Get the number of tiles that this [`FEEBeamCUDA`] applies to.
+    /// Get the number of tiles that this [`FEEBeamGpu`] applies to.
     pub fn get_total_num_tiles(&self) -> usize {
         self.tile_map.len()
     }
 
-    /// Get the number of frequencies that this [`FEEBeamCUDA`] applies to.
+    /// Get the number of frequencies that this [`FEEBeamGpu`] applies to.
     pub fn get_total_num_freqs(&self) -> usize {
         self.freq_map.len()
     }
 
     /// Get a pointer to the device tile map associated with this
-    /// [`FEEBeamCUDA`]. This is necessary to access de-duplicated beam Jones
+    /// [`FEEBeamGpu`]. This is necessary to access de-duplicated beam Jones
     /// matrices on the device.
     pub fn get_tile_map(&self) -> *const i32 {
         self.d_tile_map.get()
     }
 
     /// Get a pointer to the device freq map associated with this
-    /// [`FEEBeamCUDA`]. This is necessary to access de-duplicated beam Jones
+    /// [`FEEBeamGpu`]. This is necessary to access de-duplicated beam Jones
     /// matrices on the device.
     pub fn get_freq_map(&self) -> *const i32 {
         self.d_freq_map.get()
     }
 
     /// Get the number of de-duplicated tiles associated with this
-    /// [`FEEBeamCUDA`].
+    /// [`FEEBeamGpu`].
     pub fn get_num_unique_tiles(&self) -> i32 {
         self.num_unique_tiles
     }
 
     /// Get the number of de-duplicated frequencies associated with this
-    /// [`FEEBeamCUDA`].
+    /// [`FEEBeamGpu`].
     pub fn get_num_unique_freqs(&self) -> i32 {
         self.num_unique_freqs
     }

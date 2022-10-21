@@ -70,7 +70,7 @@ pub enum FEEBeamError {
     #[error("HDF5 error: {0}")]
     Hdf5Error(#[from] hdf5::Error),
 
-    #[cfg(feature = "cuda")]
+    #[cfg(any(feature = "cuda", feature = "hip"))]
     #[error(transparent)]
-    Cuda(#[from] crate::cuda::CudaError),
+    Gpu(#[from] crate::gpu::GpuError),
 }

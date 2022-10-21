@@ -5,7 +5,8 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 # Build with something like:
-# maturin develop --release -b pyo3 --cargo-extra-args="--features=python,all-static,cuda-single" --strip
+# maturin develop --release -b pyo3 --features=python,cuda,gpu-single --strip
+# maturin develop --release -b pyo3 --features=python,hip,gpu-single --strip
 
 import sys
 import time
@@ -45,7 +46,7 @@ iau_order = False
 
 # Pass the values to hyperbeam and get a numpy array back.
 start_time = time.time()
-jones = beam.calc_jones_cuda(
+jones = beam.calc_jones_gpu(
     az, za, freq, delays, amps, norm_to_zenith, array_latitude_rad, iau_order)
 duration = time.time() - start_time
 print("Time to calculate {} directions: {:.3}s".format(n, duration))

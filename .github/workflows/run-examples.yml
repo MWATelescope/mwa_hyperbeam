@@ -105,21 +105,21 @@ jobs:
 
           # Examples may fail because there's no GPU
           cargo run --features=cuda --example fee_cuda 10
-          cargo run --features=cuda-single --example fee_cuda 10
+          cargo run --features=cuda,gpu-single --example fee_cuda 10
 
           cargo build --release --features=cuda
-          gcc -O3 examples/fee_cuda.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          gcc -O3 examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5
           nvcc -O3 examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5
 
-          cargo build --release --features=cuda-single
-          gcc -O3 -D SINGLE examples/fee_cuda.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          cargo build --release --features=cuda,gpu-single
+          gcc -O3 -D SINGLE examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5
           nvcc -O3 -D SINGLE examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5
 
           maturin develop -b pyo3 --features=python,cuda
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_cuda.py mwa_full_embedded_element_pattern.h5
-          maturin develop -b pyo3 --features=python,cuda-single
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_cuda.py mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5
+          maturin develop -b pyo3 --features=python,cuda,gpu-single
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5

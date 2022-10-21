@@ -11,7 +11,7 @@
 // # Double precision
 // cargo build --release --features=cuda
 // # or single precision
-// cargo build --release --features=cuda-single
+// cargo build --release --features=cuda,gpu-single
 //
 // Note the precision you're using; if it's single then supply "-D SINGLE"
 // below. Otherwise, no flag is needed.
@@ -156,8 +156,8 @@ int main(int argc, char *argv[]) {
     int iau_order = 1;
 
     // Now get a new CUDA FEE beam object.
-    FEEBeamCUDA *cuda_beam;
-    if (new_cuda_fee_beam(beam, freqs_hz, delays, dip_amps, num_freqs, num_tiles, num_amps, norm_to_zenith, &cuda_beam))
+    FEEBeamGpu *gpu_beam;
+    if (new_gpu_fee_beam(beam, freqs_hz, delays, dip_amps, num_freqs, num_tiles, num_amps, norm_to_zenith, &gpu_beam))
         handle_hyperbeam_error(__FILE__, __LINE__, "new_cuda_fee_beam");
 
     // Set up the directions to get the beam responses.
@@ -178,20 +178,20 @@ int main(int argc, char *argv[]) {
     // We need the number of unique tiles and unique frequencies. hyperbeam
     // de-duplicates tiles and frequencies to go faster. Cast the returned ints
     // into size_t just in case we're hitting big numbers.
-    size_t num_unique_tiles = (size_t)get_num_unique_tiles(cuda_beam);
-    size_t num_unique_fee_freqs = (size_t)get_num_unique_fee_freqs(cuda_beam);
+    size_t num_unique_tiles = (size_t)get_num_unique_tiles(gpu_beam);
+    size_t num_unique_fee_freqs = (size_t)get_num_unique_fee_freqs(gpu_beam);
     cudaMalloc(&d_jones, num_unique_tiles * num_unique_fee_freqs * num_directions * sizeof(JONES));
     // hyperbeam expects a pointer to our FLOAT macro. Casting the pointer works
     // fine.
-    if (calc_jones_cuda_device(cuda_beam, num_directions, az, za, &latitude_rad, iau_order, (FLOAT *)d_jones))
-        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_cuda_device");
+    if (calc_jones_gpu_device(gpu_beam, num_directions, az, za, &latitude_rad, iau_order, (FLOAT *)d_jones))
+        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_gpu_device");
 
     // The beam responses are now on the device. Let's launch our own kernel and
     // interface with the values. This kernel prints messages if the values are
     // not what was expected. We need to have a couple of bits of metadata to
     // interface with the beam responses.
-    const int *d_tile_map = get_tile_map(cuda_beam);
-    const int *d_freq_map = get_freq_map(cuda_beam);
+    const int *d_tile_map = get_tile_map(gpu_beam);
+    const int *d_freq_map = get_freq_map(gpu_beam);
 
     dim3 gridDim, blockDim;
     blockDim.x = 128;
@@ -223,7 +223,7 @@ int main(int argc, char *argv[]) {
     // Free the device memory.
     cudaFree(d_jones);
     // Free the beam objects - we must use special functions to do this.
-    free_cuda_fee_beam(cuda_beam);
+    free_gpu_fee_beam(gpu_beam);
     free_fee_beam(beam);
 
     printf("If there aren't any messages above, then all worked as expected.\n");

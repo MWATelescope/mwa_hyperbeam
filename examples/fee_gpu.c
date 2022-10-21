@@ -2,25 +2,28 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-// Get beam responses using CUDA. This is mostly useful when you want to get
+// Get beam responses using a GPU. This is mostly useful when you want to get
 // Jones matrices for different tile configurations (e.g. different delays, dead
 // dipoles) toward a huge number of directions.
 //
-// hyperbeam lets you run the CUDA code at single- or double-precision. The
+// hyperbeam lets you run the GPU code at single- or double-precision. The
 // reason is that desktop GPUs have poor double-precision performance.
 //
 // Compile with something like:
-// # Double precision
+// # Double precision with CUDA
 // cargo build --release --features=cuda
+// # Double precision with HIP
+// cargo build --release --features=hip
 // # or single precision
-// cargo build --release --features=cuda-single
+// cargo build --release --features=cuda,gpu-single
+// cargo build --release --features=hip,gpu-single
 //
 // Note the precision you're using; if it's single then supply "-D SINGLE"
 // below. Otherwise, no flag is needed.
 //
 // Compile and run this file with something like:
-// gcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./fee_cuda.c -o fee_cuda
-// LD_LIBRARY_PATH=../target/release ./fee_cuda ../mwa_full_embedded_element_pattern.h5
+// gcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./fee_hip.c -o fee_hip
+// LD_LIBRARY_PATH=../target/release ./fee_hip ../mwa_full_embedded_element_pattern.h5
 
 #include <complex.h>
 #include <math.h>
@@ -88,10 +91,10 @@ int main(int argc, char *argv[]) {
     // Should the beam-response Jones matrix be in the IAU polarisation order?
     int iau_order = 1;
 
-    // Now get a new CUDA FEE beam object.
-    FEEBeamCUDA *cuda_beam;
-    if (new_cuda_fee_beam(beam, freqs_hz, delays, dip_amps, num_freqs, num_tiles, num_amps, norm_to_zenith, &cuda_beam))
-        handle_hyperbeam_error(__FILE__, __LINE__, "new_cuda_fee_beam");
+    // Now get a new GPU FEE beam object.
+    FEEBeamGpu *gpu_beam;
+    if (new_gpu_fee_beam(beam, freqs_hz, delays, dip_amps, num_freqs, num_tiles, num_amps, norm_to_zenith, &gpu_beam))
+        handle_hyperbeam_error(__FILE__, __LINE__, "new_gpu_fee_beam");
 
     // Set up the directions to get the beam responses.
     int num_azzas = 1000000;
@@ -107,13 +110,13 @@ int main(int argc, char *argv[]) {
     double latitude_rad = -0.4660608448386394;
 
     // Allocate a buffer for the results.
-    size_t num_unique_tiles = (size_t)get_num_unique_tiles(cuda_beam);
-    size_t num_unique_fee_freqs = (size_t)get_num_unique_fee_freqs(cuda_beam);
+    size_t num_unique_tiles = (size_t)get_num_unique_tiles(gpu_beam);
+    size_t num_unique_fee_freqs = (size_t)get_num_unique_fee_freqs(gpu_beam);
     complex FLOAT *jones = malloc(num_unique_tiles * num_unique_fee_freqs * num_azzas * 8 * sizeof(FLOAT));
     // hyperbeam expects a pointer to our FLOAT macro. Casting the pointer works
     // fine.
-    if (calc_jones_cuda(cuda_beam, num_azzas, az, za, &latitude_rad, iau_order, (FLOAT *)jones))
-        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_cuda");
+    if (calc_jones_gpu(gpu_beam, num_azzas, az, za, &latitude_rad, iau_order, (FLOAT *)jones))
+        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_gpu");
 
     printf("The first Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", CREAL(jones[0]), CIMAG(jones[0]));
@@ -124,7 +127,7 @@ int main(int argc, char *argv[]) {
     // Free the heap-allocated Jones matrices.
     free(jones);
     // Free the beam objects - we must use special functions to do this.
-    free_cuda_fee_beam(cuda_beam);
+    free_gpu_fee_beam(gpu_beam);
     free_fee_beam(beam);
 
     return EXIT_SUCCESS;
