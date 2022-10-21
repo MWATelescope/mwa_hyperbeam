@@ -27,7 +27,6 @@ fn test_cuda_calc_jones_no_norm() {
     assert_eq!(cuda_beam.num_unique_freqs, 1);
 
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| {
             (
                 0.45 + i as CudaFloat / 10000.0,
@@ -46,7 +45,6 @@ fn test_cuda_calc_jones_no_norm() {
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -101,7 +99,6 @@ fn test_cuda_calc_jones_w_norm() {
     assert_eq!(cuda_beam.num_unique_freqs, 1);
 
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| {
             (
                 0.45 + i as CudaFloat / 10000.0,
@@ -120,7 +117,6 @@ fn test_cuda_calc_jones_w_norm() {
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -175,7 +171,6 @@ fn test_cuda_calc_jones_w_norm_and_parallactic() {
     assert_eq!(cuda_beam.num_unique_freqs, 1);
 
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| {
             (
                 0.45 + i as CudaFloat / 10000.0,
@@ -194,7 +189,6 @@ fn test_cuda_calc_jones_w_norm_and_parallactic() {
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -249,7 +243,6 @@ fn test_cuda_calc_jones_with_and_without_parallactic() {
     assert_eq!(cuda_beam.num_unique_freqs, 1);
 
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| {
             (
                 0.45 + i as CudaFloat / 10000.0,
@@ -304,7 +297,6 @@ fn test_cuda_calc_jones_deduplication() {
     assert_eq!(cuda_beam.num_unique_freqs, 3);
 
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| {
             (
                 0.45 + i as CudaFloat / 10000.0,
@@ -323,7 +315,6 @@ fn test_cuda_calc_jones_deduplication() {
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -396,7 +387,6 @@ fn test_cuda_calc_jones_deduplication_w_norm() {
     assert_eq!(cuda_beam.num_unique_freqs, 3);
 
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| {
             (
                 0.45 + i as CudaFloat / 10000.0,
@@ -415,7 +405,6 @@ fn test_cuda_calc_jones_deduplication_w_norm() {
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -478,7 +467,6 @@ fn test_cuda_calc_jones_no_amps() {
     assert_eq!(cuda_beam.num_unique_freqs, 7);
 
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| {
             (
                 0.45 + i as CudaFloat / 10000.0,
@@ -497,7 +485,6 @@ fn test_cuda_calc_jones_no_amps() {
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -574,7 +561,6 @@ fn test_cuda_calc_jones_iau_order() {
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let j_not_iau = result.unwrap();
 
-    dbg!(&j_iau, &j_not_iau);
     assert_ne!(j_iau[(0, 0, 0)][0], j_not_iau[(0, 0, 0)][0]);
     assert_ne!(j_iau[(0, 0, 0)][1], j_not_iau[(0, 0, 0)][1]);
     assert_ne!(j_iau[(0, 0, 0)][2], j_not_iau[(0, 0, 0)][2]);

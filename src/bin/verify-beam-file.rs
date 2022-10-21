@@ -20,14 +20,14 @@ fn main() {
 }
 
 fn test_file(beam_file: &str) -> Result<(), InitFEEBeamError> {
-    println!("Testing file '{}'", beam_file);
-    let beam = FEEBeam::new(&beam_file)?;
+    println!("Testing file '{beam_file}'");
+    let beam = FEEBeam::new(beam_file)?;
     // It does not matter what the direction, delays or amps are, the m_accum
     // and n_accum that we're interested in testing depend only on the
     // frequency. (Frequency determined the number of dipole coeffs, which
     // determines which m_accum and n_accum values are used.)
     for &file_freq in beam.get_freqs() {
-        println!("Testing freq {}", file_freq);
+        println!("Testing freq {file_freq}");
         // If this blows up, we know there's a problem...
         beam.calc_jones_pair(
             0.0, 0.0, file_freq, &[0; 16], &[1.0; 16], false, None, false,
@@ -35,6 +35,6 @@ fn test_file(beam_file: &str) -> Result<(), InitFEEBeamError> {
         .unwrap();
     }
 
-    println!("File '{}' is all good!", beam_file);
+    println!("File '{beam_file}' is all good!");
     Ok(())
 }

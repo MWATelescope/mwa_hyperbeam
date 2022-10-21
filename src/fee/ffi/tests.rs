@@ -295,7 +295,6 @@ fn test_calc_jones_cuda_via_ffi() {
     let amps =
         array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| {
             (
                 0.45 + i as CudaFloat / 10000.0,
@@ -351,7 +350,6 @@ fn test_calc_jones_cuda_via_ffi() {
     let mut jones_cpu = Array3::zeros((delays.dim().0, freqs.len(), az.len()));
     // Maybe need to regenerate the directions, depending on the CUDA precision.
     let (az, za): (Vec<_>, Vec<_>) = (0..1025)
-        .into_iter()
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -361,7 +359,7 @@ fn test_calc_jones_cuda_via_ffi() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             unsafe {
-                let cpu_results = (&*beam)
+                let cpu_results = (*beam)
                     .calc_jones_array_pair(
                         &az,
                         &za,

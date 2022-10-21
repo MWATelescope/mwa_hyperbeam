@@ -11,7 +11,7 @@ readme = "README.md"
 description = "Primary beam code for the Murchison Widefield Array (MWA) radio telescope."
 repository = "https://github.com/MWATelescope/mwa_hyperbeam"
 homepage = "https://github.com/MWATelescope/mwa_hyperbeam"
-exclude = [".github/*"]
+exclude = [".github/*", "fee_pols.pdf"]
 
 # Make a rust library, as well as static and C-compatible dynamic libraries
 # available as "libmwa_hyperbeam.a" and "libmwa_hyperbeam.so".
@@ -32,7 +32,7 @@ cuda = ["marlu/cuda", "cc"]
 cuda-single = ["cuda"]
 
 [profile.release]
-lto = true
+lto = "thin"
 codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size reduction optimizations
 
 [dependencies]

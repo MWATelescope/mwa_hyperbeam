@@ -39,9 +39,7 @@ use ndarray::prelude::*;
 use super::{FEEBeam, FEEBeamError};
 use crate::types::CacheKey;
 
-/// A CUDA beam object ready to calculate beam responses. It uses the
-/// information supplied to the [`FEEBeamCUDA::new`] function; frequencies,
-/// dipole gains and delays and whether we're normalising responses.
+/// A CUDA beam object ready to calculate beam responses.
 #[derive(Debug)]
 pub struct FEEBeamCUDA {
     x_q1_accum: DevicePointer<CudaFloat>,
@@ -69,12 +67,10 @@ pub struct FEEBeamCUDA {
     /// The number of unique tile coefficients.
     pub(super) num_coeffs: i32,
 
-    /// The number of tiles used to generate the [`FEECoeffs`]. Also one of the
-    /// indices used to make `(d_)coeff_map`.
+    /// The number of tiles used to generate the [`FEECoeffs`].
     pub(super) num_unique_tiles: i32,
 
-    /// The number of frequencies used to generate [`FEECoeffs`]. Also one of
-    /// the indices used to make `(d_)coeff_map`.
+    /// The number of frequencies used to generate [`FEECoeffs`].
     pub(super) num_unique_freqs: i32,
 
     /// Tile map. This is used to access de-duplicated Jones matrices.
@@ -95,9 +91,10 @@ pub struct FEEBeamCUDA {
     /// equivalent above).
     d_freq_map: DevicePointer<i32>,
 
-    /// Jones matrices for normalising the beam response. This array has the
-    /// same shape as `coeff_map`. If this is `None`, then no normalisation is
-    /// done (a null pointer is given to the CUDA code).
+    /// Jones matrices for normalising the beam response. Has a shape
+    /// `num_unique_tiles`, `num_unique_freqs`, `num_directions`, in that order.
+    /// If this is `None`, then no normalisation is done (a null pointer is
+    /// given to the CUDA code).
     pub(super) d_norm_jones: Option<DevicePointer<CudaFloat>>,
 }
 
@@ -114,6 +111,9 @@ impl FEEBeamCUDA {
     ///
     /// The code will automatically de-duplicate tile configurations so that no
     /// redundant calculations are done.
+    ///
+    /// This function is intentionally kept private. Use
+    /// [`FEEBeam::cuda_prepare`] to create a `FEEBeamCUDA`.
     pub(super) unsafe fn new(
         fee_beam: &FEEBeam,
         freqs_hz: &[u32],
@@ -422,14 +422,15 @@ impl FEEBeamCUDA {
 
     /// Given directions, calculate beam-response Jones matrices into the
     /// supplied pre-allocated device pointer. This buffer should have a shape
-    /// of (`total_num_tiles`, `total_num_freqs`, `az_rad_length`). The first
-    /// two dimensions can be accessed with `FEEBeamCUDA::get_total_num_tiles`
-    /// and `FEEBeamCUDA::get_total_num_freqs`.
+    /// of (`num_unique_tiles`, `num_unique_freqs`, `az_rad_length`). The first
+    /// two dimensions can be accessed with
+    /// [`FEEBeamCUDA::get_num_unique_tiles`] and
+    /// [`FEEBeamCUDA::get_num_unique_freqs`].
     ///
     /// # Safety
     ///
-    /// If `d_results` isn't the right size (described above), then undefined
-    /// behaviour looms.
+    /// If `d_results` is too small (correct size described above), then
+    /// undefined behaviour looms.
     pub unsafe fn calc_jones_device_pair_inner(
         &self,
         az_rad: &[CudaFloat],
@@ -548,8 +549,8 @@ impl FEEBeamCUDA {
     /// same as [`FEEBeamCUDA::calc_jones_pair`], but the results are stored in
     /// a pre-allocated array. This array should have a shape of
     /// (`total_num_tiles`, `total_num_freqs`, `az_rad_length`). The first two
-    /// dimensions can be accessed with `FEEBeamCUDA::get_total_num_tiles` and
-    /// `FEEBeamCUDA::get_total_num_freqs`.
+    /// dimensions can be accessed with [`FEEBeamCUDA::get_total_num_tiles`] and
+    /// [`FEEBeamCUDA::get_total_num_freqs`].
     pub fn calc_jones_pair_inner(
         &self,
         az_rad: &[CudaFloat],
@@ -642,6 +643,12 @@ impl FEEBeamCUDA {
     /// matrices on the device.
     pub fn get_freq_map(&self) -> *const i32 {
         self.d_freq_map.get()
+    }
+
+    /// Get the number of de-duplicated tiles associated with this
+    /// [`FEEBeamCUDA`].
+    pub fn get_num_unique_tiles(&self) -> i32 {
+        self.num_unique_tiles
     }
 
     /// Get the number of de-duplicated frequencies associated with this

@@ -250,7 +250,7 @@ inline __device__ void operator*=(CUCOMPLEX &a, FLOAT b) {
     a.y *= b;
 }
 
-// Convert a (azimuth, elevation) to HADec, assuming the MWA's location.
+// Convert a (azimuth, elevation) to HADec, given a location (latitude).
 //
 // This code is adapted from ERFA. The copyright notice associated with ERFA and
 // the original code is at the bottom of this file.
@@ -275,7 +275,7 @@ inline __device__ HADec azel_to_hadec(FLOAT azimuth_rad, FLOAT elevation_rad, FL
     return hadec;
 }
 
-// Convert a HADec to AzZA, assuming the MWA's location.
+// Convert a HADec to AzZA, given a location (latitude).
 //
 // This code is adapted from ERFA. The copyright notice associated with ERFA and
 // the original code is at the bottom of this file.
@@ -301,7 +301,7 @@ inline __device__ AzZA hadec_to_azza(FLOAT hour_angle_rad, FLOAT dec_rad, FLOAT 
     return azza;
 }
 
-// Get the parallactic angle from a HADec position, assuming the MWA's location.
+// Get the parallactic angle from a HADec position, given a location (latitude).
 //
 // This code is adapted from ERFA. The copyright notice associated with ERFA and
 // the original code is at the bottom of this file.
@@ -443,7 +443,7 @@ inline __device__ int jones_p1sin_device(const int nmax, const FLOAT theta, FLOA
         memcpy(&(Pm_sin_merged[n]), Pm_sin, (n + 1) * sizeof(FLOAT));
 
         ind_start = (n - 1) * (n - 1) + 2 * (n - 1); // #start index to populate
-        ind_stop = n * n + 2 * n;                    //#stop index to populate
+        ind_stop = n * n + 2 * n;                    // #stop index to populate
 
         modified = 0;
         for (i = ind_start; i < ind_stop; i++) {

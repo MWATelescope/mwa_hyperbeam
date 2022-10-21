@@ -71,6 +71,6 @@ pub enum FEEBeamError {
     Hdf5Error(#[from] hdf5::Error),
 
     #[cfg(feature = "cuda")]
-    #[error("{0}")]
+    #[error(transparent)]
     Cuda(#[from] marlu::cuda::CudaError),
 }

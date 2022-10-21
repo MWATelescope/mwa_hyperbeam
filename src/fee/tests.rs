@@ -930,7 +930,7 @@ fn test_error_file_doesnt_exist() {
     match result {
         Err(e) => assert_eq!(
             e.to_string(),
-            format!("Specified beam file '{}' doesn't exist", file)
+            format!("Specified beam file '{file}' doesn't exist")
         ),
         _ => unreachable!(),
     }
@@ -945,7 +945,7 @@ fn test_error_env_file_doesnt_exist() {
     match result {
         Err(e) => assert_eq!(
             e.to_string(),
-            format!("Specified beam file '{}' doesn't exist", file)
+            format!("Specified beam file '{file}' doesn't exist")
         ),
         _ => unreachable!(),
     }

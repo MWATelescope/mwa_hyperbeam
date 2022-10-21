@@ -16,17 +16,17 @@ mod cuda;
 mod tests;
 
 pub use error::{FEEBeamError, InitFEEBeamError};
-use parking_lot::{MappedRwLockReadGuard, RwLockReadGuard};
 use types::*;
 
 #[cfg(feature = "cuda")]
-pub use cuda::*;
+pub use cuda::{CudaFloat, FEEBeamCUDA};
 
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::sync::Mutex;
 
 use marlu::{c64, ndarray, rayon, AzEl, Jones};
 use ndarray::prelude::*;
+use parking_lot::{MappedRwLockReadGuard, RwLockReadGuard};
 use rayon::prelude::*;
 
 use crate::constants::*;
