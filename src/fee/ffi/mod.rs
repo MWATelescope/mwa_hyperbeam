@@ -15,7 +15,7 @@ use std::{
     panic, slice,
 };
 
-use marlu::rayon::iter::Either;
+use rayon::iter::Either;
 
 use super::FEEBeam;
 
@@ -23,7 +23,6 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "cuda")] {
         use ndarray::prelude::*;
         use crate::{cuda::{CudaFloat, DevicePointer}, fee::FEEBeamCUDA};
-        use marlu::ndarray;
     }
 }
 
@@ -684,8 +683,8 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
     let beam = &mut *cuda_fee_beam;
     let az = slice::from_raw_parts(az_rad, num_azza as usize);
     let za = slice::from_raw_parts(za_rad, num_azza as usize);
-    let d_az = ffi_error!(DevicePointer::copy_to_device(&az));
-    let d_za = ffi_error!(DevicePointer::copy_to_device(&za));
+    let d_az = ffi_error!(DevicePointer::copy_to_device(az));
+    let d_za = ffi_error!(DevicePointer::copy_to_device(za));
     let d_array_latitude_rad = ffi_error!(array_latitude_rad
         .as_ref()
         .map(|f| DevicePointer::copy_to_device(&[*f as CudaFloat]))

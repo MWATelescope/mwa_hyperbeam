@@ -42,7 +42,7 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..num_directions {
         let az = 0.9 * PI * i as f64 / num_directions as f64;
         let za = 0.1 + 0.9 * PI / 2.0 * i as f64 / num_directions as f64;
-        azels.push(AzEl::new(az, FRAC_PI_2 - za));
+        azels.push(AzEl::from_radians(az, FRAC_PI_2 - za));
     }
     let freq_hz = 51200000;
     // Delays and amps correspond to dipoles in the "M&C order". See

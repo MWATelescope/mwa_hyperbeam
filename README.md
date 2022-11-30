@@ -73,7 +73,7 @@ other words, most languages. See Rust, C and Python examples of usage in the
         elements; if 16 are given, then these map 1:1 with dipoles, otherwise
         the first 16 are for X dipole elements, and the next 16 are for Y.
 
-    >>> In [4]: print(beam.calc_jones(0, 0.7, 167e6, [0]*16, [1]*16, True, -0.4660608448386394, True))
+    >>> print(beam.calc_jones(0, 0.7, 167e6, [0]*16, [1]*16, True, -0.4660608448386394, True))
     [-1.51506097e-01-4.35034884e-02j -9.76099405e-06-1.21699926e-05j
       1.73003520e-05-1.53580286e-05j -2.23184781e-01-4.51051073e-02j]
 
@@ -107,10 +107,10 @@ their respective licenses are also distributed.
 
   `https://www.rust-lang.org/tools/install`
 
-  The Rust compiler must be at least version 1.56.0:
+  The Rust compiler must be at least version 1.64.0:
   ```bash
   $ rustc -V
-  rustc 1.57.0 (f1edd0429 2021-11-29)
+  rustc 1.64.0 (a55dd71d5 2022-09-19)
   ```
 
 - [hdf5](https://www.hdfgroup.org/hdf5)
@@ -119,14 +119,6 @@ their respective licenses are also distributed.
   - Ubuntu: `libhdf5-dev`
   - Arch: `hdf5`
   - The C library dir can be specified manually with `HDF5_DIR`
-    - If this is not specified, `pkg-config` is used to find the library.
-
-- [ERFA](https://github.com/liberfa/erfa)
-  - Optional; use the `erfa-static` or `all-static` features.
-    - Requires a C compiler and `autoconf`.
-  - Ubuntu: `liberfa-dev`
-  - Arch: AUR package `erfa`
-  - The C library dir can be specified manually with `ERFA_LIB`
     - If this is not specified, `pkg-config` is used to find the library.
 
 </details>
@@ -168,15 +160,6 @@ This will automatically compile the HDF5 source code and "bake" it into the
 `hyperbeam` products, meaning that HDF5 is not needed as a system dependency.
 `CMake` version 3.10 or higher is needed to build the HDF5 source.
 
-Similarly, `hyperbeam` requires `ERFA`. This can also be compiled automatically
-with a feature flag:
-
-    cargo build --release --features=erfa-static
-
-This can be combined with other features:
-
-    cargo build --release --features=hdf5-static,erfa-static
-
 To compile all C libraries statically:
 
     cargo build --release --features=all-static
@@ -185,12 +168,12 @@ To compile all C libraries statically:
 To install `hyperbeam` to your currently-in-use virtualenv or conda environment,
 you'll need the Python package `maturin` (can get it with `pip`), then run:
 
-    maturin develop --release -b pyo3 --cargo-extra-args="--features python" --strip
+    maturin develop --release -b pyo3 --features=python --strip
 
 If you don't have or don't want to install HDF5 as a system dependency, include
 the `hdf5-static` feature:
 
-    maturin develop --release -b pyo3 --cargo-extra-args="--features python,hdf5-static" --strip
+    maturin develop --release -b pyo3 --features=python,hdf5-static --strip
 
 ## Comparing with other FEE beam codes
 Below is a table comparing other implementations of the FEE beam code. All

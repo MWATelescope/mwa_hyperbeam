@@ -6,7 +6,7 @@
 //! the project's root directory.
 
 use criterion::*;
-use marlu::{constants::MWA_LAT_RAD, ndarray, rayon};
+use marlu::constants::MWA_LAT_RAD;
 use ndarray::prelude::*;
 use rayon::prelude::*;
 

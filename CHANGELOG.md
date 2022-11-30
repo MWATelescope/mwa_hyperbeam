@@ -14,6 +14,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
     its own.
 
 ### Changed
+- The minimum required Rust version is now 1.64.
+- `hyperbeam` no longer depends on `ERFA`.
+  - The [pure-Rust version](https://github.com/cjordan/rust-erfa) is now used
+    instead, and this means that the C library is no longer required.
 - CPU code now runs significantly faster.
 - CUDA code now runs significantly faster.
 - CUDA FFI functions now take `i32` instead of `u32` for the number of

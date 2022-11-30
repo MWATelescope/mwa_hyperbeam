@@ -6,7 +6,7 @@ use std::ffi::CString;
 use std::ptr::{null, null_mut};
 
 use approx::*;
-use marlu::{constants::MWA_LAT_RAD, ndarray};
+use marlu::constants::MWA_LAT_RAD;
 use ndarray::prelude::*;
 use serial_test::serial;
 

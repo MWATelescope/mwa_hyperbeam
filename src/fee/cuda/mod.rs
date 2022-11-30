@@ -27,7 +27,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use marlu::{ndarray, AzEl, Jones};
+use marlu::{AzEl, Jones};
 use ndarray::prelude::*;
 
 use super::{FEEBeam, FEEBeamError};

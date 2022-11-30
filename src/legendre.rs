@@ -175,7 +175,7 @@ mod tests {
 
     use super::*;
     use approx::*;
-    use marlu::ndarray::prelude::*;
+    use ndarray::prelude::*;
 
     #[test]
     fn test_legendre_single() {

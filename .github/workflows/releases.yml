@@ -88,6 +88,12 @@ jobs:
         python-version: "3.10"
         architecture: "x64"
 
+    - name: Add Python 3.11
+      uses: actions/setup-python@v2
+      with:
+        python-version: "3.11"
+        architecture: "x64"
+
     - name: Build hyperbeam
       run: .github/workflows/build.sh
 

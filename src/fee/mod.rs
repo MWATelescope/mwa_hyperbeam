@@ -19,8 +19,6 @@ pub use error::{FEEBeamError, InitFEEBeamError};
 use types::*;
 
 #[cfg(feature = "cuda")]
-pub use crate::cuda::CudaFloat;
-#[cfg(feature = "cuda")]
 pub use cuda::FEEBeamCUDA;
 
 use std::{
@@ -28,7 +26,7 @@ use std::{
     sync::Mutex,
 };
 
-use marlu::{ndarray, rayon, AzEl, Jones};
+use marlu::{AzEl, Jones};
 use ndarray::prelude::*;
 use num_complex::Complex64 as c64;
 use parking_lot::{MappedRwLockReadGuard, RwLockReadGuard};
@@ -883,7 +881,7 @@ fn apply_parallactic_correction(
     jones: &mut Jones<f64>,
 ) {
     // Get the parallactic-angle and find its sine and cosine.
-    let para_angle = AzEl::new(az_rad, FRAC_PI_2 - za_rad)
+    let para_angle = AzEl::from_radians(az_rad, FRAC_PI_2 - za_rad)
         .to_hadec(array_latitude_rad)
         .get_parallactic_angle(array_latitude_rad);
     let (s_rot, c_rot) = para_angle.sin_cos();

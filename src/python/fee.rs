@@ -29,7 +29,6 @@ impl std::convert::From<InitFEEBeamError> for PyErr {
 
 /// A Python class interfacing with the hyperbeam code written in Rust.
 #[pyclass]
-#[pyo3(text_signature = "(hdf5_file)")]
 #[allow(clippy::upper_case_acronyms)]
 struct FEEBeam {
     beam: FEEBeamRust,
@@ -41,6 +40,7 @@ impl FEEBeam {
     /// calculations. If the path to the beam HDF5 file is not given, then the
     /// `MWA_BEAM_FILE` environment variable is used.
     #[new]
+    #[pyo3(text_signature = "(hdf5_file)")]
     fn new(hdf5_file: Option<PyObject>) -> PyResult<Self> {
         let strct = match hdf5_file {
             Some(f) => FEEBeamRust::new(f.to_string())?,

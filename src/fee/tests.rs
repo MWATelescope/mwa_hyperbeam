@@ -725,7 +725,7 @@ fn test_calc_jones_norm() {
 
     // Ensure that FEEBeam::calc_jones is the same as FEEBeam::calc_jones_pair.
     let result = beam.calc_jones(
-        AzEl::new(0.1, FRAC_PI_2 - 0.1),
+        AzEl::from_radians(0.1, FRAC_PI_2 - 0.1),
         150000000,
         &[0; 16],
         &[1.0; 16],
@@ -840,7 +840,7 @@ fn test_calc_jones_array() {
     // Ensure that FEEBeam::calc_jones_array is the same as
     // FEEBeam::calc_jones_array_pair.
     let result = beam.calc_jones_array(
-        &[AzEl::new_degrees(45.0, 80.0)],
+        &[AzEl::from_degrees(45.0, 80.0)],
         51200000,
         &[0; 16],
         &[1.0; 16],

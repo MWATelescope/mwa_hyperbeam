@@ -5,7 +5,8 @@
 //! Tests for CUDA FEE beam code.
 
 use approx::{assert_abs_diff_eq, assert_abs_diff_ne};
-use marlu::{constants::MWA_LAT_RAD, ndarray::prelude::*};
+use marlu::constants::MWA_LAT_RAD;
+use ndarray::prelude::*;
 use serial_test::serial;
 
 use super::*;

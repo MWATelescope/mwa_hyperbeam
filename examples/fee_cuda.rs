@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..num_directions {
         let az = 0.4 + 0.3 * PI * (i / num_directions) as f64;
         let za = 0.3 + 0.4 * FRAC_PI_2 * (i / num_directions) as f64;
-        azels.push(AzEl::new(az, FRAC_PI_2 - za));
+        azels.push(AzEl::from_radians(az, FRAC_PI_2 - za));
     }
 
     // Call hyperbeam CUDA code.
@@ -78,7 +78,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // fun. `beam.calc_jones` does the parallactic correction,
     // `beam.calc_jones_eng` does not. Regenerate the direction at double
     // precision for CPU usage.
-    let azel = AzEl::new(azels[0].az, azels[0].el);
+    let azel = AzEl::from_radians(azels[0].az, azels[0].el);
 
     let jones_cpu = beam.calc_jones(
         azel,
