@@ -19,7 +19,9 @@ pub use error::{FEEBeamError, InitFEEBeamError};
 use types::*;
 
 #[cfg(feature = "cuda")]
-pub use cuda::{CudaFloat, FEEBeamCUDA};
+pub use crate::cuda::CudaFloat;
+#[cfg(feature = "cuda")]
+pub use cuda::FEEBeamCUDA;
 
 use std::f64::consts::{FRAC_PI_2, TAU};
 use std::sync::Mutex;

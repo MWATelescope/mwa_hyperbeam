@@ -594,3 +594,21 @@ fn test_cuda_calc_jones_pathological() {
     let result = cuda_beam.calc_jones_pair(&azs, &zas, array_latitude_rad, iau_reorder);
     assert!(result.is_ok());
 }
+
+#[test]
+fn test_no_directions_doesnt_fail() {
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let freqs = [150e6 as u32];
+    let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
+    let amps =
+        array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
+    let norm_to_zenith = true;
+    let cuda_beam =
+        unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) }.unwrap();
+
+    let array_latitude_rad = Some(MWA_LAT_RAD);
+    let result = cuda_beam
+        .calc_jones_pair(&[], &[], array_latitude_rad, false)
+        .unwrap();
+    assert!(result.is_empty());
+}

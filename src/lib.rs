@@ -14,8 +14,13 @@ mod types;
 mod python;
 
 // Re-exports.
-#[cfg(feature = "cuda")]
-/// The float type use in CUDA code. This depends on how `hyperbeam` was
-/// compiled (used cargo feature "cuda-single" or "cuda").
-pub use fee::CudaFloat;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "cuda")] {
+        mod cuda;
+        /// The float type use in CUDA code. This depends on how `hyperbeam` was
+        /// compiled (used cargo feature "cuda-single" or "cuda").
+        pub use cuda::{CudaFloat, CudaComplex};
+    }
+}
+
 pub use marlu::{AzEl, Jones}; // So that callers can have a different version of Marlu.

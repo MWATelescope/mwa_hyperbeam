@@ -72,5 +72,5 @@ pub enum FEEBeamError {
 
     #[cfg(feature = "cuda")]
     #[error(transparent)]
-    Cuda(#[from] marlu::cuda::CudaError),
+    Cuda(#[from] crate::cuda::CudaError),
 }

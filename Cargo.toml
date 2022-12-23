@@ -22,13 +22,14 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 default = []
 hdf5-static = ["hdf5-sys"]
 erfa-static = ["marlu/erfa-static"]
-cuda-static = ["marlu/cuda-static"]
+cuda-static = []
 all-static = ["hdf5-static", "erfa-static", "cuda-static"]
 python = ["pyo3", "numpy"]
 
 # Provide beam functionality with CUDA, double precision.
-cuda = ["marlu/cuda", "cc"]
-# Opt-out of double precision, use only single precision.
+cuda = ["cuda-runtime-sys", "cc"]
+# Opt-out of GPU double precision, use only single precision (faster on desktop
+# GPUs).
 cuda-single = ["cuda"]
 
 [profile.release]
@@ -44,6 +45,8 @@ parking_lot = "0.12.0"
 thiserror = "1.0.2"
 
 hdf5-sys = { version = "0.8.0", features = ["static", "threadsafe"], optional = true }
+
+cuda-runtime-sys = { version = "0.3.0-alpha.1", optional = true }
 
 pyo3 = { version = "0.16.0", features = ["extension-module"], optional = true }
 numpy = { version = "0.16.0", optional = true }

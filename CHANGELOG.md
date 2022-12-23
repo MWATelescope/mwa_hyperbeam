@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+### Added
+- FFI function `calc_jones_cuda_device_inner`
+  - This is the same as `calc_jones_cuda_device`, but allows the caller to pass
+    in their own device buffers, so that `hyperbeam` doesn't need to allocate
+    its own.
+
+### Changed
+- CUDA code now runs significantly faster.
+- CUDA FFI functions now take `i32` instead of `u32` for the number of
+  directions.
+  - This isn't a downgrade; the internal code always used an `i32`, so it was
+    dishonest for the code to look like it accepted more than `i32::MAX`
+    directions.
+
+### Fixed
+- Calling CUDA FEE functions without any directions no longer causes a CUDA
+  error.
+
 ## [0.5.1] - 2023-02-19
 ### Fixed
 - A seemingly-rarely-occurring bug in CUDA FEE code.

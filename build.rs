@@ -4,6 +4,24 @@
 
 use std::env;
 
+// This code is adapted from pkg-config-rs
+// (https://github.com/rust-lang/pkg-config-rs).
+#[cfg(feature = "cuda")]
+#[allow(clippy::if_same_then_else, clippy::needless_bool)]
+fn infer_static(name: &str) -> bool {
+    if std::env::var(format!("{}_STATIC", name.to_uppercase())).is_ok() {
+        true
+    } else if std::env::var(format!("{}_DYNAMIC", name.to_uppercase())).is_ok() {
+        false
+    } else if std::env::var("PKG_CONFIG_ALL_STATIC").is_ok() {
+        true
+    } else if std::env::var("PKG_CONFIG_ALL_DYNAMIC").is_ok() {
+        false
+    } else {
+        false
+    }
+}
+
 #[cfg(feature = "cuda")]
 fn parse_and_validate_compute(c: &str, var: &str) -> Vec<u16> {
     let mut out = vec![];
@@ -19,6 +37,21 @@ fn parse_and_validate_compute(c: &str, var: &str) -> Vec<u16> {
         }
     }
     out
+}
+
+/// Search for any C/C++/CUDA files and have rerun-if-changed on all of them.
+#[cfg(feature = "cuda")]
+fn rerun_if_changed_c_cpp_cuda_files<P: AsRef<std::path::Path>>(dir: P) {
+    for path in std::fs::read_dir(dir).expect("dir exists") {
+        let path = path.expect("is readable").path();
+        if path.is_dir() {
+            rerun_if_changed_c_cpp_cuda_files(&path)
+        }
+
+        if let Some("cu" | "h") = path.extension().and_then(|os_str| os_str.to_str()) {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
 }
 
 fn main() {
@@ -52,17 +85,27 @@ fn main() {
             }
         };
 
-        // TODO: Search for any C/C++/CUDA files and have rerun-if-changed on
-        // all of them.
-        println!("cargo:rerun-if-changed=src/fee/cuda/fee.h");
-        println!("cargo:rerun-if-changed=src/fee/cuda/fee.cu");
+        rerun_if_changed_c_cpp_cuda_files("src/");
 
         let mut cuda_target = cc::Build::new();
         cuda_target
             .cuda(true)
             .cudart("shared") // We handle linking cudart statically
             .include("src/fee/cuda/")
-            .file("src/fee/cuda/fee.cu");
+            .file("src/fee/cuda/fee.cu")
+            .define(
+                // The DEBUG env. variable is set by cargo. If running "cargo
+                // build --release", DEBUG is "false", otherwise "true".
+                // C/C++/CUDA like the compile option "NDEBUG" to be defined
+                // when using assert.h, so if appropriate, define that here. We
+                // also define "DEBUG" so that can be used.
+                match env::var("DEBUG").as_deref() {
+                    Ok("false") => "NDEBUG",
+                    _ => "DEBUG",
+                },
+                None,
+            );
+
         // Loop over each arch and sm
         for arch in arches {
             for &sm in &sms {
@@ -81,6 +124,21 @@ fn main() {
         cuda_target.define("SINGLE", None);
 
         cuda_target.compile("hyperbeam_cu");
+
+        // Link CUDA. If the library path manually specified, search there.
+        if let Ok(lib_dir) = std::env::var("CUDA_LIB") {
+            println!("cargo:rustc-link-search=native={lib_dir}");
+        }
+
+        if infer_static("cuda") {
+            // CUDA ships its static library as cudart_static.a, not cudart.a
+            println!("cargo:rustc-link-lib=static=cudart_static");
+        } else {
+            println!("cargo:rustc-link-lib=cudart");
+        }
+
+        #[cfg(feature = "cuda-static")]
+        println!("cargo:rustc-link-lib=static=cudart_static");
     }
 
     // Generate a C header for hyperbeam and write it to the include
@@ -104,6 +162,7 @@ fn main() {
                             "new_cuda_fee_beam".to_string(),
                             "calc_jones_cuda".to_string(),
                             "calc_jones_cuda_device".to_string(),
+                            "calc_jones_cuda_device_inner".to_string(),
                             "get_tile_map".to_string(),
                             "get_freq_map".to_string(),
                             "get_num_unique_tiles".to_string(),

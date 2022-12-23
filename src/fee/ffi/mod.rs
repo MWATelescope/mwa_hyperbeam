@@ -22,7 +22,7 @@ use super::FEEBeam;
 cfg_if::cfg_if! {
     if #[cfg(feature = "cuda")] {
         use ndarray::prelude::*;
-        use super::cuda::{CudaFloat, FEEBeamCUDA};
+        use crate::{cuda::{CudaFloat, DevicePointer}, fee::FEEBeamCUDA};
         use marlu::ndarray;
     }
 }
@@ -53,6 +53,18 @@ pub extern "C" fn hb_last_error_length() -> c_int {
         Some(ref err) => err.to_string().len() as c_int + 1,
         None => 0,
     })
+}
+
+macro_rules! ffi_error {
+    ($result:expr) => {{
+        match $result {
+            Ok(r) => r,
+            Err(e) => {
+                update_last_error(e.to_string());
+                return 1;
+            }
+        }
+    }};
 }
 
 /// Write the most recent error message into a caller-provided buffer as a UTF-8
@@ -412,7 +424,7 @@ pub unsafe extern "C" fn calc_jones_array(
     let amps_s = slice::from_raw_parts(amps, num_amps as usize);
     let results_s = slice::from_raw_parts_mut(jones.cast(), num_azza as usize);
 
-    match beam.calc_jones_array_pair_inner(
+    ffi_error!(beam.calc_jones_array_pair_inner(
         az,
         za,
         freq_hz,
@@ -422,13 +434,8 @@ pub unsafe extern "C" fn calc_jones_array(
         array_latitude_rad,
         iau_bool,
         results_s,
-    ) {
-        Ok(()) => 0,
-        Err(e) => {
-            update_last_error(e.to_string());
-            1
-        }
-    }
+    ));
+    0
 }
 
 /// Get the available frequencies inside the HDF5 file.
@@ -546,16 +553,9 @@ pub unsafe extern "C" fn new_cuda_fee_beam(
     let delays = ArrayView2::from_shape_ptr((num_tiles as usize, 16), delays);
 
     let beam = &mut *fee_beam;
-    match beam.cuda_prepare(freqs, delays, amps, norm_bool) {
-        Ok(b) => {
-            *cuda_fee_beam = Box::into_raw(Box::new(b));
-            0
-        }
-        Err(e) => {
-            update_last_error(e.to_string());
-            1
-        }
-    }
+    let cuda_beam = ffi_error!(beam.cuda_prepare(freqs, delays, amps, norm_bool));
+    *cuda_fee_beam = Box::into_raw(Box::new(cuda_beam));
+    0
 }
 
 /// Get beam response Jones matrices for the given directions, using CUDA. The
@@ -624,13 +624,8 @@ pub unsafe extern "C" fn calc_jones_cuda(
         jones.cast(),
     );
     let array_latitude_rad = array_latitude_rad.as_ref().copied();
-    match beam.calc_jones_pair_inner(az, za, array_latitude_rad, iau_bool, results) {
-        Ok(()) => 0,
-        Err(e) => {
-            update_last_error(e.to_string());
-            1
-        }
-    }
+    ffi_error!(beam.calc_jones_pair_inner(az, za, array_latitude_rad, iau_bool, results));
+    0
 }
 
 /// Get beam response Jones matrices for the given directions, using CUDA. The
@@ -670,7 +665,7 @@ pub unsafe extern "C" fn calc_jones_cuda(
 #[no_mangle]
 pub unsafe extern "C" fn calc_jones_cuda_device(
     cuda_fee_beam: *mut FEEBeamCUDA,
-    num_azza: u32,
+    num_azza: i32,
     az_rad: *const CudaFloat,
     za_rad: *const CudaFloat,
     array_latitude_rad: *const f64,
@@ -689,14 +684,86 @@ pub unsafe extern "C" fn calc_jones_cuda_device(
     let beam = &mut *cuda_fee_beam;
     let az = slice::from_raw_parts(az_rad, num_azza as usize);
     let za = slice::from_raw_parts(za_rad, num_azza as usize);
-    let array_latitude_rad = array_latitude_rad.as_ref().copied();
-    match beam.calc_jones_device_pair_inner(az, za, array_latitude_rad, iau_bool, d_jones.cast()) {
-        Ok(()) => 0,
-        Err(e) => {
-            update_last_error(e.to_string());
-            1
+    let d_az = ffi_error!(DevicePointer::copy_to_device(&az));
+    let d_za = ffi_error!(DevicePointer::copy_to_device(&za));
+    let d_array_latitude_rad = ffi_error!(array_latitude_rad
+        .as_ref()
+        .map(|f| DevicePointer::copy_to_device(&[*f as CudaFloat]))
+        .transpose());
+    ffi_error!(beam.calc_jones_device_pair_inner(
+        d_az.get(),
+        d_za.get(),
+        num_azza,
+        d_array_latitude_rad
+            .map(|p| p.get())
+            .unwrap_or(std::ptr::null()),
+        iau_bool,
+        d_jones.cast()
+    ));
+    0
+}
+
+/// The same as `calc_jones_cuda_device`, but with the directions already
+/// allocated on the device. As with `d_jones`, the precision of the floats
+/// depends on how `hyperbeam` was compiled.
+///
+/// # Arguments
+///
+/// * `cuda_fee_beam` - A pointer to a `FEEBeamCUDA` struct created with the
+///   `new_cuda_fee_beam` function
+/// * `d_az_rad` - The azimuth directions to get the beam response (units of
+///   radians)
+/// * `d_za_rad` - The zenith angle directions to get the beam response (units
+///   of radians)
+/// * `array_latitude_rad` - A pointer to an array latitude to use for the
+///   parallactic-angle correction. If the pointer is null, no correction is
+///   done.
+/// * `iau_order` - A boolean indicating whether the Jones matrix should be
+///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
+/// * `d_jones` - A pointer to a device buffer with at least `8 *
+///   num_unique_tiles * num_unique_fee_freqs * num_azza * sizeof(FLOAT)` bytes
+///   allocated. `FLOAT` is either `float` or `double`, depending on how
+///   `hyperbeam` was compiled. The Jones matrix beam responses are written
+///   here. This should be set up with the `get_num_unique_tiles` and
+///   `get_num_unique_fee_freqs` functions; see the examples for more help.
+///
+/// # Returns
+///
+/// * An exit code integer. If this is non-zero then an error occurred; the
+///   details can be obtained by (1) getting the length of the error string by
+///   calling `hb_last_error_length` and (2) calling `hb_last_error_message`
+///   with a string buffer with a length at least equal to the error length.
+///
+#[cfg(feature = "cuda")]
+#[no_mangle]
+pub unsafe extern "C" fn calc_jones_cuda_device_inner(
+    cuda_fee_beam: *mut FEEBeamCUDA,
+    num_azza: i32,
+    d_az_rad: *const CudaFloat,
+    d_za_rad: *const CudaFloat,
+    d_array_latitude_rad: *const CudaFloat,
+    iau_order: u8,
+    d_jones: *mut CudaFloat,
+) -> i32 {
+    let iau_bool = match iau_order {
+        0 => false,
+        1 => true,
+        _ => {
+            update_last_error("A value other than 0 or 1 was used for iau_order".to_string());
+            return 1;
         }
-    }
+    };
+
+    let beam = &mut *cuda_fee_beam;
+    ffi_error!(beam.calc_jones_device_pair_inner(
+        d_az_rad,
+        d_za_rad,
+        num_azza,
+        d_array_latitude_rad,
+        iau_bool,
+        d_jones.cast()
+    ));
+    0
 }
 
 /// Get a pointer to the device tile map. This is necessary to access

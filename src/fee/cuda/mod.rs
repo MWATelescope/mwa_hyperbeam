@@ -8,36 +8,33 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-// Include Rust bindings to the CUDA code and set a compile-time variable type
-// (this makes things a lot cleaner than having a #[cfg(...)] on many struct
-// members).
+// Include Rust bindings to the CUDA code, depending on the precision used.
 cfg_if::cfg_if! {
     if #[cfg(feature = "cuda-single")] {
         include!("single.rs");
-        pub type CudaFloat = f32;
     } else {
         include!("double.rs");
-        pub type CudaFloat = f64;
     }
 }
 
 #[cfg(test)]
 mod tests;
 
-use std::collections::hash_map::DefaultHasher;
-use std::convert::TryInto;
-use std::ffi::CStr;
-use std::hash::{Hash, Hasher};
-
-use marlu::{
-    c64,
-    cuda::{CudaError, DevicePointer},
-    ndarray, AzEl, Jones,
+use std::{
+    collections::hash_map::DefaultHasher,
+    convert::TryInto,
+    ffi::CStr,
+    hash::{Hash, Hasher},
 };
+
+use marlu::{ndarray, AzEl, Jones};
 use ndarray::prelude::*;
 
 use super::{FEEBeam, FEEBeamError};
-use crate::types::CacheKey;
+use crate::{
+    cuda::{CudaError, CudaFloat, DevicePointer},
+    types::CacheKey,
+};
 
 /// A CUDA beam object ready to calculate beam responses.
 #[derive(Debug)]
@@ -49,7 +46,6 @@ pub struct FEEBeamCUDA {
     x_n_accum: DevicePointer<i8>,
     x_m_signs: DevicePointer<i8>,
     x_m_abs_m: DevicePointer<i8>,
-    x_n_max: DevicePointer<u8>,
     x_lengths: DevicePointer<i32>,
     x_offsets: DevicePointer<i32>,
 
@@ -60,7 +56,6 @@ pub struct FEEBeamCUDA {
     y_n_accum: DevicePointer<i8>,
     y_m_signs: DevicePointer<i8>,
     y_m_abs_m: DevicePointer<i8>,
-    y_n_max: DevicePointer<u8>,
     y_lengths: DevicePointer<i32>,
     y_offsets: DevicePointer<i32>,
 
@@ -72,6 +67,10 @@ pub struct FEEBeamCUDA {
 
     /// The number of frequencies used to generate [`FEECoeffs`].
     pub(super) num_unique_freqs: i32,
+
+    /// The biggest `n_max` across all sets of coefficients, for both x and y
+    /// dipoles.
+    n_max: u8,
 
     /// Tile map. This is used to access de-duplicated Jones matrices.
     /// Not using this would mean that Jones matrices have to be 1:1 with
@@ -206,38 +205,45 @@ impl FEEBeamCUDA {
             }
         }
 
-        // Now populate the CUDA-flavoured dipole coefficients.
-        let mut x_q1_accum = vec![];
-        let mut x_q2_accum = vec![];
-        let mut x_m_accum = vec![];
-        let mut x_n_accum = vec![];
-        let mut x_m_signs = vec![];
-        let mut x_m_abs_m = vec![];
-        let mut x_n_max = vec![];
-        let mut x_lengths = vec![];
-        let mut x_offsets = vec![];
-        let mut y_q1_accum = vec![];
-        let mut y_q2_accum = vec![];
-        let mut y_m_accum = vec![];
-        let mut y_n_accum = vec![];
-        let mut y_m_signs = vec![];
-        let mut y_m_abs_m = vec![];
-        let mut y_n_max = vec![];
-        let mut y_lengths = vec![];
-        let mut y_offsets = vec![];
-        let mut norm_jones = vec![];
+        // Now populate the CUDA-flavoured dipole coefficients. Start by
+        // determining the lengths of the following vectors (saves a lot of
+        // re-allocs) as well as the largest `n_max` (We don't need information
+        // on x or y n_max, only the biggest one across all coefficients).
+        let (x_len, y_len, n_max) = unique_hashes.iter().fold((0, 0, 0), |acc, (hash, _)| {
+            let coeffs = &fee_beam.coeff_cache.read()[hash];
 
-        // We can't safely pass complex numbers over the FFI boundary, so
-        // collect new vectors of floats and use those pointers instead.
-        let unpack_complex = |v: &[c64]| -> Vec<CudaFloat> {
-            v.iter()
-                .flat_map(|c| [c.re as CudaFloat, c.im as CudaFloat])
-                .collect()
-        };
+            let current_x_len = coeffs.x.q1_accum.len().min(coeffs.x.m_accum.len());
+            let current_y_len = coeffs.y.q1_accum.len().min(coeffs.y.m_accum.len());
+            let current_n_max = coeffs.x.n_max.max(coeffs.y.n_max);
+            (
+                acc.0 + current_x_len,
+                acc.1 + current_y_len,
+                acc.2.max(current_n_max),
+            )
+        });
 
-        let num_coeffs = unique_hashes.len().try_into().unwrap();
-        unique_hashes.into_iter().for_each(|(hash, fee_freq)| {
-            let coeffs = &fee_beam.coeff_cache.read()[&hash];
+        // The "accum" vectors actually hold complex numbers, so their lengths
+        // are doubled.
+        let mut x_q1_accum = Vec::with_capacity(x_len * 2);
+        let mut x_q2_accum = Vec::with_capacity(x_len * 2);
+        let mut x_m_accum = Vec::with_capacity(x_len);
+        let mut x_n_accum = Vec::with_capacity(x_len);
+        let mut x_m_signs = Vec::with_capacity(x_len);
+        let mut x_m_abs_m = Vec::with_capacity(x_len);
+        let mut x_lengths = Vec::with_capacity(x_len);
+        let mut x_offsets = Vec::with_capacity(x_len);
+        let mut y_q1_accum = Vec::with_capacity(y_len * 2);
+        let mut y_q2_accum = Vec::with_capacity(y_len * 2);
+        let mut y_m_accum = Vec::with_capacity(y_len);
+        let mut y_n_accum = Vec::with_capacity(y_len);
+        let mut y_m_signs = Vec::with_capacity(y_len);
+        let mut y_m_abs_m = Vec::with_capacity(y_len);
+        let mut y_lengths = Vec::with_capacity(y_len);
+        let mut y_offsets = Vec::with_capacity(y_len);
+        let mut norm_jones = Vec::with_capacity(unique_hashes.len());
+
+        unique_hashes.iter().for_each(|(hash, fee_freq)| {
+            let coeffs = &fee_beam.coeff_cache.read()[hash];
             let x_offset = x_offsets
                 .last()
                 .and_then(|&o| x_lengths.last().map(|&l| l + o))
@@ -251,56 +257,53 @@ impl FEEBeamCUDA {
             let current_x_len = coeffs.x.q1_accum.len().min(coeffs.x.m_accum.len());
             let current_y_len = coeffs.y.q1_accum.len().min(coeffs.y.m_accum.len());
 
-            x_q1_accum.append(&mut unpack_complex(&coeffs.x.q1_accum[..current_x_len]));
-            x_q2_accum.append(&mut unpack_complex(&coeffs.x.q2_accum[..current_x_len]));
-            x_m_accum.extend_from_slice(&coeffs.x.m_accum[..current_x_len]);
-            x_n_accum.extend_from_slice(&coeffs.x.n_accum[..current_x_len]);
-            x_m_signs.extend_from_slice(&coeffs.x.m_signs[..current_x_len]);
+            // We may need to convert the floats before copying to the device.
+            x_q1_accum.extend(
+                coeffs.x.q1_accum[..current_x_len]
+                    .iter()
+                    .flat_map(|c| [c.re as CudaFloat, c.im as CudaFloat]),
+            );
+            x_q2_accum.extend(
+                coeffs.x.q2_accum[..current_x_len]
+                    .iter()
+                    .flat_map(|c| [c.re as CudaFloat, c.im as CudaFloat]),
+            );
+            x_m_accum.extend(&coeffs.x.m_accum[..current_x_len]);
+            x_n_accum.extend(&coeffs.x.n_accum[..current_x_len]);
+            x_m_signs.extend(&coeffs.x.m_signs[..current_x_len]);
             x_m_abs_m.extend(coeffs.x.m_accum[..current_x_len].iter().map(|i| i.abs()));
-            x_n_max.push(coeffs.x.n_max.try_into().unwrap());
-            x_lengths.push(current_x_len.try_into().unwrap());
+            x_lengths.push(
+                current_x_len
+                    .try_into()
+                    .expect("much smaller than i32::MAX"),
+            );
             x_offsets.push(x_offset);
 
-            y_q1_accum.append(&mut unpack_complex(&coeffs.y.q1_accum[..current_y_len]));
-            y_q2_accum.append(&mut unpack_complex(&coeffs.y.q2_accum[..current_y_len]));
-            y_m_accum.extend_from_slice(&coeffs.y.m_accum[..current_y_len]);
-            y_n_accum.extend_from_slice(&coeffs.y.n_accum[..current_y_len]);
-            y_m_signs.extend_from_slice(&coeffs.y.m_signs[..current_y_len]);
+            y_q1_accum.extend(
+                coeffs.y.q1_accum[..current_y_len]
+                    .iter()
+                    .flat_map(|c| [c.re as CudaFloat, c.im as CudaFloat]),
+            );
+            y_q2_accum.extend(
+                coeffs.y.q2_accum[..current_y_len]
+                    .iter()
+                    .flat_map(|c| [c.re as CudaFloat, c.im as CudaFloat]),
+            );
+            y_m_accum.extend(&coeffs.y.m_accum[..current_y_len]);
+            y_n_accum.extend(&coeffs.y.n_accum[..current_y_len]);
+            y_m_signs.extend(&coeffs.y.m_signs[..current_y_len]);
             y_m_abs_m.extend(coeffs.y.m_accum[..current_y_len].iter().map(|i| i.abs()));
-            y_n_max.push(coeffs.y.n_max.try_into().unwrap());
-            y_lengths.push(current_y_len.try_into().unwrap());
+            y_lengths.push(
+                current_y_len
+                    .try_into()
+                    .expect("much smaller than i32::MAX"),
+            );
             y_offsets.push(y_offset);
 
             if norm_to_zenith {
-                norm_jones.push(*fee_beam.norm_cache.read()[&fee_freq]);
+                norm_jones.push(*fee_beam.norm_cache.read()[fee_freq]);
             }
         });
-
-        let x_q1_accum = DevicePointer::copy_to_device(&x_q1_accum)?;
-        let x_q2_accum = DevicePointer::copy_to_device(&x_q2_accum)?;
-        let x_m_accum = DevicePointer::copy_to_device(&x_m_accum)?;
-        let x_n_accum = DevicePointer::copy_to_device(&x_n_accum)?;
-        let x_m_signs = DevicePointer::copy_to_device(&x_m_signs)?;
-        let x_m_abs_m = DevicePointer::copy_to_device(&x_m_abs_m)?;
-        let x_n_max = DevicePointer::copy_to_device(&x_n_max)?;
-        let x_lengths = DevicePointer::copy_to_device(&x_lengths)?;
-        let x_offsets = DevicePointer::copy_to_device(&x_offsets)?;
-
-        let y_q1_accum = DevicePointer::copy_to_device(&y_q1_accum)?;
-        let y_q2_accum = DevicePointer::copy_to_device(&y_q2_accum)?;
-        let y_m_accum = DevicePointer::copy_to_device(&y_m_accum)?;
-        let y_n_accum = DevicePointer::copy_to_device(&y_n_accum)?;
-        let y_m_signs = DevicePointer::copy_to_device(&y_m_signs)?;
-        let y_m_abs_m = DevicePointer::copy_to_device(&y_m_abs_m)?;
-        let y_n_max = DevicePointer::copy_to_device(&y_n_max)?;
-        let y_lengths = DevicePointer::copy_to_device(&y_lengths)?;
-        let y_offsets = DevicePointer::copy_to_device(&y_offsets)?;
-
-        let num_unique_tiles = unique_tiles.len().try_into().unwrap();
-        let num_unique_freqs = unique_fee_freqs.len().try_into().unwrap();
-
-        let d_tile_map = DevicePointer::copy_to_device(&tile_map)?;
-        let d_freq_map = DevicePointer::copy_to_device(&freq_map)?;
 
         let d_norm_jones = if norm_jones.is_empty() {
             None
@@ -323,30 +326,40 @@ impl FEEBeamCUDA {
             Some(DevicePointer::copy_to_device(&norm_jones_unpacked)?)
         };
 
+        let d_tile_map = DevicePointer::copy_to_device(&tile_map)?;
+        let d_freq_map = DevicePointer::copy_to_device(&freq_map)?;
         Ok(FEEBeamCUDA {
-            x_q1_accum,
-            x_q2_accum,
-            x_m_accum,
-            x_n_accum,
-            x_m_signs,
-            x_m_abs_m,
-            x_n_max,
-            x_lengths,
-            x_offsets,
+            x_q1_accum: DevicePointer::copy_to_device(&x_q1_accum)?,
+            x_q2_accum: DevicePointer::copy_to_device(&x_q2_accum)?,
+            x_m_accum: DevicePointer::copy_to_device(&x_m_accum)?,
+            x_n_accum: DevicePointer::copy_to_device(&x_n_accum)?,
+            x_m_signs: DevicePointer::copy_to_device(&x_m_signs)?,
+            x_m_abs_m: DevicePointer::copy_to_device(&x_m_abs_m)?,
+            x_lengths: DevicePointer::copy_to_device(&x_lengths)?,
+            x_offsets: DevicePointer::copy_to_device(&x_offsets)?,
 
-            y_q1_accum,
-            y_q2_accum,
-            y_m_accum,
-            y_n_accum,
-            y_m_signs,
-            y_m_abs_m,
-            y_n_max,
-            y_lengths,
-            y_offsets,
+            y_q1_accum: DevicePointer::copy_to_device(&y_q1_accum)?,
+            y_q2_accum: DevicePointer::copy_to_device(&y_q2_accum)?,
+            y_m_accum: DevicePointer::copy_to_device(&y_m_accum)?,
+            y_n_accum: DevicePointer::copy_to_device(&y_n_accum)?,
+            y_m_signs: DevicePointer::copy_to_device(&y_m_signs)?,
+            y_m_abs_m: DevicePointer::copy_to_device(&y_m_abs_m)?,
+            y_lengths: DevicePointer::copy_to_device(&y_lengths)?,
+            y_offsets: DevicePointer::copy_to_device(&y_offsets)?,
 
-            num_coeffs,
-            num_unique_tiles,
-            num_unique_freqs,
+            num_coeffs: unique_hashes
+                .len()
+                .try_into()
+                .expect("many fewer coeffs than i32::MAX"),
+            num_unique_tiles: unique_tiles
+                .len()
+                .try_into()
+                .expect("expected much fewer than i32::MAX"),
+            num_unique_freqs: unique_fee_freqs
+                .len()
+                .try_into()
+                .expect("expected much fewer than i32::MAX"),
+            n_max: n_max.try_into().expect("n_max much smaller than u8::MAX"),
 
             tile_map,
             freq_map,
@@ -376,14 +389,24 @@ impl FEEBeamCUDA {
                     * std::mem::size_of::<Jones<CudaFloat>>(),
             )?;
 
+            // Also copy the directions to the device.
             let (azs, zas): (Vec<CudaFloat>, Vec<CudaFloat>) = azels
                 .iter()
                 .map(|&azel| (azel.az as CudaFloat, azel.za() as CudaFloat))
                 .unzip();
+            let d_azs = DevicePointer::copy_to_device(&azs)?;
+            let d_zas = DevicePointer::copy_to_device(&zas)?;
+
+            // Allocate the latitude if we have to.
+            let d_latitude_rad = array_latitude_rad
+                .map(|f| DevicePointer::copy_to_device(&[f as CudaFloat]))
+                .transpose()?;
+
             self.calc_jones_device_pair_inner(
-                &azs,
-                &zas,
-                array_latitude_rad,
+                d_azs.get(),
+                d_zas.get(),
+                azels.len().try_into().expect("much fewer than i32::MAX"),
+                d_latitude_rad.map(|p| p.get()).unwrap_or(std::ptr::null()),
                 iau_reorder,
                 d_results.get_mut() as *mut std::ffi::c_void,
             )?;
@@ -409,10 +432,20 @@ impl FEEBeamCUDA {
                     * std::mem::size_of::<Jones<CudaFloat>>(),
             )?;
 
+            // Also copy the directions to the device.
+            let d_azs = DevicePointer::copy_to_device(az_rad)?;
+            let d_zas = DevicePointer::copy_to_device(za_rad)?;
+
+            // Allocate the latitude if we have to.
+            let d_latitude_rad = array_latitude_rad
+                .map(|f| DevicePointer::copy_to_device(&[f as CudaFloat]))
+                .transpose()?;
+
             self.calc_jones_device_pair_inner(
-                az_rad,
-                za_rad,
-                array_latitude_rad,
+                d_azs.get(),
+                d_zas.get(),
+                az_rad.len().try_into().expect("much fewer than i32::MAX"),
+                d_latitude_rad.map(|p| p.get()).unwrap_or(std::ptr::null()),
                 iau_reorder,
                 d_results.get_mut() as *mut std::ffi::c_void,
             )?;
@@ -420,12 +453,15 @@ impl FEEBeamCUDA {
         }
     }
 
-    /// Given directions, calculate beam-response Jones matrices into the
-    /// supplied pre-allocated device pointer. This buffer should have a shape
-    /// of (`num_unique_tiles`, `num_unique_freqs`, `az_rad_length`). The first
-    /// two dimensions can be accessed with
-    /// [`FEEBeamCUDA::get_num_unique_tiles`] and
-    /// [`FEEBeamCUDA::get_num_unique_freqs`].
+    /// Given directions, calculate beam-response Jones matrices into
+    /// the supplied pre-allocated device pointer. This buffer should
+    /// have a shape of (`num_unique_tiles`, `num_unique_freqs`,
+    /// `az_rad_length`). The first two dimensions can be
+    /// accessed with [`FEEBeamCUDA::get_num_unique_tiles`] and
+    /// [`FEEBeamCUDA::get_num_unique_freqs`]. `d_array_latitude_rad` is
+    /// populated with the array latitude, if the caller wants the parallactic-
+    /// angle correction to be applied. If the pointer is null, then no
+    /// correction is applied.
     ///
     /// # Safety
     ///
@@ -433,54 +469,47 @@ impl FEEBeamCUDA {
     /// undefined behaviour looms.
     pub unsafe fn calc_jones_device_pair_inner(
         &self,
-        az_rad: &[CudaFloat],
-        za_rad: &[CudaFloat],
-        array_latitude_rad: Option<f64>,
+        d_az_rad: *const CudaFloat,
+        d_za_rad: *const CudaFloat,
+        num_directions: i32,
+        d_array_latitude_rad: *const CudaFloat,
         iau_reorder: bool,
         d_results: *mut std::ffi::c_void,
     ) -> Result<(), FEEBeamError> {
-        let d_azs = DevicePointer::copy_to_device(az_rad)?;
-        let d_zas = DevicePointer::copy_to_device(za_rad)?;
+        // Don't do anything if there aren't any directions.
+        if num_directions == 0 {
+            return Ok(());
+        }
 
-        // The return value corresponds to a CUDA error ID. The value is 0 if
-        // everything is fine. If the value is non-zero, then `cuda_error_ptr`
-        // is populated; this is a pointer to a null-terminated program-memory
-        // string.
-        let mut cuda_error_ptr = std::ptr::null();
-        let result = cuda_calc_jones(
-            d_azs.get(),
-            d_zas.get(),
-            az_rad.len().try_into().unwrap(),
+        // The return value is a pointer to a CUDA error string. If it's null
+        // then everything is fine.
+        let error_message_ptr = cuda_calc_jones(
+            d_az_rad,
+            d_za_rad,
+            num_directions,
             &self.get_fee_coeffs(),
             self.num_coeffs,
             match self.d_norm_jones.as_ref() {
                 Some(n) => (*n).get().cast(),
                 None => std::ptr::null(),
             },
-            // I've lost like 3 days finding a bug associated with copying the
-            // array latitude to the device in Rust (as we do with the Azimuths,
-            // for example). Doing this would *sometimes* cause the beam results
-            // to change. And probably not when only running one particular
-            // test; usually when running many tests concurrently. Giving the
-            // pointer-to-a-host-float to C to then copy to the device works
-            // fine. I think this is because cudaMalloc is behaving like an
-            // async function. Maddening.
-            match array_latitude_rad.map(|f| f as CudaFloat).as_ref() {
-                Some(l) => l,
-                None => std::ptr::null(),
-            },
+            d_array_latitude_rad,
             iau_reorder.into(),
             d_results,
-            &mut cuda_error_ptr,
         );
-        if result == 0 {
+        if error_message_ptr.is_null() {
             Ok(())
         } else {
-            // Assume the CUDA error message is well behaved and UTF-8
-            // compliant.
-            let cuda_error_str = CStr::from_ptr(cuda_error_ptr).to_str().unwrap();
-            let our_error_str = format!("fee.h:cuda_calc_jones failed with: {cuda_error_str}");
-            Err(FEEBeamError::Cuda(CudaError::Kernel(our_error_str)))
+            // Get the CUDA error message associated with the enum variant.
+            let error_message = CStr::from_ptr(error_message_ptr)
+                .to_str()
+                .unwrap_or("<cannot read CUDA error string>");
+            let our_error_str = format!("fee.h:cuda_calc_jones failed with: {error_message}");
+            Err(FEEBeamError::Cuda(CudaError::Kernel {
+                msg: our_error_str.into(),
+                file: file!(),
+                line: line!(),
+            }))
         }
     }
 
@@ -572,9 +601,7 @@ impl FEEBeamCUDA {
         let device_ptr =
             self.calc_jones_device_pair(az_rad, za_rad, array_latitude_rad, iau_reorder)?;
         unsafe {
-            // The unwrap is safe, as `dedup_results` is a contiguous block of
-            // memory.
-            device_ptr.copy_from_device(dedup_results.as_slice_mut().unwrap())?;
+            device_ptr.copy_from_device(dedup_results.as_slice_mut().expect("is contiguous"))?;
         }
         // Free the device memory.
         drop(device_ptr);
@@ -584,12 +611,12 @@ impl FEEBeamCUDA {
             .outer_iter_mut()
             .zip(self.tile_map.iter())
             .for_each(|(mut jones_row, &i_row)| {
-                let i_row: usize = i_row.try_into().unwrap();
+                let i_row: usize = i_row.try_into().expect("is a positive int");
                 jones_row
                     .outer_iter_mut()
                     .zip(self.freq_map.iter())
                     .for_each(|(mut jones_col, &i_col)| {
-                        let i_col: usize = i_col.try_into().unwrap();
+                        let i_col: usize = i_col.try_into().expect("is a positive int");
                         jones_col.assign(&dedup_results.slice(s![i_row, i_col, ..]));
                     })
             });
@@ -606,7 +633,6 @@ impl FEEBeamCUDA {
             x_n_accum: self.x_n_accum.get(),
             x_m_signs: self.x_m_signs.get(),
             x_m_abs_m: self.x_m_abs_m.get(),
-            x_n_max: self.x_n_max.get(),
             x_lengths: self.x_lengths.get(),
             x_offsets: self.x_offsets.get(),
             y_q1_accum: self.y_q1_accum.get(),
@@ -615,9 +641,9 @@ impl FEEBeamCUDA {
             y_n_accum: self.y_n_accum.get(),
             y_m_signs: self.y_m_signs.get(),
             y_m_abs_m: self.y_m_abs_m.get(),
-            y_n_max: self.y_n_max.get(),
             y_lengths: self.y_lengths.get(),
             y_offsets: self.y_offsets.get(),
+            n_max: self.n_max,
         }
     }
 

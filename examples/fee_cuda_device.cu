@@ -201,7 +201,7 @@ int main(int argc, char *argv[]) {
     use_hyperbeam_values<<<gridDim, blockDim>>>(d_jones, d_tile_map, d_freq_map, num_unique_fee_freqs, num_tiles,
                                                 num_freqs, num_directions);
     // Check that our kernel had no issues.
-    cudaError_t cuda_err_code = cudaPeekAtLastError();
+    cudaError_t cuda_err_code = cudaGetLastError();
     if (cuda_err_code != cudaSuccess) {
         fprintf(stderr, "Error with use_hyperbeam_values kernel: %s\n", cudaGetErrorString(cuda_err_code));
         exit(cuda_err_code);

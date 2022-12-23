@@ -3,31 +3,31 @@
 #include <stdlib.h>
 
 #ifdef SINGLE
-#define FLOAT          float
-#define SINCOS         sincosf
-#define COS            cosf
-#define FABS           fabsf
-#define ATAN2          atan2f
-#define SQRT           sqrtf
-#define CUCOMPLEX      cuFloatComplex
-#define MAKE_CUCOMPLEX make_cuFloatComplex
-#define CUCADD         cuCaddf
-#define CUCSUB         cuCsubf
-#define CUCMUL         cuCmulf
-#define CUCDIV         cuCdivf
+#define FLOAT        float
+#define SINCOS       sincosf
+#define COS          cosf
+#define FABS         fabsf
+#define ATAN2        atan2f
+#define SQRT         sqrtf
+#define COMPLEX      cuFloatComplex
+#define MAKE_COMPLEX make_cuFloatComplex
+#define CADD         cuCaddf
+#define CSUB         cuCsubf
+#define CMUL         cuCmulf
+#define CDIV         cuCdivf
 #else
-#define FLOAT          double
-#define SINCOS         sincos
-#define COS            cos
-#define FABS           fabs
-#define ATAN2          atan2
-#define SQRT           sqrt
-#define CUCOMPLEX      cuDoubleComplex
-#define MAKE_CUCOMPLEX make_cuDoubleComplex
-#define CUCADD         cuCadd
-#define CUCSUB         cuCsub
-#define CUCMUL         cuCmul
-#define CUCDIV         cuCdiv
+#define FLOAT        double
+#define SINCOS       sincos
+#define COS          cos
+#define FABS         fabs
+#define ATAN2        atan2
+#define SQRT         sqrt
+#define COMPLEX      cuDoubleComplex
+#define MAKE_COMPLEX make_cuDoubleComplex
+#define CADD         cuCadd
+#define CSUB         cuCsub
+#define CMUL         cuCmul
+#define CDIV         cuCdiv
 #endif
 
 #ifdef __cplusplus
@@ -41,7 +41,6 @@ typedef struct FEECoeffs {
     const int8_t *x_n_accum;
     const int8_t *x_m_signs;
     const int8_t *x_m_abs_m;
-    const unsigned char *x_n_max;
     const int *x_lengths;
     const int *x_offsets;
 
@@ -51,9 +50,10 @@ typedef struct FEECoeffs {
     const int8_t *y_n_accum;
     const int8_t *y_m_signs;
     const int8_t *y_m_abs_m;
-    const unsigned char *y_n_max;
     const int *y_lengths;
     const int *y_offsets;
+
+    const unsigned char n_max;
 } FEECoeffs;
 
 /**
@@ -76,9 +76,9 @@ typedef struct AzZA {
     FLOAT za;
 } AzZA;
 
-int cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
-                    int num_coeffs, const void *norm_jones, const FLOAT *array_latitude_rad, const int iau_reorder,
-                    void *d_results, const char **error_str);
+const char *cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
+                            int num_coeffs, const void *d_norm_jones, const FLOAT *d_array_latitude_rad,
+                            const int iau_reorder, void *d_results);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -218,36 +218,22 @@ __device__ const double FACTORIAL[100] = {
 };
 
 typedef struct FEEJones {
-    CUCOMPLEX j00;
-    CUCOMPLEX j01;
-    CUCOMPLEX j10;
-    CUCOMPLEX j11;
+    COMPLEX j00;
+    COMPLEX j01;
+    COMPLEX j10;
+    COMPLEX j11;
 } FEEJones;
 
-inline __device__ CUCOMPLEX operator+(CUCOMPLEX a, CUCOMPLEX b) {
-    CUCOMPLEX t;
-    t.x = a.x + b.x;
-    t.y = a.y + b.y;
-    return t;
+inline __device__ COMPLEX operator*(COMPLEX a, FLOAT b) {
+    return COMPLEX{
+        .x = a.x * b,
+        .y = a.y * b,
+    };
 }
 
-inline __device__ CUCOMPLEX operator-(CUCOMPLEX a, CUCOMPLEX b) {
-    CUCOMPLEX t;
-    t.x = a.x - b.x;
-    t.y = a.y - b.y;
-    return t;
-}
-
-inline __device__ CUCOMPLEX operator*(CUCOMPLEX a, FLOAT b) {
-    CUCOMPLEX t;
-    t.x = a.x * b;
-    t.y = a.y * b;
-    return t;
-}
-
-inline __device__ void operator*=(CUCOMPLEX &a, FLOAT b) {
-    a.x *= b;
-    a.y *= b;
+inline __device__ void operator+=(COMPLEX &a, COMPLEX b) {
+    a.x += b.x;
+    a.y += b.y;
 }
 
 // Convert a (azimuth, elevation) to HADec, given a location (latitude).
@@ -305,11 +291,11 @@ inline __device__ AzZA hadec_to_azza(FLOAT hour_angle_rad, FLOAT dec_rad, FLOAT 
 //
 // This code is adapted from ERFA. The copyright notice associated with ERFA and
 // the original code is at the bottom of this file.
-inline __device__ FLOAT get_parallactic_angle(FLOAT hour_angle_rad, FLOAT dec_rad, FLOAT array_latitude_rad) {
+inline __device__ FLOAT get_parallactic_angle(HADec hadec, FLOAT array_latitude_rad) {
     FLOAT s_phi, c_phi, s_ha, c_ha, s_dec, c_dec, cqsz, sqsz;
     SINCOS(array_latitude_rad, &s_phi, &c_phi);
-    SINCOS(hour_angle_rad, &s_ha, &c_ha);
-    SINCOS(dec_rad, &s_dec, &c_dec);
+    SINCOS(hadec.ha, &s_ha, &c_ha);
+    SINCOS(hadec.dec, &s_dec, &c_dec);
 
     sqsz = c_phi * s_ha;
     cqsz = s_phi * c_dec - c_phi * s_dec * c_ha;
@@ -321,21 +307,22 @@ inline __device__ FLOAT get_parallactic_angle(FLOAT hour_angle_rad, FLOAT dec_ra
 inline __device__ void apply_pa_correction(FEEJones *jm, FLOAT pa, int iau_order) {
     FLOAT s_rot, c_rot;
     SINCOS(pa, &s_rot, &c_rot);
-    FEEJones new_jm;
 
     if (iau_order == 1) {
-        new_jm.j00 = jm->j10 * -c_rot + jm->j11 * s_rot;
-        new_jm.j01 = jm->j10 * -s_rot + jm->j11 * -c_rot;
-        new_jm.j10 = jm->j00 * -c_rot + jm->j01 * s_rot;
-        new_jm.j11 = jm->j00 * -s_rot + jm->j01 * -c_rot;
+        *jm = FEEJones{
+            .j00 = CADD(jm->j10 * -c_rot, jm->j11 * s_rot),
+            .j01 = CADD(jm->j10 * -s_rot, jm->j11 * -c_rot),
+            .j10 = CADD(jm->j00 * -c_rot, jm->j01 * s_rot),
+            .j11 = CADD(jm->j00 * -s_rot, jm->j01 * -c_rot),
+        };
     } else {
-        new_jm.j00 = jm->j00 * -s_rot + jm->j01 * -c_rot;
-        new_jm.j01 = jm->j00 * -c_rot + jm->j01 * s_rot;
-        new_jm.j10 = jm->j10 * -s_rot + jm->j11 * -c_rot;
-        new_jm.j11 = jm->j10 * -c_rot + jm->j11 * s_rot;
+        *jm = FEEJones{
+            .j00 = CADD(jm->j00 * -s_rot, jm->j01 * -c_rot),
+            .j01 = CADD(jm->j00 * -c_rot, jm->j01 * s_rot),
+            .j10 = CADD(jm->j10 * -s_rot, jm->j11 * -c_rot),
+            .j11 = CADD(jm->j10 * -c_rot, jm->j11 * s_rot),
+        };
     }
-
-    *jm = new_jm;
 }
 
 inline __device__ void lpmv_device(FLOAT *output, int n, FLOAT x) {
@@ -345,7 +332,7 @@ inline __device__ void lpmv_device(FLOAT *output, int n, FLOAT x) {
     if (n == 0)
         output[0] = p0;
     else {
-        unsigned l = 1;
+        int l = 1;
         while (l < n) {
             p_tmp = p0;
             p0 = p1;
@@ -387,20 +374,16 @@ inline __device__ void legendre_polynomials_device(FLOAT *legendre, const FLOAT 
     }
 }
 
-inline __device__ int jones_p1sin_device(const int nmax, const FLOAT theta, FLOAT *p1sin_out, int *p1sin_out_size,
-                                         FLOAT *p1_out, int *p1_out_size) {
+inline __device__ int jones_p1sin_device(const int nmax, const FLOAT theta, FLOAT *p1sin_out, FLOAT *p1_out) {
     int n, m;
-    int size = nmax * nmax + 2 * nmax;
     int ind_start, ind_stop;
     int modified;
     FLOAT sin_th, u;
-    FLOAT delu = 1e-6;
+    const FLOAT delu = 1e-6;
     FLOAT P[NMAX + 1], Pm1[NMAX + 1], Pm_sin[NMAX + 1], Pu_mdelu[NMAX + 1], Pm_sin_merged[NMAX * 2 + 1],
         Pm1_merged[NMAX * 2 + 1];
     FLOAT legendre_table[NMAX * (NMAX + 1)], legendret[(((NMAX + 2) * (NMAX + 1)) / 2)];
 
-    *p1sin_out_size = size;
-    *p1_out_size = size;
     SINCOS(theta, &sin_th, &u);
     // Create a look-up table for the legendre polynomials
     // Such that legendre_table[ m * nmax + (n-1) ] = legendre(n, m, u)
@@ -465,160 +448,130 @@ inline __device__ int jones_p1sin_device(const int nmax, const FLOAT theta, FLOA
     return nmax;
 }
 
-__device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT theta, const CUCOMPLEX *q1_accum,
-                                         const CUCOMPLEX *q2_accum, const int8_t *m_accum, const int8_t *n_accum,
-                                         const int8_t *m_signs, const int8_t *m_abs_m, const int coeff_length,
-                                         const int nmax, const char pol, FEEJones *jm) {
-    FLOAT u = COS(theta);
-    FLOAT P1sin_arr[NMAX * NMAX + 2 * NMAX], P1_arr[NMAX * NMAX + 2 * NMAX];
-    int P1sin_arr_size, P1_arr_size;
-    CUCOMPLEX sigma_P, sigma_T, ejm_phi;
-    sigma_P.x = 0;
-    sigma_P.y = 0;
-    sigma_T.x = 0;
-    sigma_T.y = 0;
+inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT theta, const COMPLEX *q1_accum,
+                                                const COMPLEX *q2_accum, const int8_t *m_accum, const int8_t *n_accum,
+                                                const int8_t *m_signs, const int8_t *m_abs_m, const int coeff_length,
+                                                const FLOAT *P1sin_arr, const FLOAT *P1_arr, const char pol,
+                                                FEEJones *jm) {
+    const FLOAT u = COS(theta);
+    COMPLEX sigma_P = MAKE_COMPLEX(0.0, 0.0);
+    COMPLEX sigma_T = MAKE_COMPLEX(0.0, 0.0);
+    COMPLEX ejm_phi;
 
-    jones_p1sin_device(nmax, theta, P1sin_arr, &P1sin_arr_size, P1_arr, &P1_arr_size);
-
-    const CUCOMPLEX J_POWERS[4] = {MAKE_CUCOMPLEX(1.0, 0.0), MAKE_CUCOMPLEX(0.0, 1.0), MAKE_CUCOMPLEX(-1.0, 0.0),
-                                   MAKE_CUCOMPLEX(0.0, -1.0)};
+    const COMPLEX J_POWERS[4] = {MAKE_COMPLEX(1.0, 0.0), MAKE_COMPLEX(0.0, 1.0), MAKE_COMPLEX(-1.0, 0.0),
+                                 MAKE_COMPLEX(0.0, -1.0)};
 
     for (int i = 0; i < coeff_length; i++) {
-        int8_t m = m_accum[i];
-        int8_t n = n_accum[i];
-        FLOAT N = n;
-        FLOAT M = m;
-        FLOAT m_sign = m_signs[i];
-        int8_t m_abs = m_abs_m[i];
-        FLOAT c_mn_sqr = 0.5 * (2 * N + 1) * (FACTORIAL[n - m_abs] / FACTORIAL[n + m_abs]);
-        FLOAT c_mn = SQRT(c_mn_sqr);
+        const int8_t m = m_accum[i];
+        const int8_t n = n_accum[i];
+        const FLOAT N = n;
+        const FLOAT M = m;
+        const FLOAT m_sign = m_signs[i];
+        const int8_t m_abs = m_abs_m[i];
+        const FLOAT c_mn_sqr = 0.5 * (2 * N + 1) * (FACTORIAL[n - m_abs] / FACTORIAL[n + m_abs]);
+        const FLOAT c_mn = SQRT(c_mn_sqr);
         SINCOS(M * phi, &ejm_phi.y, &ejm_phi.x);
-        CUCOMPLEX phi_comp = CUCMUL(ejm_phi, MAKE_CUCOMPLEX(c_mn / (SQRT(N * (N + 1))) * m_sign, 0));
-        CUCOMPLEX j_power_n = J_POWERS[n % 4];
-        CUCOMPLEX q1 = q1_accum[i];
-        CUCOMPLEX q2 = q2_accum[i];
-        CUCOMPLEX s1 = CUCMUL(MAKE_CUCOMPLEX(P1sin_arr[i] * FABS(M) * u, 0), q2);
-        CUCOMPLEX s2 = CUCMUL(MAKE_CUCOMPLEX(P1sin_arr[i] * M, 0), q1);
-        CUCOMPLEX s3 = CUCMUL(MAKE_CUCOMPLEX(P1_arr[i], 0), q2);
-        CUCOMPLEX s4 = CUCSUB(s1, s2);
-        CUCOMPLEX E_theta_mn = CUCMUL(j_power_n, CUCADD(s4, s3));
-        CUCOMPLEX j_power_np1 = J_POWERS[(n + 1) % 4];
-        CUCOMPLEX o1 = CUCMUL(MAKE_CUCOMPLEX(P1sin_arr[i] * M, 0), q2);
-        CUCOMPLEX o2 = CUCMUL(MAKE_CUCOMPLEX(P1sin_arr[i] * FABS(M) * u, 0), q1);
-        CUCOMPLEX o3 = CUCMUL(MAKE_CUCOMPLEX(P1_arr[i], 0), q1);
-        CUCOMPLEX o4 = CUCSUB(o1, o2);
-        CUCOMPLEX E_phi_mn = CUCMUL(j_power_np1, CUCSUB(o4, o3));
-        sigma_P = CUCADD(sigma_P, CUCMUL(phi_comp, E_phi_mn));
-        sigma_T = CUCADD(sigma_T, CUCMUL(phi_comp, E_theta_mn));
+        const COMPLEX phi_comp = ejm_phi * (c_mn / (SQRT(N * (N + 1))) * m_sign);
+        const COMPLEX j_power_n = J_POWERS[n % 4];
+        const COMPLEX q1 = q1_accum[i];
+        const COMPLEX q2 = q2_accum[i];
+        const COMPLEX s1 = q2 * (P1sin_arr[i] * FABS(M) * u);
+        const COMPLEX s2 = q1 * (P1sin_arr[i] * M);
+        const COMPLEX s3 = q2 * P1_arr[i];
+        const COMPLEX s4 = CSUB(s1, s2);
+        const COMPLEX E_theta_mn = CMUL(j_power_n, CADD(s4, s3));
+        const COMPLEX j_power_np1 = J_POWERS[(n + 1) % 4];
+        const COMPLEX o1 = q2 * (P1sin_arr[i] * M);
+        const COMPLEX o2 = q1 * (P1sin_arr[i] * FABS(M) * u);
+        const COMPLEX o3 = q1 * P1_arr[i];
+        const COMPLEX o4 = CSUB(o1, o2);
+        const COMPLEX E_phi_mn = CMUL(j_power_np1, CSUB(o4, o3));
+        sigma_P += CMUL(phi_comp, E_phi_mn);
+        sigma_T += CMUL(phi_comp, E_theta_mn);
     }
 
     if (pol == 'x') {
         jm->j00 = sigma_T;
-        // Seriously? Is there a way to just say "negative of this"?
-        jm->j01 = CUCMUL(MAKE_CUCOMPLEX(-1, 0), sigma_P);
+        jm->j01 = sigma_P * -1.0;
     } else {
         jm->j10 = sigma_T;
-        jm->j11 = CUCMUL(MAKE_CUCOMPLEX(-1, 0), sigma_P);
+        jm->j11 = sigma_P * -1.0;
     }
-}
-
-inline __device__ FEEJones calc_jones_direct_device(const FLOAT az_rad, const FLOAT za_rad, const FEECoeffs *d_coeffs,
-                                                    const int x_offset, const int y_offset) {
-    FEEJones jm;
-    FLOAT phi_rad = M_PI_2 - az_rad;
-
-    jones_calc_sigmas_device(phi_rad, za_rad, (const CUCOMPLEX *)d_coeffs->x_q1_accum,
-                             (const CUCOMPLEX *)d_coeffs->x_q2_accum, d_coeffs->x_m_accum, d_coeffs->x_n_accum,
-                             d_coeffs->x_m_signs, d_coeffs->x_m_abs_m, *d_coeffs->x_lengths, *d_coeffs->x_n_max, 'x',
-                             &jm);
-    jones_calc_sigmas_device(phi_rad, za_rad, (const CUCOMPLEX *)d_coeffs->y_q1_accum,
-                             (const CUCOMPLEX *)d_coeffs->y_q2_accum, d_coeffs->y_m_accum, d_coeffs->y_n_accum,
-                             d_coeffs->y_m_signs, d_coeffs->y_m_abs_m, *d_coeffs->y_lengths, *d_coeffs->y_n_max, 'y',
-                             &jm);
-
-    return jm;
 }
 
 /**
  * Allocate beam Jones matrices for each unique set of dipole coefficients and
- * each direction. blockIdx.x should correspond to d_coeffs elements and
- * blockIdx.y * blockDim.x + threadIdx.x corresponds to direction.
+ * each direction. blockIdx.y should correspond to d_coeffs elements and
+ * blockIdx.x * blockDim.x + threadIdx.x corresponds to direction.
  */
-__global__ void fee_kernel(const FEECoeffs d_coeffs, const int num_coeffs, const FLOAT *d_azs, const FLOAT *d_zas,
-                           const int num_directions, const FEEJones *d_norm_jones, const FLOAT *d_array_latitude_rad,
-                           const int iau_order, FEEJones *d_fee_jones) {
-    int i_direction = blockIdx.y * blockDim.x + threadIdx.x;
-    if (i_direction >= num_directions)
-        return;
+__global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT *zas, const int num_directions,
+                           const FEEJones *norm_jones, const FLOAT *array_latitude_rad, const int iau_order,
+                           FEEJones *fee_jones) {
+    for (int i_direction = blockIdx.x * blockDim.x + threadIdx.x; i_direction < num_directions;
+         i_direction += gridDim.x * blockDim.x) {
+        const FLOAT az = azs[i_direction];
+        const FLOAT za = zas[i_direction];
+        const FLOAT phi = M_PI_2 - az;
 
-    FLOAT az = d_azs[i_direction];
-    FLOAT za = d_zas[i_direction];
-    FLOAT phi = M_PI_2 - az;
-    int x_offset = d_coeffs.x_offsets[blockIdx.x];
-    int y_offset = d_coeffs.y_offsets[blockIdx.x];
-    FEEJones jm;
+        // Set up our "P1sin" arrays. This is pretty expensive, but only depends
+        // on the zenith angle and "n_max".
+        FLOAT P1sin_arr[NMAX * NMAX + 2 * NMAX], P1_arr[NMAX * NMAX + 2 * NMAX];
+        jones_p1sin_device(coeffs.n_max, za, P1sin_arr, P1_arr);
 
-    jones_calc_sigmas_device(
-        phi, za, (const CUCOMPLEX *)d_coeffs.x_q1_accum + x_offset, (const CUCOMPLEX *)d_coeffs.x_q2_accum + x_offset,
-        d_coeffs.x_m_accum + x_offset, d_coeffs.x_n_accum + x_offset, d_coeffs.x_m_signs + x_offset,
-        d_coeffs.x_m_abs_m + x_offset, d_coeffs.x_lengths[blockIdx.x], d_coeffs.x_n_max[blockIdx.x], 'x', &jm);
-    jones_calc_sigmas_device(
-        phi, za, (const CUCOMPLEX *)d_coeffs.y_q1_accum + y_offset, (const CUCOMPLEX *)d_coeffs.y_q2_accum + y_offset,
-        d_coeffs.y_m_accum + y_offset, d_coeffs.y_n_accum + y_offset, d_coeffs.y_m_signs + y_offset,
-        d_coeffs.y_m_abs_m + y_offset, d_coeffs.y_lengths[blockIdx.x], d_coeffs.y_n_max[blockIdx.x], 'y', &jm);
+        const int x_offset = coeffs.x_offsets[blockIdx.y];
+        const int y_offset = coeffs.y_offsets[blockIdx.y];
+        FEEJones jm;
+        jones_calc_sigmas_device(phi, za, (const COMPLEX *)coeffs.x_q1_accum + x_offset,
+                                 (const COMPLEX *)coeffs.x_q2_accum + x_offset, coeffs.x_m_accum + x_offset,
+                                 coeffs.x_n_accum + x_offset, coeffs.x_m_signs + x_offset, coeffs.x_m_abs_m + x_offset,
+                                 coeffs.x_lengths[blockIdx.y], P1sin_arr, P1_arr, 'x', &jm);
+        jones_calc_sigmas_device(phi, za, (const COMPLEX *)coeffs.y_q1_accum + y_offset,
+                                 (const COMPLEX *)coeffs.y_q2_accum + y_offset, coeffs.y_m_accum + y_offset,
+                                 coeffs.y_n_accum + y_offset, coeffs.y_m_signs + y_offset, coeffs.y_m_abs_m + y_offset,
+                                 coeffs.y_lengths[blockIdx.y], P1sin_arr, P1_arr, 'y', &jm);
 
-    if (d_norm_jones != NULL) {
-        FEEJones norm = d_norm_jones[blockIdx.x];
-        jm.j00 = CUCDIV(jm.j00, norm.j00);
-        jm.j01 = CUCDIV(jm.j01, norm.j01);
-        jm.j10 = CUCDIV(jm.j10, norm.j10);
-        jm.j11 = CUCDIV(jm.j11, norm.j11);
+        if (norm_jones != NULL) {
+            FEEJones norm = norm_jones[blockIdx.y];
+            jm.j00 = CDIV(jm.j00, norm.j00);
+            jm.j01 = CDIV(jm.j01, norm.j01);
+            jm.j10 = CDIV(jm.j10, norm.j10);
+            jm.j11 = CDIV(jm.j11, norm.j11);
+        }
+
+        if (array_latitude_rad != NULL) {
+            HADec hadec = azel_to_hadec(az, M_PI_2 - za, *array_latitude_rad);
+            FLOAT pa = get_parallactic_angle(hadec, *array_latitude_rad);
+            apply_pa_correction(&jm, pa, iau_order);
+        }
+
+        // Copy the Jones matrix to global memory.
+        fee_jones[blockIdx.y * num_directions + i_direction] = jm;
     }
-
-    if (d_array_latitude_rad != NULL) {
-        HADec hadec = azel_to_hadec(az, M_PI_2 - za, *d_array_latitude_rad);
-        FLOAT pa = get_parallactic_angle(hadec.ha, hadec.dec, *d_array_latitude_rad);
-        apply_pa_correction(&jm, pa, iau_order);
-    }
-
-    // Copy the Jones matrix to global memory.
-    d_fee_jones[blockIdx.x * num_directions + i_direction] = jm;
 }
 
-extern "C" int cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *coeffs,
-                               int num_coeffs, const void *d_norm_jones, const FLOAT *array_latitude_rad,
-                               const int iau_order, void *d_results, const char **error_str) {
-    FLOAT *d_array_latitude_rad = NULL;
-    if (array_latitude_rad != NULL) {
-        cudaMalloc(&d_array_latitude_rad, sizeof(FLOAT));
-        cudaMemcpy(d_array_latitude_rad, array_latitude_rad, sizeof(FLOAT), cudaMemcpyHostToDevice);
-    }
-
+extern "C" const char *cuda_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions,
+                                       const FEECoeffs *d_coeffs, int num_coeffs, const void *d_norm_jones,
+                                       const FLOAT *d_array_latitude_rad, const int iau_order, void *d_results) {
     dim3 gridDim, blockDim;
     blockDim.x = 32;
-    gridDim.x = num_coeffs;
-    gridDim.y = (int)ceil((double)num_directions / (double)blockDim.x);
-    // This is empirically faster on my GeForce RTX 2070.
-    cudaFuncSetCacheConfig(fee_kernel, cudaFuncCachePreferL1);
-    fee_kernel<<<gridDim, blockDim>>>(*coeffs, num_coeffs, d_azs, d_zas, num_directions, (FEEJones *)d_norm_jones,
+    gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
+    gridDim.y = num_coeffs;
+    fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (FEEJones *)d_norm_jones,
                                       d_array_latitude_rad, iau_order, (FEEJones *)d_results);
 
-    cudaError_t error_id = cudaPeekAtLastError();
-    if (error_id != cudaSuccess) {
-        *error_str = cudaGetErrorString(error_id);
-        return (int)error_id;
-    }
+    cudaError_t error_id;
+#ifdef DEBUG
     error_id = cudaDeviceSynchronize();
     if (error_id != cudaSuccess) {
-        *error_str = cudaGetErrorString(error_id);
-        return (int)error_id;
+        return cudaGetErrorString(error_id);
+    }
+#endif
+    error_id = cudaGetLastError();
+    if (error_id != cudaSuccess) {
+        return cudaGetErrorString(error_id);
     }
 
-    if (array_latitude_rad != NULL) {
-        cudaFree(d_array_latitude_rad);
-    }
-
-    return (int)cudaSuccess;
+    return NULL;
 }
 
 #endif // BINDGEN

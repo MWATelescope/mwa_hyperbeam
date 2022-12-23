@@ -12,13 +12,11 @@ SCRIPTPATH="$(cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P)"
 bindgen "${SCRIPTPATH}"/fee/cuda/fee.h \
     --allowlist-function "cuda_calc_jones.*" \
     --allowlist-type "FEECoeffs" \
-    --size_t-is-usize \
     -- -D BINDGEN \
     > "${SCRIPTPATH}"/fee/cuda/double.rs
 
 bindgen "${SCRIPTPATH}"/fee/cuda/fee.h \
     --allowlist-function "cuda_calc_jones.*" \
     --allowlist-type "FEECoeffs" \
-    --size_t-is-usize \
     -- -D BINDGEN -D SINGLE \
     > "${SCRIPTPATH}"/fee/cuda/single.rs
