@@ -16,10 +16,10 @@ use thiserror::Error;
 cfg_if::cfg_if! {
     if #[cfg(feature = "cuda-single")] {
         pub type CudaFloat = f32;
-        pub type CudaComplex = marlu::num_complex::Complex32;
+        pub type CudaComplex = num_complex::Complex32;
     } else {
         pub type CudaFloat = f64;
-        pub type CudaComplex = marlu::num_complex::Complex64;
+        pub type CudaComplex = num_complex::Complex64;
     }
 }
 

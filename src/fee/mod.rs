@@ -23,18 +23,23 @@ pub use crate::cuda::CudaFloat;
 #[cfg(feature = "cuda")]
 pub use cuda::FEEBeamCUDA;
 
-use std::f64::consts::{FRAC_PI_2, TAU};
-use std::sync::Mutex;
+use std::{
+    f64::consts::{FRAC_PI_2, TAU},
+    sync::Mutex,
+};
 
-use marlu::{c64, ndarray, rayon, AzEl, Jones};
+use marlu::{ndarray, rayon, AzEl, Jones};
 use ndarray::prelude::*;
+use num_complex::Complex64 as c64;
 use parking_lot::{MappedRwLockReadGuard, RwLockReadGuard};
 use rayon::prelude::*;
 
-use crate::constants::*;
-use crate::factorial::FACTORIAL;
-use crate::legendre::p1sin;
-use crate::types::{CacheKey, Pol};
+use crate::{
+    constants::*,
+    factorial::FACTORIAL,
+    legendre::p1sin,
+    types::{CacheKey, Pol},
+};
 
 /// The main struct to be used for calculating Jones matrices.
 #[allow(clippy::upper_case_acronyms)]
@@ -43,6 +48,7 @@ pub struct FEEBeam {
     /// behind a [`Mutex`] to prevent parallel usage of the file.
     hdf5_file: Mutex<hdf5::File>,
     /// An ascendingly-sorted vector of frequencies available in the HDF5 file.
+    /// Not allowed to be empty.
     freqs: Vec<u32>,
     /// Values used in calculating coefficients for X and Y.
     /// Row 0: Type
@@ -162,31 +168,26 @@ impl FEEBeam {
     /// Given a frequency in Hz, find the closest frequency that is defined in
     /// the HDF5 file.
     pub fn find_closest_freq(&self, desired_freq_hz: u32) -> u32 {
-        let mut best_freq_diff: Option<i64> = None;
-        let mut best_index: Option<usize> = None;
-        for (i, &freq) in self.freqs.iter().enumerate() {
-            let this_diff = (desired_freq_hz as i64 - freq as i64).abs();
-            match best_freq_diff {
-                None => {
-                    best_freq_diff = Some(this_diff);
-                    best_index = Some(i);
+        let mut best_freq = None;
+        let mut best_diff = u32::MAX;
+        for &freq in self.freqs.iter() {
+            if let Some(best) = best_freq {
+                let this_diff = desired_freq_hz.abs_diff(freq);
+                if this_diff < best_diff {
+                    best_diff = this_diff;
+                    best_freq = Some(freq);
+                } else {
+                    // Because the frequencies are always ascendingly
+                    // sorted, if the frequency difference is getting
+                    // bigger, we can return early.
+                    return best;
                 }
-                Some(best) => {
-                    if this_diff < best {
-                        best_freq_diff = Some(this_diff);
-                        best_index = Some(i);
-                    } else {
-                        // Because the frequencies are always ascendingly
-                        // sorted, if the frequency difference is getting
-                        // bigger, we can break early.
-                        break;
-                    }
-                }
+            } else {
+                best_freq = Some(freq);
             }
         }
 
-        // TODO: Error handling.
-        self.freqs[best_index.unwrap()]
+        best_freq.expect("self.freqs is not allowed to be empty so this can't fail")
     }
 
     /// Given a key, get a dataset from the HDF5 file.
@@ -288,10 +289,20 @@ impl FEEBeam {
         delays: &[u32; 16],
         amps: &[f64; 32],
     ) -> Result<BowtieCoefficients, FEEBeamError> {
-        Ok(BowtieCoefficients {
-            x: self.calc_mode(freq, delays, amps, Pol::X)?,
-            y: self.calc_mode(freq, delays, amps, Pol::Y)?,
-        })
+        let mut x = self.calc_mode(freq, delays, amps, Pol::X)?;
+        let mut y = self.calc_mode(freq, delays, amps, Pol::Y)?;
+
+        // Shave off any excess capacity before we store the results in the
+        // cache.
+        for dipole_coeffs in [&mut x, &mut y] {
+            dipole_coeffs.q1_accum.shrink_to_fit();
+            dipole_coeffs.q2_accum.shrink_to_fit();
+            dipole_coeffs.m_accum.shrink_to_fit();
+            dipole_coeffs.n_accum.shrink_to_fit();
+            dipole_coeffs.m_signs.shrink_to_fit();
+        }
+
+        Ok(BowtieCoefficients { x, y })
     }
 
     /// Given the input parameters, calculate and return the coefficients for a
@@ -308,12 +319,21 @@ impl FEEBeam {
         amps: &[f64; 32],
         pol: Pol,
     ) -> Result<DipoleCoefficients, FEEBeamError> {
-        let mut q1_accum: Vec<c64> = vec![c64::new(0.0, 0.0); self.modes.dim().1];
-        let mut q2_accum: Vec<c64> = vec![c64::new(0.0, 0.0); self.modes.dim().1];
+        let mut q1_accum: Vec<c64> = vec![c64::default(); self.modes.dim().1];
+        let mut q2_accum: Vec<c64> = vec![c64::default(); self.modes.dim().1];
         let mut m_accum = vec![];
         let mut n_accum = vec![];
         // Biggest N coefficient.
         let mut n_max = 0;
+
+        // Indices of S=1 coefficients.
+        let mut s1_list: Vec<usize> = vec![];
+        // Indices of S=2 coefficients.
+        let mut s2_list: Vec<usize> = vec![];
+        let mut ms1 = vec![];
+        let mut ns1 = vec![];
+        let mut ms2 = vec![];
+        let mut ns2 = vec![];
 
         // Use the X or Y dipole gains based off how many elements to skip in
         // `amps`.
@@ -323,6 +343,13 @@ impl FEEBeam {
         };
 
         for (dipole_num, (&amp, &delay)) in amps.iter().skip(skip).zip(delays.iter()).enumerate() {
+            s1_list.clear();
+            s2_list.clear();
+            ms1.clear();
+            ns1.clear();
+            ms2.clear();
+            ns2.clear();
+
             // Get the relevant HDF5 data.
             let q_all: Array2<f64> = {
                 let key = format!("{}{}_{}", pol, dipole_num + 1, freq_hz);
@@ -333,19 +360,9 @@ impl FEEBeam {
             // Complex excitation voltage.
             let v: c64 = {
                 let phase = TAU * freq_hz as f64 * (-(delay as f64)) * DELAY_STEP;
-                let (s_phase, c_phase) = phase.sin_cos();
-                let phase_factor = c64::new(c_phase, s_phase);
+                let phase_factor = c64::cis(phase);
                 amp * phase_factor
             };
-
-            // Indices of S=1 coefficients.
-            let mut s1_list: Vec<usize> = Vec::with_capacity(n_dip_coeffs / 2);
-            // Indices of S=2 coefficients.
-            let mut s2_list: Vec<usize> = Vec::with_capacity(n_dip_coeffs / 2);
-            let mut ms1 = Vec::with_capacity(n_dip_coeffs / 2);
-            let mut ns1 = Vec::with_capacity(n_dip_coeffs / 2);
-            let mut ms2 = Vec::with_capacity(n_dip_coeffs / 2);
-            let mut ns2 = Vec::with_capacity(n_dip_coeffs / 2);
 
             // What does this do???
             let mut b_update_n_accum = false;
@@ -371,8 +388,8 @@ impl FEEBeam {
             }
 
             if b_update_n_accum {
-                m_accum = ms1;
-                n_accum = ns1;
+                std::mem::swap(&mut m_accum, &mut ms1);
+                std::mem::swap(&mut n_accum, &mut ns1);
             };
 
             if s1_list.len() != s2_list.len() || s2_list.len() != n_dip_coeffs / 2 {
@@ -388,8 +405,7 @@ impl FEEBeam {
                 let s10_coeff = q_all[[0, s1_idx]];
                 let s11_coeff = q_all[[1, s1_idx]];
                 let arg = s11_coeff.to_radians();
-                let (s_arg, c_arg) = arg.sin_cos();
-                let q1_val = s10_coeff * c64::new(c_arg, s_arg);
+                let q1_val = s10_coeff * c64::cis(arg);
                 q1_accum[i] += q1_val * v;
 
                 // Calculate Q2.
@@ -397,8 +413,7 @@ impl FEEBeam {
                 let s20_coeff = q_all[[0, s2_idx]];
                 let s21_coeff = q_all[[1, s2_idx]];
                 let arg = s21_coeff.to_radians();
-                let (s_arg, c_arg) = arg.sin_cos();
-                let q2_val = s20_coeff * c64::new(c_arg, s_arg);
+                let q2_val = s20_coeff * c64::cis(arg);
                 q2_accum[i] += q2_val * v;
             }
         }
@@ -430,7 +445,7 @@ impl FEEBeam {
             m_accum,
             n_accum,
             m_signs,
-            n_max: n_max as usize,
+            n_max: n_max.try_into().expect("n_max is always positive"),
         })
     }
 
@@ -750,12 +765,16 @@ impl FEEBeam {
 
 /// Calculate the Jones matrix components given a pointing and coefficients
 /// associated with a single dipole polarisation.
-fn calc_sigmas(phi: f64, theta: f64, coeffs: &DipoleCoefficients) -> (c64, c64) {
+fn calc_sigmas(
+    phi: f64,
+    theta: f64,
+    coeffs: &DipoleCoefficients,
+    p1sin_arr: &[f64],
+    p1_arr: &[f64],
+) -> (c64, c64) {
     let u = theta.cos();
-    let (p1sin_arr, p1_arr) = p1sin(coeffs.n_max, theta);
-
-    let mut sigma_p = c64::new(0.0, 0.0);
-    let mut sigma_t = c64::new(0.0, 0.0);
+    let mut sigma_p = c64::default();
+    let mut sigma_t = c64::default();
     // Use an iterator for maximum performance.
     coeffs
         .m_accum
@@ -777,8 +796,7 @@ fn calc_sigmas(phi: f64, theta: f64, coeffs: &DipoleCoefficients) -> (c64, c64) 
                 * FACTORIAL[(n - m.abs()) as usize]
                     / FACTORIAL[(n + m.abs()) as usize])
                     .sqrt();
-                let (s_m_phi, c_m_phi) = (mf * phi).sin_cos();
-                let ejm_phi = c64::new(c_m_phi, s_m_phi);
+                let ejm_phi = c64::cis(mf * phi);
                 let phi_comp = (ejm_phi * c_mn) / (nf * (nf + 1.0)).sqrt() * signf;
                 let j_power_n = J_POWER_TABLE.get_unchecked((*n % 4) as usize);
                 let e_theta_mn = j_power_n * ((p1sin * (mf.abs() * q2 * u - mf * q1)) + q2 * p1);
@@ -803,8 +821,10 @@ fn calc_jones_direct(
 ) -> Jones<f64> {
     // Convert azimuth to FEKO phi (East through North).
     let phi_rad = FRAC_PI_2 - az_rad;
-    let (j00, j01) = calc_sigmas(phi_rad, za_rad, &coeffs.x);
-    let (j10, j11) = calc_sigmas(phi_rad, za_rad, &coeffs.y);
+    let (p1sin_arr, p1_arr) = p1sin(coeffs.x.n_max.max(coeffs.y.n_max), za_rad);
+
+    let (j00, j01) = calc_sigmas(phi_rad, za_rad, &coeffs.x, &p1sin_arr, &p1_arr);
+    let (j10, j11) = calc_sigmas(phi_rad, za_rad, &coeffs.y, &p1sin_arr, &p1_arr);
     let mut jones = [j00, j01, j10, j11];
     if let Some(norm) = norm_matrix {
         jones.iter_mut().zip(norm.iter()).for_each(|(j, n)| *j /= n);
@@ -815,10 +835,12 @@ fn calc_jones_direct(
 fn calc_zenith_norm_jones(coeffs: &BowtieCoefficients) -> Jones<f64> {
     // Azimuth angles at which Jones components are maximum.
     let max_phi = [0.0, -FRAC_PI_2, FRAC_PI_2, 0.0];
-    let (j00, _) = calc_sigmas(max_phi[0], 0.0, &coeffs.x);
-    let (_, j01) = calc_sigmas(max_phi[1], 0.0, &coeffs.x);
-    let (j10, _) = calc_sigmas(max_phi[2], 0.0, &coeffs.y);
-    let (_, j11) = calc_sigmas(max_phi[3], 0.0, &coeffs.y);
+    let (p1sin_arr, p1_arr) = p1sin(coeffs.x.n_max.max(coeffs.y.n_max), 0.0);
+
+    let (j00, _) = calc_sigmas(max_phi[0], 0.0, &coeffs.x, &p1sin_arr, &p1_arr);
+    let (_, j01) = calc_sigmas(max_phi[1], 0.0, &coeffs.x, &p1sin_arr, &p1_arr);
+    let (j10, _) = calc_sigmas(max_phi[2], 0.0, &coeffs.y, &p1sin_arr, &p1_arr);
+    let (_, j11) = calc_sigmas(max_phi[3], 0.0, &coeffs.y, &p1sin_arr, &p1_arr);
     // C++ uses abs(c) here, where abs is the magnitude of the complex number
     // vector. The result of this function should be a complex Jones matrix,
     // but, confusingly, the returned "Jones matrix" is all real in the C++.

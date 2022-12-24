@@ -19,38 +19,39 @@
 // The C code distributed under the GNU LGPL license, and thus this function is
 // also licensed under the LGPL. A copy of the LGPL license can be found at
 // https://www.gnu.org/licenses/lgpl-3.0.en.html
-// TODO: Benchmark. Does this need to go faster?
 fn _legendre_values(n: usize, m: usize, x: &[f64]) -> Vec<f64> {
     let mm = x.len();
     let mut v = vec![0.0; mm * (n + 1)];
 
     // J = M is the first non-zero function.
     if m <= n {
-        for i in 0..mm {
-            v[i + m * mm] = 1.0;
-        }
+        v[mm * m..mm * (m + 1)].fill(1.0);
 
         let mut fact = 1.0;
         for _ in 0..m {
-            for i in 0..mm {
-                v[i + m * mm] = -v[i + m * mm] * fact * (1.0 - x[i] * x[i]).sqrt();
-            }
+            v.iter_mut()
+                .skip(m * mm)
+                .take(mm)
+                .zip(x.iter().take(mm).copied())
+                .for_each(|(v, x)| {
+                    *v *= -fact * (1.0 - x * x).sqrt();
+                });
             fact += 2.0;
         }
     }
 
     // J = M + 1 is the second nonzero function.
     if m < n {
-        for i in 0..mm {
-            v[i + (m + 1) * mm] = x[i] * (2 * m + 1) as f64 * v[i + m * mm];
+        for (i, x) in (0..mm).zip(x.iter().copied()) {
+            v[i + (m + 1) * mm] = x * (2 * m + 1) as f64 * v[i + m * mm];
         }
     }
 
     for j in (m + 2)..=n {
-        for i in 0..mm {
+        for (i, x) in (0..mm).zip(x.iter().copied()) {
             let ji = j as isize;
             let mi = m as isize;
-            v[i + j * mm] = ((2 * j - 1) as f64 * x[i] * v[i + (j - 1) * mm]
+            v[i + j * mm] = ((2 * j - 1) as f64 * x * v[i + (j - 1) * mm]
                 + (-ji - mi + 1) as f64 * v[i + (j - 2) * mm])
                 / (ji - mi) as f64;
         }
@@ -74,7 +75,7 @@ pub(crate) fn legendre_single(n: usize, m: usize, x: f64) -> Vec<f64> {
 
         let mut fact = 1.0;
         for _ in 0..m {
-            v[m] = -v[m] * fact * (1.0 - x * x).sqrt();
+            v[m] *= -fact * (1.0 - x * x).sqrt();
             fact += 2.0;
         }
     }
@@ -96,7 +97,8 @@ pub(crate) fn legendre_single(n: usize, m: usize, x: f64) -> Vec<f64> {
 
 /// Returns list of Legendre polynomial values calculated up to order n_max.
 // This function is a re-write of P1SIN within the RTS file mwa_tile.c.
-pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
+pub(crate) fn p1sin(n_max: u8, theta: f64) -> (Vec<f64>, Vec<f64>) {
+    let n_max = usize::from(n_max);
     let mut all_vals = vec![0.0; (n_max + 1) * (n_max + 2) / 2];
 
     let size = n_max * n_max + 2 * n_max;
@@ -118,11 +120,10 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
         m_incr += n_max - m + 1;
     }
 
+    let mut p = vec![0.0; n_max + 1];
+    let mut pm1 = vec![0.0; n_max + 1];
+    let mut pm_sin = vec![0.0; n_max + 1];
     for n in 1..=n_max {
-        let mut p = vec![0.0; n + 1];
-        let mut pm1 = vec![0.0; n + 1];
-        let mut pm_sin = vec![0.0; n + 1];
-
         m_incr = 0;
         for order in 0..=n {
             let index = n + m_incr;
@@ -149,9 +150,10 @@ pub(crate) fn p1sin(n_max: usize, theta: f64) -> (Vec<f64>, Vec<f64>) {
             let pm_vals = legendre_single(n, 0, pm_in);
             pm_sin[1] = -(pm_vals[n] - p[0]) / delta_u;
         } else {
-            for order in 0..=n {
-                pm_sin[order] = p[order] / s_theta;
-            }
+            pm_sin
+                .iter_mut()
+                .zip(p.iter().copied())
+                .for_each(|(pm_sin, p)| *pm_sin = p / s_theta);
         }
 
         let ind_start = (n - 1) * (n - 1) + 2 * (n - 1);

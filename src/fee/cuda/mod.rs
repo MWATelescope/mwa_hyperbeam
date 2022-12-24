@@ -359,7 +359,7 @@ impl FEEBeamCUDA {
                 .len()
                 .try_into()
                 .expect("expected much fewer than i32::MAX"),
-            n_max: n_max.try_into().expect("n_max much smaller than u8::MAX"),
+            n_max,
 
             tile_map,
             freq_map,

@@ -6,7 +6,8 @@
 
 use std::collections::HashMap;
 
-use marlu::{c64, Jones};
+use marlu::Jones;
+use num_complex::Complex64 as c64;
 use parking_lot::RwLock;
 
 use crate::types::CacheKey;
@@ -23,7 +24,7 @@ pub(super) struct DipoleCoefficients {
     /// The sign of M coefficients (i.e. -1 or 1).
     pub(super) m_signs: Vec<i8>,
     /// The biggest N coefficient.
-    pub(super) n_max: usize,
+    pub(super) n_max: u8,
 }
 
 pub(super) struct BowtieCoefficients {

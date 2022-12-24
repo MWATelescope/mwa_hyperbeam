@@ -19,6 +19,11 @@ fn fee(c: &mut Criterion) {
         })
     });
 
+    c.bench_function("find_closest_freq", |b| {
+        let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+        b.iter(|| beam.find_closest_freq(200_000_000));
+    });
+
     c.bench_function("new + calc_jones_cold_cache", |b| {
         let az = 45.0_f64.to_radians();
         let za = 80.0_f64.to_radians();

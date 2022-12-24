@@ -8,8 +8,7 @@ use marlu::{ndarray, num_complex};
 use ndarray::prelude::*;
 use num_complex::Complex64 as c64;
 use numpy::*;
-use pyo3::create_exception;
-use pyo3::prelude::*;
+use pyo3::{create_exception, prelude::*};
 
 use crate::fee::{FEEBeam as FEEBeamRust, FEEBeamError, InitFEEBeamError};
 #[cfg(feature = "cuda")]

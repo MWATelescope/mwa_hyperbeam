@@ -14,6 +14,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
     its own.
 
 ### Changed
+- CPU code now runs significantly faster.
 - CUDA code now runs significantly faster.
 - CUDA FFI functions now take `i32` instead of `u32` for the number of
   directions.

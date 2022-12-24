@@ -40,6 +40,7 @@ codegen-units = 1   # Set this to 1 in Cargo.toml to allow for maximum size redu
 cfg-if = "1.0.0"
 hdf5 = "0.8.0"
 marlu = { version = "0.8.0", default-features = false }
+num-complex = "0.4.1"
 panic-message = "0.3.0"
 parking_lot = "0.12.0"
 thiserror = "1.0.2"

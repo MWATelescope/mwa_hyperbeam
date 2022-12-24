@@ -4,7 +4,7 @@
 
 //! Useful constants.
 
-use marlu::c64;
+use num_complex::Complex64 as c64;
 
 /// Beamformer delay step \[seconds\]
 pub(crate) const DELAY_STEP: f64 = 435.0e-12;

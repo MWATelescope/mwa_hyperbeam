@@ -196,10 +196,11 @@ the `hdf5-static` feature:
 Below is a table comparing other implementations of the FEE beam code. All
 benchmarks were done with unique azimuth and zenith angle directions, and all
 on the same system. The CPU is a Ryzen 9 3900X, which has 12 cores and SMT (24
-threads). All benchmarks were done in serial, unless indicated by "parallel".
-Python times were taken by running `time.time()` before and after the
-calculations. Memory usage is measured by running `time -v` on the command (not
-the `time` associated with your shell; this is usually at `/usr/bin/time`).
+threads). The CUDA benchmarks uses an NVIDIA GeForce RTX 2070. All benchmarks
+were done in serial, unless indicated by "parallel". Python times were taken
+by running `time.time()` before and after the calculations. Memory usage is
+measured by running `time -v` on the command (not the `time` associated with
+your shell; this is usually at `/usr/bin/time`).
 
 | Code             | Number of directions | Duration | Max. memory usage |
 |:-----------------|---------------------:|---------:|------------------:|
@@ -208,18 +209,21 @@ the `time` associated with your shell; this is usually at `/usr/bin/time`).
 |                                                  | 1000000 | 139.8 s  | 51.6 GiB  |
 | mwa-reduce (C++)                                 | 500     | 115.2 ms | 48.9 MiB  |
 |                                                  | 10000   | 2.417 s  | 6.02 GiB  |
-| mwa_hyperbeam                                    | 500     | 30.8 ms  | 9.82 MiB  |
-|                                                  | 100000  | 2.30 s   | 17.3 MiB  |
-|                                                  | 1000000 | 22.5 s   | 85.6 MiB  |
-| mwa_hyperbeam (parallel)                         | 1000000 | 1.73 s   | 86.1 MiB  |
-| mwa_hyperbeam (via python)                       | 500     | 28.5 ms  | 35.0 MiB  |
-|                                                  | 100000  | 4.25 s   | 51.5 MiB  |
-|                                                  | 1000000 | 44.0 s   | 203.8 MiB |
-| mwa_hyperbeam (via python, parallel)             | 1000000 | 3.40 s   | 203.2 MiB |
+| mwa_hyperbeam                                    | 500     | 10.0 ms  | 9.75 MiB  |
+|                                                  | 100000  | 1.82 s   | 11.3 MiB  |
+|                                                  | 1000000 | 18.1 s   | 25.0 MiB  |
+| mwa_hyperbeam (parallel)                         | 1000000 | 1.55 s   | 88.8 MiB  |
+| mwa_hyperbeam (via python)                       | 500     | 20.5 ms  | 44.2 MiB  |
+|                                                  | 100000  | 3.70 s   | 45.4 MiB  |
+|                                                  | 1000000 | 37.2 s   | 59.0 MiB  |
+| mwa_hyperbeam (via python, parallel)             | 1000000 | 2.49 s   | 246.6 MiB |
+| mwa_hyperbeam (CUDA, single precision)           | 1000000 | 450 ms   | 253.8 MiB |
+|                                                  | 1e8     | 3.08 s   | 14.26 GiB |
 
 Not sure what's up with the C++ code. Maybe I'm calling `CalcJonesArray` wrong,
 but it uses a huge amount of memory. In any case, `hyperbeam` seems to be
-roughly 10x faster.
+roughly 10x faster. If you know how to compare with `Everybeam`, please let me
+know.
 
 ## Troubleshooting
 
