@@ -69,6 +69,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 name = "bench"
 harness = false
 
+[[example]]
+name = "fee_cuda"
+required-features = ["cuda"]
+
 [patch.crates-io]
 # marlu = { path = "../Marlu" }
 # marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "DUT1" }
