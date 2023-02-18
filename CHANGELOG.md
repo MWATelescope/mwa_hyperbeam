@@ -6,8 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.5.1] - 2023-02-19
 ### Fixed
+- A seemingly-rarely-occurring bug in CUDA FEE code.
+  - Some Y dipole values were being used for X dipole values (:facepalm:), but
+    despite this bug being present for many people over many thousands of
+    observations, I only spotted this on a particular observation.
 - Fix `get_num_unique_tiles` being unavailable for `FEEBeamCUDA`.
 - Some function comments.
 - Some clippy lints.

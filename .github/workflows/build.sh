@@ -7,9 +7,14 @@ set -eux
 cp .github/workflows/releases-readme.md README.md
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    # I don't know why, but I need to reinstall Rust. Probably something to do with
-    # GitHub overriding env variables.
-    curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal
+    PATH=/root/.cargo/bin:$PATH
+    # 1.63 is the newest rustc version that can use glibc >= 2.11, and we use it
+    # because newer versions require glibc >= 2.17 (which this container
+    # deliberately doesn't have; we want maximum compatibility, so we use an old
+    # glibc).
+    rustup install 1.63 --no-self-update
+    rustup default 1.63
+    pip3 install maturin==0.14.13
 
     # Build a release for each x86_64 microarchitecture level. v4 can't be
     # compiled on GitHub for some reason.
@@ -37,14 +42,8 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
             ./*.whl
     done
 elif [[ "$OSTYPE" == "darwin"* ]]; then
-    # As of 8 March 2020, the "macos-latest" GitHub actions runner is "macOS
-    # 10.15", and the latest compiler for that (Homebrew GCC 10.2.0_4 ?) fails
-    # to compile the HDF5 source C code, because it has an implicit declaration.
-    # Use an older compiler to get around this issue.
-    export CC=gcc-9
-    export CXX=g++-9
-    pip3 install maturin
-    brew install autoconf automake libtool
+    pip3 install maturin==0.14.13
+    brew install automake
 
     # Build python first
     maturin build --release --features=python,all-static --strip

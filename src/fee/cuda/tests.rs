@@ -570,3 +570,27 @@ fn test_cuda_calc_jones_iau_order() {
     assert_eq!(j_iau[(0, 0, 0)][2], j_not_iau[(0, 0, 0)][1]);
     assert_eq!(j_iau[(0, 0, 0)][3], j_not_iau[(0, 0, 0)][0]);
 }
+
+#[test]
+#[serial]
+fn test_cuda_calc_jones_pathological() {
+    // I accidentally introduced a bug where Y dipole "m abs" values were used
+    // for X dipole values. This test fails if the bug still exists.
+
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let freqs = [119040000];
+    let mut amps = Array2::ones((2, 32));
+    amps[(0, 5)] = 0.0;
+    let delays = Array2::zeros((amps.len_of(Axis(0)), 16));
+    let norm_to_zenith = true;
+    let cuda_beam =
+        unsafe { beam.cuda_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) }.unwrap();
+
+    let azs = [3.5279431];
+    let zas = [0.19745648];
+    let array_latitude_rad = Some(-0.4671829547325157);
+    let iau_reorder = false;
+
+    let result = cuda_beam.calc_jones_pair(&azs, &zas, array_latitude_rad, iau_reorder);
+    assert!(result.is_ok());
+}

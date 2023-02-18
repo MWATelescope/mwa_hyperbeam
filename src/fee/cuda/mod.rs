@@ -256,7 +256,7 @@ impl FEEBeamCUDA {
             x_m_accum.extend_from_slice(&coeffs.x.m_accum[..current_x_len]);
             x_n_accum.extend_from_slice(&coeffs.x.n_accum[..current_x_len]);
             x_m_signs.extend_from_slice(&coeffs.x.m_signs[..current_x_len]);
-            x_m_abs_m.extend(coeffs.y.m_accum[..current_y_len].iter().map(|i| i.abs()));
+            x_m_abs_m.extend(coeffs.x.m_accum[..current_x_len].iter().map(|i| i.abs()));
             x_n_max.push(coeffs.x.n_max.try_into().unwrap());
             x_lengths.push(current_x_len.try_into().unwrap());
             x_offsets.push(x_offset);
