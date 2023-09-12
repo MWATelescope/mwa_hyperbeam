@@ -54,16 +54,17 @@ other words, most languages. See Rust, C and Python examples of usage in the
     >>> help(beam.calc_jones)
     Help on built-in function calc_jones:
 
-    calc_jones(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, array_latitude_rad, iau_order) method of builtins.FEEBeam instance
+    calc_jones(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad, iau_order) method of builtins.FEEBeam instance
         Calculate the beam-response Jones matrix for a given direction and
-        pointing. If `array_latitude_rad` is *not* supplied, the result will
-        match the original specification of the FEE beam code (possibly more
-        useful for engineers).
+        pointing. If `latitude_rad` is *not* supplied, the result will match
+        the original specification of the FEE beam code (possibly more useful
+        for engineers).
 
-        Astronomers are more likely to want to specify `array_latitude_rad`
-        (which will apply the parallactic-angle correction) and `iau_order`. If
-        `array_latitude_rad` is not given, then `iau_reorder` does nothing. See
-        this document for more information:
+        Astronomers are more likely to want to specify `latitude_rad` (which
+        will apply the parallactic-angle correction using the Earth latitude
+        provided for the telescope) and `iau_order`. If `latitude_rad` is not
+        given, then `iau_reorder` does nothing. See this document for more
+        information:
         <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
 
         `delays` and `amps` apply to each dipole in an MWA tile in the M&C

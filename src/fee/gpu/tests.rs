@@ -35,9 +35,9 @@ fn test_gpu_calc_jones_no_norm() {
             )
         })
         .unzip();
-    let array_latitude_rad = None;
+    let latitude_rad = None;
 
-    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
+    let result = cuda_beam.calc_jones_pair(&az, &za, latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -107,9 +107,9 @@ fn test_gpu_calc_jones_w_norm() {
             )
         })
         .unzip();
-    let array_latitude_rad = None;
+    let latitude_rad = None;
 
-    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
+    let result = cuda_beam.calc_jones_pair(&az, &za, latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -134,7 +134,7 @@ fn test_gpu_calc_jones_w_norm() {
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
-                    array_latitude_rad,
+                    latitude_rad,
                     false,
                 )
                 .unwrap();
@@ -179,9 +179,9 @@ fn test_gpu_calc_jones_w_norm_and_parallactic() {
             )
         })
         .unzip();
-    let array_latitude_rad = Some(MWA_LAT_RAD);
+    let latitude_rad = Some(MWA_LAT_RAD);
 
-    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, true);
+    let result = cuda_beam.calc_jones_pair(&az, &za, latitude_rad, true);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -206,7 +206,7 @@ fn test_gpu_calc_jones_w_norm_and_parallactic() {
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
-                    array_latitude_rad,
+                    latitude_rad,
                     true,
                 )
                 .unwrap();
@@ -251,9 +251,9 @@ fn test_gpu_calc_jones_with_and_without_parallactic() {
             )
         })
         .unzip();
-    let array_latitude_rad = Some(MWA_LAT_RAD);
+    let latitude_rad = Some(MWA_LAT_RAD);
 
-    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
+    let result = cuda_beam.calc_jones_pair(&az, &za, latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let pa = result.unwrap();
     let result = cuda_beam.calc_jones_pair(&az, &za, None, false);
@@ -305,9 +305,9 @@ fn test_gpu_calc_jones_deduplication() {
             )
         })
         .unzip();
-    let array_latitude_rad = None;
+    let latitude_rad = None;
 
-    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
+    let result = cuda_beam.calc_jones_pair(&az, &za, latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -332,7 +332,7 @@ fn test_gpu_calc_jones_deduplication() {
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
-                    array_latitude_rad,
+                    latitude_rad,
                     false,
                 )
                 .unwrap();
@@ -395,9 +395,9 @@ fn test_gpu_calc_jones_deduplication_w_norm() {
             )
         })
         .unzip();
-    let array_latitude_rad = None;
+    let latitude_rad = None;
 
-    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
+    let result = cuda_beam.calc_jones_pair(&az, &za, latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -422,7 +422,7 @@ fn test_gpu_calc_jones_deduplication_w_norm() {
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
-                    array_latitude_rad,
+                    latitude_rad,
                     false,
                 )
                 .unwrap();
@@ -475,9 +475,9 @@ fn test_gpu_calc_jones_no_amps() {
             )
         })
         .unzip();
-    let array_latitude_rad = None;
+    let latitude_rad = None;
 
-    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
+    let result = cuda_beam.calc_jones_pair(&az, &za, latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let jones_gpu = result.unwrap();
 
@@ -502,7 +502,7 @@ fn test_gpu_calc_jones_no_amps() {
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
                     norm_to_zenith,
-                    array_latitude_rad,
+                    latitude_rad,
                     false,
                 )
                 .unwrap();
@@ -552,13 +552,13 @@ fn test_gpu_calc_jones_iau_order() {
     assert_eq!(cuda_beam.num_unique_freqs, 1);
 
     let (az, za): (Vec<_>, Vec<_>) = (vec![0.45 / 10000.0], vec![0.45 / 10000.0]);
-    let array_latitude_rad = Some(MWA_LAT_RAD);
+    let latitude_rad = Some(MWA_LAT_RAD);
 
-    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, true);
+    let result = cuda_beam.calc_jones_pair(&az, &za, latitude_rad, true);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let j_iau = result.unwrap();
 
-    let result = cuda_beam.calc_jones_pair(&az, &za, array_latitude_rad, false);
+    let result = cuda_beam.calc_jones_pair(&az, &za, latitude_rad, false);
     assert!(result.is_ok(), "{}", result.unwrap_err());
     let j_not_iau = result.unwrap();
 
@@ -589,10 +589,10 @@ fn test_cuda_calc_jones_pathological() {
 
     let azs = [3.5279431];
     let zas = [0.19745648];
-    let array_latitude_rad = Some(-0.4671829547325157);
+    let latitude_rad = Some(-0.4671829547325157);
     let iau_reorder = false;
 
-    let result = cuda_beam.calc_jones_pair(&azs, &zas, array_latitude_rad, iau_reorder);
+    let result = cuda_beam.calc_jones_pair(&azs, &zas, latitude_rad, iau_reorder);
     assert!(result.is_ok());
 }
 
@@ -607,9 +607,9 @@ fn test_no_directions_doesnt_fail() {
     let cuda_beam =
         unsafe { beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith) }.unwrap();
 
-    let array_latitude_rad = Some(MWA_LAT_RAD);
+    let latitude_rad = Some(MWA_LAT_RAD);
     let result = cuda_beam
-        .calc_jones_pair(&[], &[], array_latitude_rad, false)
+        .calc_jones_pair(&[], &[], latitude_rad, false)
         .unwrap();
     assert!(result.is_empty());
 }

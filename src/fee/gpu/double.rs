@@ -214,7 +214,7 @@ extern "C" {
         d_coeffs: *const FEECoeffs,
         num_coeffs: ::std::os::raw::c_int,
         d_norm_jones: *const ::std::os::raw::c_void,
-        d_array_latitude_rad: *const f64,
+        d_latitude_rad: *const f64,
         iau_reorder: ::std::os::raw::c_int,
         d_results: *mut ::std::os::raw::c_void,
     ) -> *const ::std::os::raw::c_char;

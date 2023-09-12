@@ -123,7 +123,7 @@ typedef struct AzZA {
 } AzZA;
 
 const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
-                           int num_coeffs, const void *d_norm_jones, const FLOAT *d_array_latitude_rad,
+                           int num_coeffs, const void *d_norm_jones, const FLOAT *d_latitude_rad,
                            const int iau_reorder, void *d_results);
 
 #ifdef __cplusplus
@@ -286,12 +286,12 @@ inline __device__ void operator+=(COMPLEX &a, COMPLEX b) {
 //
 // This code is adapted from ERFA. The copyright notice associated with ERFA and
 // the original code is at the bottom of this file.
-inline __device__ HADec azel_to_hadec(FLOAT azimuth_rad, FLOAT elevation_rad, FLOAT array_latitude_rad) {
+inline __device__ HADec azel_to_hadec(FLOAT azimuth_rad, FLOAT elevation_rad, FLOAT latitude_rad) {
     /* Useful trig functions. */
     FLOAT sa, ca, se, ce, sp, cp;
     SINCOS(azimuth_rad, &sa, &ca);
     SINCOS(elevation_rad, &se, &ce);
-    SINCOS(array_latitude_rad, &sp, &cp);
+    SINCOS(latitude_rad, &sp, &cp);
 
     /* HA,Dec unit vector. */
     FLOAT x = -ca * ce * sp + se * cp;
@@ -311,12 +311,12 @@ inline __device__ HADec azel_to_hadec(FLOAT azimuth_rad, FLOAT elevation_rad, FL
 //
 // This code is adapted from ERFA. The copyright notice associated with ERFA and
 // the original code is at the bottom of this file.
-inline __device__ AzZA hadec_to_azza(FLOAT hour_angle_rad, FLOAT dec_rad, FLOAT array_latitude_rad) {
+inline __device__ AzZA hadec_to_azza(FLOAT hour_angle_rad, FLOAT dec_rad, FLOAT latitude_rad) {
     /* Useful trig functions. */
     FLOAT sh, ch, sd, cd, sp, cp;
     SINCOS(hour_angle_rad, &sh, &ch);
     SINCOS(dec_rad, &sd, &cd);
-    SINCOS(array_latitude_rad, &sp, &cp);
+    SINCOS(latitude_rad, &sp, &cp);
 
     /* Az,Alt unit vector. */
     FLOAT x = -ch * cd * sp + sd * cp;
@@ -337,9 +337,9 @@ inline __device__ AzZA hadec_to_azza(FLOAT hour_angle_rad, FLOAT dec_rad, FLOAT 
 //
 // This code is adapted from ERFA. The copyright notice associated with ERFA and
 // the original code is at the bottom of this file.
-inline __device__ FLOAT get_parallactic_angle(HADec hadec, FLOAT array_latitude_rad) {
+inline __device__ FLOAT get_parallactic_angle(HADec hadec, FLOAT latitude_rad) {
     FLOAT s_phi, c_phi, s_ha, c_ha, s_dec, c_dec, cqsz, sqsz;
-    SINCOS(array_latitude_rad, &s_phi, &c_phi);
+    SINCOS(latitude_rad, &s_phi, &c_phi);
     SINCOS(hadec.ha, &s_ha, &c_ha);
     SINCOS(hadec.dec, &s_dec, &c_dec);
 
@@ -551,7 +551,7 @@ inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT the
  * blockIdx.x * blockDim.x + threadIdx.x corresponds to direction.
  */
 __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT *zas, const int num_directions,
-                           const FEEJones *norm_jones, const FLOAT *array_latitude_rad, const int iau_order,
+                           const FEEJones *norm_jones, const FLOAT *latitude_rad, const int iau_order,
                            FEEJones *fee_jones) {
     for (int i_direction = blockIdx.x * blockDim.x + threadIdx.x; i_direction < num_directions;
          i_direction += gridDim.x * blockDim.x) {
@@ -584,9 +584,9 @@ __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT
             jm.j11 = CDIV(jm.j11, norm.j11);
         }
 
-        if (array_latitude_rad != NULL) {
-            HADec hadec = azel_to_hadec(az, M_PI_2 - za, *array_latitude_rad);
-            FLOAT pa = get_parallactic_angle(hadec, *array_latitude_rad);
+        if (latitude_rad != NULL) {
+            HADec hadec = azel_to_hadec(az, M_PI_2 - za, *latitude_rad);
+            FLOAT pa = get_parallactic_angle(hadec, *latitude_rad);
             apply_pa_correction(&jm, pa, iau_order);
         }
 
@@ -597,13 +597,13 @@ __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT
 
 extern "C" const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions,
                                       const FEECoeffs *d_coeffs, int num_coeffs, const void *d_norm_jones,
-                                      const FLOAT *d_array_latitude_rad, const int iau_order, void *d_results) {
+                                      const FLOAT *d_latitude_rad, const int iau_order, void *d_results) {
     dim3 gridDim, blockDim;
     blockDim.x = warpSize;
     gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
     gridDim.y = num_coeffs;
     fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (FEEJones *)d_norm_jones,
-                                      d_array_latitude_rad, iau_order, (FEEJones *)d_results);
+                                      d_latitude_rad, iau_order, (FEEJones *)d_results);
 
     gpuError_t error_id;
 #ifdef DEBUG

@@ -28,6 +28,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   - This isn't a downgrade; the internal code always used an `i32`, so it was
     dishonest for the code to look like it accepted more than `i32::MAX`
     directions.
+- `array_latitude_rad` arguments have been renamed to `latitude_rad`
+  - This functionally changes nothing, but is maybe a little less confusing.
+    "array" was used in the sense of the Murchison Widefield _Array_, not as a
+    collection of numbers.
 
 ### Fixed
 - Calling GPU FEE functions without any directions no longer causes a GPU error.

@@ -242,7 +242,7 @@ pub unsafe extern "C" fn new_fee_beam_from_env(fee_beam: *mut *mut FEEBeam) -> i
 /// * `num_amps` - The number of dipole gains used (either 16 or 32).
 /// * `norm_to_zenith` - A boolean indicating whether the beam response should
 ///   be normalised with respect to zenith.
-/// * `array_latitude_rad` - A pointer to an array latitude to use for the
+/// * `latitude_rad` - A pointer to a telescope latitude to use for the
 ///   parallactic-angle correction. If the pointer is null, no correction is
 ///   done.
 /// * `iau_order` - A boolean indicating whether the Jones matrix should be
@@ -267,7 +267,7 @@ pub unsafe extern "C" fn calc_jones(
     amps: *const f64,
     num_amps: u32,
     norm_to_zenith: u8,
-    array_latitude_rad: *const f64,
+    latitude_rad: *const f64,
     iau_order: u8,
     jones: *mut f64,
 ) -> i32 {
@@ -286,7 +286,7 @@ pub unsafe extern "C" fn calc_jones(
             return 1;
         }
     };
-    let array_latitude_rad = array_latitude_rad.as_ref().copied();
+    let latitude_rad = latitude_rad.as_ref().copied();
     let iau_bool = match iau_order {
         0 => false,
         1 => true,
@@ -308,7 +308,7 @@ pub unsafe extern "C" fn calc_jones(
         delays_s,
         amps_s,
         norm_bool,
-        array_latitude_rad,
+        latitude_rad,
         iau_bool,
     ) {
         Ok(j) => {
@@ -360,7 +360,7 @@ pub unsafe extern "C" fn calc_jones(
 /// * `num_amps` - The number of dipole gains used (either 16 or 32).
 /// * `norm_to_zenith` - A boolean indicating whether the beam response should
 ///   be normalised with respect to zenith.
-/// * `array_latitude_rad` - A pointer to an array latitude to use for the
+/// * `latitude_rad` - A pointer to a telescope latitude to use for the
 ///   parallactic-angle correction. If the pointer is null, no correction is
 ///   done.
 /// * `iau_order` - A boolean indicating whether the Jones matrix should be
@@ -387,7 +387,7 @@ pub unsafe extern "C" fn calc_jones_array(
     amps: *const f64,
     num_amps: u32,
     norm_to_zenith: u8,
-    array_latitude_rad: *const f64,
+    latitude_rad: *const f64,
     iau_order: u8,
     jones: *mut f64,
 ) -> i32 {
@@ -406,7 +406,7 @@ pub unsafe extern "C" fn calc_jones_array(
             return 1;
         }
     };
-    let array_latitude_rad = array_latitude_rad.as_ref().copied();
+    let latitude_rad = latitude_rad.as_ref().copied();
     let iau_bool = match iau_order {
         0 => false,
         1 => true,
@@ -430,7 +430,7 @@ pub unsafe extern "C" fn calc_jones_array(
         delays_s,
         amps_s,
         norm_bool,
-        array_latitude_rad,
+        latitude_rad,
         iau_bool,
         results_s,
     ));
@@ -571,7 +571,7 @@ pub unsafe extern "C" fn new_gpu_fee_beam(
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
 ///   radians)
-/// * `array_latitude_rad` - A pointer to an array latitude to use for the
+/// * `latitude_rad` - A pointer to a telescope latitude to use for the
 ///   parallactic-angle correction. If the pointer is null, no correction is
 ///   done.
 /// * `iau_order` - A boolean indicating whether the Jones matrix should be
@@ -597,7 +597,7 @@ pub unsafe extern "C" fn calc_jones_gpu(
     num_azza: u32,
     az_rad: *const GpuFloat,
     za_rad: *const GpuFloat,
-    array_latitude_rad: *const f64,
+    latitude_rad: *const f64,
     iau_order: u8,
     jones: *mut GpuFloat,
 ) -> i32 {
@@ -622,8 +622,8 @@ pub unsafe extern "C" fn calc_jones_gpu(
         ),
         jones.cast(),
     );
-    let array_latitude_rad = array_latitude_rad.as_ref().copied();
-    ffi_error!(beam.calc_jones_pair_inner(az, za, array_latitude_rad, iau_bool, results));
+    let latitude_rad = latitude_rad.as_ref().copied();
+    ffi_error!(beam.calc_jones_pair_inner(az, za, latitude_rad, iau_bool, results));
     0
 }
 
@@ -641,7 +641,7 @@ pub unsafe extern "C" fn calc_jones_gpu(
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
 ///   radians)
-/// * `array_latitude_rad` - A pointer to an array latitude to use for the
+/// * `latitude_rad` - A pointer to a telescope latitude to use for the
 ///   parallactic-angle correction. If the pointer is null, no correction is
 ///   done.
 /// * `iau_order` - A boolean indicating whether the Jones matrix should be
@@ -667,7 +667,7 @@ pub unsafe extern "C" fn calc_jones_gpu_device(
     num_azza: i32,
     az_rad: *const GpuFloat,
     za_rad: *const GpuFloat,
-    array_latitude_rad: *const f64,
+    latitude_rad: *const f64,
     iau_order: u8,
     d_jones: *mut GpuFloat,
 ) -> i32 {
@@ -685,7 +685,7 @@ pub unsafe extern "C" fn calc_jones_gpu_device(
     let za = slice::from_raw_parts(za_rad, num_azza as usize);
     let d_az = ffi_error!(DevicePointer::copy_to_device(az));
     let d_za = ffi_error!(DevicePointer::copy_to_device(za));
-    let d_array_latitude_rad = ffi_error!(array_latitude_rad
+    let d_latitude_rad = ffi_error!(latitude_rad
         .as_ref()
         .map(|f| DevicePointer::copy_to_device(&[*f as GpuFloat]))
         .transpose());
@@ -693,9 +693,7 @@ pub unsafe extern "C" fn calc_jones_gpu_device(
         d_az.get(),
         d_za.get(),
         num_azza,
-        d_array_latitude_rad
-            .map(|p| p.get())
-            .unwrap_or(std::ptr::null()),
+        d_latitude_rad.map(|p| p.get()).unwrap_or(std::ptr::null()),
         iau_bool,
         d_jones.cast()
     ));
@@ -714,7 +712,7 @@ pub unsafe extern "C" fn calc_jones_gpu_device(
 ///   radians)
 /// * `d_za_rad` - The zenith angle directions to get the beam response (units
 ///   of radians)
-/// * `array_latitude_rad` - A pointer to an array latitude to use for the
+/// * `latitude_rad` - A pointer to a telescope latitude to use for the
 ///   parallactic-angle correction. If the pointer is null, no correction is
 ///   done.
 /// * `iau_order` - A boolean indicating whether the Jones matrix should be
@@ -740,7 +738,7 @@ pub unsafe extern "C" fn calc_jones_gpu_device_inner(
     num_azza: i32,
     d_az_rad: *const GpuFloat,
     d_za_rad: *const GpuFloat,
-    d_array_latitude_rad: *const GpuFloat,
+    d_latitude_rad: *const GpuFloat,
     iau_order: u8,
     d_jones: *mut GpuFloat,
 ) -> i32 {
@@ -758,7 +756,7 @@ pub unsafe extern "C" fn calc_jones_gpu_device_inner(
         d_az_rad,
         d_za_rad,
         num_azza,
-        d_array_latitude_rad,
+        d_latitude_rad,
         iau_bool,
         d_jones.cast()
     ));

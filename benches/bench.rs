@@ -31,7 +31,7 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let amps = [1.0; 16];
         let norm_to_zenith = false;
-        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let latitude_rad = Some(MWA_LAT_RAD);
         let iau_order = true;
         b.iter(|| {
             let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
@@ -42,7 +42,7 @@ fn fee(c: &mut Criterion) {
                 &delays,
                 &amps,
                 norm_to_zenith,
-                array_latitude_rad,
+                latitude_rad,
                 iau_order,
             )
             .unwrap();
@@ -56,7 +56,7 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let amps = [1.0; 16];
         let norm_to_zenith = false;
-        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let latitude_rad = Some(MWA_LAT_RAD);
         let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         b.iter(|| {
@@ -67,7 +67,7 @@ fn fee(c: &mut Criterion) {
                 &delays,
                 &amps,
                 norm_to_zenith,
-                array_latitude_rad,
+                latitude_rad,
                 iau_order,
             )
             .unwrap();
@@ -82,7 +82,7 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let amps = [1.0; 16];
         let norm_to_zenith = false;
-        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let latitude_rad = Some(MWA_LAT_RAD);
         let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
@@ -93,7 +93,7 @@ fn fee(c: &mut Criterion) {
             &delays,
             &amps,
             norm_to_zenith,
-            array_latitude_rad,
+            latitude_rad,
             iau_order,
         )
         .unwrap();
@@ -105,7 +105,7 @@ fn fee(c: &mut Criterion) {
                 &delays,
                 &amps,
                 norm_to_zenith,
-                array_latitude_rad,
+                latitude_rad,
                 iau_order,
             )
             .unwrap();
@@ -124,7 +124,7 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let amps = [1.0; 16];
         let norm_to_zenith = false;
-        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let latitude_rad = Some(MWA_LAT_RAD);
         let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
@@ -135,7 +135,7 @@ fn fee(c: &mut Criterion) {
             &delays,
             &amps,
             norm_to_zenith,
-            array_latitude_rad,
+            latitude_rad,
             iau_order,
         )
         .unwrap();
@@ -147,7 +147,7 @@ fn fee(c: &mut Criterion) {
                 &delays,
                 &amps,
                 norm_to_zenith,
-                array_latitude_rad,
+                latitude_rad,
                 iau_order,
             )
             .unwrap();
@@ -168,7 +168,7 @@ fn fee(c: &mut Criterion) {
         let delays = [0; 16];
         let amps = [1.0; 16];
         let norm_to_zenith = false;
-        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let latitude_rad = Some(MWA_LAT_RAD);
         let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
@@ -179,7 +179,7 @@ fn fee(c: &mut Criterion) {
             &delays,
             &amps,
             norm_to_zenith,
-            array_latitude_rad,
+            latitude_rad,
             iau_order,
         )
         .unwrap();
@@ -194,7 +194,7 @@ fn fee(c: &mut Criterion) {
                         &delays,
                         &amps,
                         norm_to_zenith,
-                        array_latitude_rad,
+                        latitude_rad,
                         iau_order,
                     )
                     .unwrap()
@@ -225,12 +225,12 @@ fn fee(c: &mut Criterion) {
             az.push(rad);
             za.push(rad);
         }
-        let array_latitude_rad = None;
+        let latitude_rad = None;
         let iau_order = false;
 
         b.iter(|| {
             gpu_beam
-                .calc_jones_pair(&az, &za, array_latitude_rad, iau_order)
+                .calc_jones_pair(&az, &za, latitude_rad, iau_order)
                 .unwrap();
         })
     });
@@ -247,7 +247,7 @@ fn fee(c: &mut Criterion) {
     let delays = Array2::zeros((1, 16));
     let amps = Array2::ones((1, 16));
     let norm_to_zenith = true;
-    let array_latitude_rad = Some(MWA_LAT_RAD);
+    let latitude_rad = Some(MWA_LAT_RAD);
     let iau_order = true;
 
     c.bench_function("calc_jones_array 100000 dirs", |b| {
@@ -260,7 +260,7 @@ fn fee(c: &mut Criterion) {
             delays.as_slice().unwrap(),
             amps.as_slice().unwrap(),
             norm_to_zenith,
-            array_latitude_rad,
+            latitude_rad,
             iau_order,
         )
         .unwrap();
@@ -272,7 +272,7 @@ fn fee(c: &mut Criterion) {
                 delays.as_slice().unwrap(),
                 amps.as_slice().unwrap(),
                 norm_to_zenith,
-                array_latitude_rad,
+                latitude_rad,
                 iau_order,
             )
             .unwrap();
@@ -286,7 +286,7 @@ fn fee(c: &mut Criterion) {
             beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)
                 .unwrap()
         };
-        let array_latitude_rad = Some(MWA_LAT_RAD);
+        let latitude_rad = Some(MWA_LAT_RAD);
 
         #[cfg(feature = "gpu-single")]
         let (az, za): (Vec<_>, Vec<_>) = az_double
@@ -299,7 +299,7 @@ fn fee(c: &mut Criterion) {
 
         b.iter(|| {
             gpu_beam
-                .calc_jones_pair(&az, &za, array_latitude_rad, true)
+                .calc_jones_pair(&az, &za, latitude_rad, true)
                 .unwrap();
         })
     });

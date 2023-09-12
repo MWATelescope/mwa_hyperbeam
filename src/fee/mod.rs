@@ -448,14 +448,15 @@ impl FEEBeam {
     }
 
     /// Calculate the beam-response Jones matrix for a given direction and
-    /// pointing. If `array_latitude_rad` is *not* supplied, the result will
-    /// match the original specification of the FEE beam code (possibly more
-    /// useful for engineers).
+    /// pointing. If `latitude_rad` is *not* supplied, the result will match
+    /// the original specification of the FEE beam code (possibly more useful
+    /// for engineers).
     ///
-    /// Astronomers are more likely to want to specify `array_latitude_rad`
-    /// (which will apply the parallactic-angle correction) and `iau_order`. If
-    /// `array_latitude_rad` is `None`, then `iau_reorder` does nothing. See
-    /// this document for more information:
+    /// Astronomers are more likely to want to specify `latitude_rad` (which
+    /// will apply the parallactic-angle correction using the Earth latitude
+    /// provided for the telescope) and `iau_order`. If `latitude_rad` is
+    /// `None`, then `iau_reorder` does nothing. See this document for more
+    /// information:
     /// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
     ///
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
@@ -472,7 +473,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_order: bool,
     ) -> Result<Jones<f64>, FEEBeamError> {
         self.calc_jones_pair(
@@ -482,20 +483,21 @@ impl FEEBeam {
             delays,
             amps,
             norm_to_zenith,
-            array_latitude_rad,
+            latitude_rad,
             iau_order,
         )
     }
 
     /// Calculate the beam-response Jones matrix for a given direction and
-    /// pointing. If `array_latitude_rad` is *not* supplied, the result will
-    /// match the original specification of the FEE beam code (possibly more
-    /// useful for engineers).
+    /// pointing. If `latitude_rad` is *not* supplied, the result will match
+    /// the original specification of the FEE beam code (possibly more useful
+    /// for engineers).
     ///
-    /// Astronomers are more likely to want to specify `array_latitude_rad`
-    /// (which will apply the parallactic-angle correction) and `iau_order`. If
-    /// `array_latitude_rad` is `None`, then `iau_reorder` does nothing. See
-    /// this document for more information:
+    /// Astronomers are more likely to want to specify `latitude_rad` (which
+    /// will apply the parallactic-angle correction using the Earth latitude
+    /// provided for the telescope) and `iau_order`. If `latitude_rad` is
+    /// `None`, then `iau_reorder` does nothing. See this document for more
+    /// information:
     /// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
     ///
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
@@ -513,7 +515,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_order: bool,
     ) -> Result<Jones<f64>, FEEBeamError> {
         if delays.len() != 16 {
@@ -535,8 +537,8 @@ impl FEEBeam {
         let coeffs = self.get_modes(freq_hz, delays, &full_amps)?;
 
         let mut jones = calc_jones_direct(az_rad, za_rad, &coeffs, norm_jones);
-        if let Some(array_latitude_rad) = array_latitude_rad {
-            apply_parallactic_correction(az_rad, za_rad, array_latitude_rad, iau_order, &mut jones);
+        if let Some(latitude_rad) = latitude_rad {
+            apply_parallactic_correction(az_rad, za_rad, latitude_rad, iau_order, &mut jones);
         }
 
         Ok(jones)
@@ -561,7 +563,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_order: bool,
     ) -> Result<Vec<Jones<f64>>, FEEBeamError> {
         let mut results = vec![Jones::default(); azels.len()];
@@ -571,7 +573,7 @@ impl FEEBeam {
             delays,
             amps,
             norm_to_zenith,
-            array_latitude_rad,
+            latitude_rad,
             iau_order,
             &mut results,
         )?;
@@ -595,7 +597,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_order: bool,
         results: &mut [Jones<f64>],
     ) -> Result<(), FEEBeamError> {
@@ -624,8 +626,8 @@ impl FEEBeam {
                 let az = azel.az;
                 let za = azel.za();
                 let mut jones = calc_jones_direct(az, za, &coeffs, norm_jones);
-                if let Some(array_latitude_rad) = array_latitude_rad {
-                    apply_parallactic_correction(az, za, array_latitude_rad, iau_order, &mut jones);
+                if let Some(latitude_rad) = latitude_rad {
+                    apply_parallactic_correction(az, za, latitude_rad, iau_order, &mut jones);
                 }
                 *result = jones;
             });
@@ -651,7 +653,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_order: bool,
     ) -> Result<Vec<Jones<f64>>, FEEBeamError> {
         let mut results = vec![Jones::default(); az_rad.len()];
@@ -662,7 +664,7 @@ impl FEEBeam {
             delays,
             amps,
             norm_to_zenith,
-            array_latitude_rad,
+            latitude_rad,
             iau_order,
             &mut results,
         )?;
@@ -687,7 +689,7 @@ impl FEEBeam {
         delays: &[u32],
         amps: &[f64],
         norm_to_zenith: bool,
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_order: bool,
         results: &mut [Jones<f64>],
     ) -> Result<(), FEEBeamError> {
@@ -715,8 +717,8 @@ impl FEEBeam {
             .zip(results.par_iter_mut())
             .for_each(|((&az, &za), result)| {
                 let mut jones = calc_jones_direct(az, za, &coeffs, norm_jones);
-                if let Some(array_latitude_rad) = array_latitude_rad {
-                    apply_parallactic_correction(az, za, array_latitude_rad, iau_order, &mut jones);
+                if let Some(latitude_rad) = latitude_rad {
+                    apply_parallactic_correction(az, za, latitude_rad, iau_order, &mut jones);
                 }
                 *result = jones;
             });
@@ -876,14 +878,14 @@ fn fix_amps(amps: &[f64], delays: &[u32; 16]) -> [f64; 32] {
 fn apply_parallactic_correction(
     az_rad: f64,
     za_rad: f64,
-    array_latitude_rad: f64,
+    latitude_rad: f64,
     iau_order: bool,
     jones: &mut Jones<f64>,
 ) {
     // Get the parallactic-angle and find its sine and cosine.
     let para_angle = AzEl::from_radians(az_rad, FRAC_PI_2 - za_rad)
-        .to_hadec(array_latitude_rad)
-        .get_parallactic_angle(array_latitude_rad);
+        .to_hadec(latitude_rad)
+        .get_parallactic_angle(latitude_rad);
     let (s_rot, c_rot) = para_angle.sin_cos();
     *jones = if iau_order {
         Jones::from([

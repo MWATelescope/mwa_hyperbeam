@@ -374,7 +374,7 @@ impl FEEBeamGpu {
     pub fn calc_jones_device(
         &self,
         azels: &[AzEl],
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_reorder: bool,
     ) -> Result<DevicePointer<Jones<GpuFloat>>, FEEBeamError> {
         unsafe {
@@ -395,7 +395,7 @@ impl FEEBeamGpu {
             let d_zas = DevicePointer::copy_to_device(&zas)?;
 
             // Allocate the latitude if we have to.
-            let d_latitude_rad = array_latitude_rad
+            let d_latitude_rad = latitude_rad
                 .map(|f| DevicePointer::copy_to_device(&[f as GpuFloat]))
                 .transpose()?;
 
@@ -417,7 +417,7 @@ impl FEEBeamGpu {
         &self,
         az_rad: &[GpuFloat],
         za_rad: &[GpuFloat],
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_reorder: bool,
     ) -> Result<DevicePointer<Jones<GpuFloat>>, FEEBeamError> {
         unsafe {
@@ -434,7 +434,7 @@ impl FEEBeamGpu {
             let d_zas = DevicePointer::copy_to_device(za_rad)?;
 
             // Allocate the latitude if we have to.
-            let d_latitude_rad = array_latitude_rad
+            let d_latitude_rad = latitude_rad
                 .map(|f| DevicePointer::copy_to_device(&[f as GpuFloat]))
                 .transpose()?;
 
@@ -454,7 +454,7 @@ impl FEEBeamGpu {
     /// supplied pre-allocated device pointer. This buffer should have a shape
     /// of (`num_unique_tiles`, `num_unique_freqs`, `az_rad_length`). The first
     /// two dimensions can be accessed with [`FEEBeamGpu::get_num_unique_tiles`]
-    /// and [`FEEBeamGpu::get_num_unique_freqs`]. `d_array_latitude_rad` is
+    /// and [`FEEBeamGpu::get_num_unique_freqs`]. `d_latitude_rad` is
     /// populated with the array latitude, if the caller wants the parallactic-
     /// angle correction to be applied. If the pointer is null, then no
     /// correction is applied.
@@ -468,7 +468,7 @@ impl FEEBeamGpu {
         d_az_rad: *const GpuFloat,
         d_za_rad: *const GpuFloat,
         num_directions: i32,
-        d_array_latitude_rad: *const GpuFloat,
+        d_latitude_rad: *const GpuFloat,
         iau_reorder: bool,
         d_results: *mut std::ffi::c_void,
     ) -> Result<(), FEEBeamError> {
@@ -489,7 +489,7 @@ impl FEEBeamGpu {
                 Some(n) => (*n).get().cast(),
                 None => std::ptr::null(),
             },
-            d_array_latitude_rad,
+            d_latitude_rad,
             iau_reorder.into(),
             d_results,
         );
@@ -519,7 +519,7 @@ impl FEEBeamGpu {
     pub fn calc_jones(
         &self,
         azels: &[AzEl],
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_reorder: bool,
     ) -> Result<Array3<Jones<GpuFloat>>, FEEBeamError> {
         let mut results = Array3::from_elem(
@@ -531,13 +531,7 @@ impl FEEBeamGpu {
             .iter()
             .map(|&azel| (azel.az as GpuFloat, azel.za() as GpuFloat))
             .unzip();
-        self.calc_jones_pair_inner(
-            &azs,
-            &zas,
-            array_latitude_rad,
-            iau_reorder,
-            results.view_mut(),
-        )?;
+        self.calc_jones_pair_inner(&azs, &zas, latitude_rad, iau_reorder, results.view_mut())?;
         Ok(results)
     }
 
@@ -550,7 +544,7 @@ impl FEEBeamGpu {
         &self,
         az_rad: &[GpuFloat],
         za_rad: &[GpuFloat],
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_reorder: bool,
     ) -> Result<Array3<Jones<GpuFloat>>, FEEBeamError> {
         let mut results = Array3::from_elem(
@@ -561,7 +555,7 @@ impl FEEBeamGpu {
         self.calc_jones_pair_inner(
             az_rad,
             za_rad,
-            array_latitude_rad,
+            latitude_rad,
             iau_reorder,
             results.view_mut(),
         )?;
@@ -579,7 +573,7 @@ impl FEEBeamGpu {
         &self,
         az_rad: &[GpuFloat],
         za_rad: &[GpuFloat],
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_reorder: bool,
         mut results: ArrayViewMut3<Jones<GpuFloat>>,
     ) -> Result<(), FEEBeamError> {
@@ -593,8 +587,7 @@ impl FEEBeamGpu {
             Jones::default(),
         );
         // Calculate the beam responses. and copy them to the host.
-        let device_ptr =
-            self.calc_jones_device_pair(az_rad, za_rad, array_latitude_rad, iau_reorder)?;
+        let device_ptr = self.calc_jones_device_pair(az_rad, za_rad, latitude_rad, iau_reorder)?;
         unsafe {
             device_ptr.copy_from_device(dedup_results.as_slice_mut().expect("is contiguous"))?;
         }

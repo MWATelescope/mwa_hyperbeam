@@ -31,7 +31,7 @@ norm_to_zenith = True
 # Should we apply the parallactic angle correction? If so, give the array
 # latitude here. Read more here:
 # https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf
-array_latitude_rad = None
+latitude_rad = None
 # Do we want an "IAU ordered" beam response? This value doesn't matter if we
 # don't do a parallactic angle correction.
 iau_order = False
@@ -43,7 +43,8 @@ start_time = time.time()
 # time, so one would need to iterate over az and za. calc_jones_array is done in
 # parallel with Rust (so it's fast).
 jones = beam.calc_jones_array(
-    az, za, freq, delays, amps, norm_to_zenith, array_latitude_rad, iau_order)
+    az, za, freq, delays, amps, norm_to_zenith, latitude_rad, iau_order
+)
 duration = time.time() - start_time
 print("Time to calculate {} directions: {:.3}s".format(n, duration))
 print("First Jones matrix:")
@@ -54,20 +55,20 @@ print(jones[0])
 amps = np.ones(32)
 amps[-1] = 0
 jones = beam.calc_jones_array(
-    az[:1], za[:1], freq, delays, amps, norm_to_zenith, array_latitude_rad, iau_order)
+    az[:1], za[:1], freq, delays, amps, norm_to_zenith, latitude_rad, iau_order
+)
 print("First Jones matrix with altered Y amps:")
 print(jones[0])
 
 # Get another beam response, but this time with the parallactic-angle
 # correction.
-array_latitude_rad = -0.4660608448386394
+latitude_rad = -0.4660608448386394
 iau_order = True
 jones = beam.calc_jones(
-    az[0], za[0], freq, delays, amps, norm_to_zenith, array_latitude_rad, iau_order)
+    az[0], za[0], freq, delays, amps, norm_to_zenith, latitude_rad, iau_order
+)
 print("Parallactic-angle corrected, IAU-ordered beam response:")
 print(jones)
 
-# Supply only mandatory arguments (array_latitude_rad and iau_order are
-# optional).
-jones = beam.calc_jones(
-    az[0], za[0], freq, delays, amps, norm_to_zenith)
+# Supply only mandatory arguments (latitude_rad and iau_order are optional).
+jones = beam.calc_jones(az[0], za[0], freq, delays, amps, norm_to_zenith)

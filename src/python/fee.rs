@@ -50,14 +50,15 @@ impl FEEBeam {
     }
 
     /// Calculate the beam-response Jones matrix for a given direction and
-    /// pointing. If `array_latitude_rad` is *not* supplied, the result will
-    /// match the original specification of the FEE beam code (possibly more
-    /// useful for engineers).
+    /// pointing. If `latitude_rad` is *not* supplied, the result will match
+    /// the original specification of the FEE beam code (possibly more useful
+    /// for engineers).
     ///
-    /// Astronomers are more likely to want to specify `array_latitude_rad`
-    /// (which will apply the parallactic-angle correction) and `iau_order`. If
-    /// `array_latitude_rad` is not given, then `iau_reorder` does nothing. See
-    /// this document for more information:
+    /// Astronomers are more likely to want to specify `latitude_rad` (which
+    /// will apply the parallactic-angle correction using the Earth latitude
+    /// provided for the telescope) and `iau_order`. If `latitude_rad` is not
+    /// given, then `iau_reorder` does nothing. See this document for more
+    /// information:
     /// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
     ///
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
@@ -67,7 +68,7 @@ impl FEEBeam {
     /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
     /// the first 16 are for X dipole elements, and the next 16 are for Y.
     #[pyo3(
-        text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, array_latitude_rad, iau_order)"
+        text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad, iau_order)"
     )]
     #[allow(clippy::too_many_arguments)]
     fn calc_jones<'py>(
@@ -79,7 +80,7 @@ impl FEEBeam {
         delays: [u32; 16],
         amps: Vec<f64>,
         norm_to_zenith: bool,
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_order: Option<bool>,
     ) -> PyResult<&'py PyArray1<c64>> {
         let jones = self.beam.calc_jones_pair(
@@ -92,7 +93,7 @@ impl FEEBeam {
             &delays,
             &amps,
             norm_to_zenith,
-            array_latitude_rad,
+            latitude_rad,
             iau_order.unwrap_or(false),
         )?;
         // Ensure that the numpy crate's c64 is being used.
@@ -114,7 +115,7 @@ impl FEEBeam {
     /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
     /// the first 16 are for X dipole elements, and the next 16 are for Y.
     #[pyo3(
-        text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, array_latitude_rad, iau_order)"
+        text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad, iau_order)"
     )]
     #[allow(clippy::too_many_arguments)]
     fn calc_jones_array<'py>(
@@ -126,7 +127,7 @@ impl FEEBeam {
         delays: [u32; 16],
         amps: Vec<f64>,
         norm_to_zenith: bool,
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_order: Option<bool>,
     ) -> PyResult<&'py PyArray2<c64>> {
         let jones = self.beam.calc_jones_array_pair(
@@ -136,7 +137,7 @@ impl FEEBeam {
             &delays,
             &amps,
             norm_to_zenith,
-            array_latitude_rad,
+            latitude_rad,
             iau_order.unwrap_or(false),
         )?;
 
@@ -177,7 +178,7 @@ impl FEEBeam {
     /// for an explanation).
     #[cfg(any(feature = "cuda", feature = "hip"))]
     #[pyo3(
-        text_signature = "(az_rad, za_rad, freq_hz, delays_array, amps_array, norm_to_zenith, array_latitude_rad, iau_order)"
+        text_signature = "(az_rad, za_rad, freq_hz, delays_array, amps_array, norm_to_zenith, latitude_rad, iau_order)"
     )]
     #[allow(clippy::too_many_arguments)]
     fn calc_jones_gpu<'py>(
@@ -189,7 +190,7 @@ impl FEEBeam {
         delays_array: Vec<u32>,
         amps_array: Vec<f64>,
         norm_to_zenith: bool,
-        array_latitude_rad: Option<f64>,
+        latitude_rad: Option<f64>,
         iau_order: Option<bool>,
     ) -> PyResult<&'py PyArray4<GpuComplex>> {
         // hyperbeam expects ints for the frequencies. Convert them to make sure
@@ -211,7 +212,7 @@ impl FEEBeam {
                 .gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)?
         };
         let jones =
-            gpu_beam.calc_jones_pair(&azs, &zas, array_latitude_rad, iau_order.unwrap_or(false))?;
+            gpu_beam.calc_jones_pair(&azs, &zas, latitude_rad, iau_order.unwrap_or(false))?;
 
         // Convert to a 4D array of Complex from Jones.
         // Use unsafe code to ensure that no useless copying is done!

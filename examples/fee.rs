@@ -53,7 +53,7 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
     let amps = [1.0; 16];
     assert!(amps.len() == 16 || amps.len() == 32);
     let norm_to_zenith = true;
-    let array_latitude_rad = Some(-0.4660608448386394); // MWA
+    let latitude_rad = Some(-0.4660608448386394); // MWA
     let iau_order = true;
 
     // Call hyperbeam.
@@ -63,7 +63,7 @@ fn try_main() -> Result<(), Box<dyn std::error::Error>> {
         &delays,
         &amps,
         norm_to_zenith,
-        array_latitude_rad,
+        latitude_rad,
         iau_order,
     )?;
     println!("The first Jones matrix:");

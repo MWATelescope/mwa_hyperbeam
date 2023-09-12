@@ -39,7 +39,7 @@ norm_to_zenith = True
 # Should we apply the parallactic angle correction? If so, give the array
 # latitude here. Read more here:
 # https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf
-array_latitude_rad = None
+latitude_rad = None
 # Do we want an "IAU ordered" beam response? This value doesn't matter if we
 # don't do a parallactic angle correction.
 iau_order = False
@@ -47,7 +47,8 @@ iau_order = False
 # Pass the values to hyperbeam and get a numpy array back.
 start_time = time.time()
 jones = beam.calc_jones_gpu(
-    az, za, freq, delays, amps, norm_to_zenith, array_latitude_rad, iau_order)
+    az, za, freq, delays, amps, norm_to_zenith, latitude_rad, iau_order
+)
 duration = time.time() - start_time
 print("Time to calculate {} directions: {:.3}s".format(n, duration))
 print("First Jones matrix:")
