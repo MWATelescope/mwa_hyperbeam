@@ -1,19 +1,24 @@
 #!/bin/bash
 
+# This script is assumed to be using the docker image quay.io/pypa/manylinux_2_28_x86_64
+# This should mean that glibc 2.28 is being used. More details at
+# https://github.com/pypa/manylinux
+
 set -eux
 
 # Copy the release readme to the project root so it can neatly be put in the
 # release tarballs.
 cp .github/workflows/releases-readme.md README.md
 
+release=v$(grep version Cargo.toml -m1 | cut -d' ' -f3 | tr -d '"')
+
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-    PATH=/root/.cargo/bin:$PATH
-    # 1.63 is the newest rustc version that can use glibc >= 2.11, and we use it
-    # because newer versions require glibc >= 2.17 (which this container
-    # deliberately doesn't have; we want maximum compatibility, so we use an old
-    # glibc).
-    rustup install 1.63 --no-self-update
-    rustup default 1.63
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+    source "$HOME/.cargo/env"
+    rustup install $(grep rust-version Cargo.toml -m1 | cut -d' ' -f3 | tr -d '"')
+
+    python3.11 -m venv venv
+    source ./venv/bin/activate
     pip3 install maturin==0.14.13
 
     # Build a release for each x86_64 microarchitecture level. v4 can't be
@@ -22,7 +27,10 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
         export RUSTFLAGS="-C target-cpu=${level}"
 
         # Build python first
-        maturin build --release --features=python,all-static --strip -i 3.7 3.8 3.9 3.10
+        maturin build --release --features=python,all-static --strip -f
+
+        # We don't care about PyPy, sorry.
+        rm target/wheels/*pypy*
 
         # Build C objects
         cargo build --release --features all-static
@@ -34,10 +42,10 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
 
         # Create new release asset tarballs
         mv target/wheels/*.whl target/release/libmwa_hyperbeam.{a,so} include/mwa_hyperbeam.h .
-        tar -acvf mwa_hyperbeam-$(git describe --tags)-Linux-C-library-${level}.tar.gz \
+        tar -acvf mwa_hyperbeam-"${release}"-Linux-C-library-${level}.tar.gz \
             LICENSE COPYING-hdf5 LICENSE-erfa README.md \
             libmwa_hyperbeam.{a,so} mwa_hyperbeam.h
-        tar -acvf mwa_hyperbeam-$(git describe --tags)-Linux-Python-${level}.tar.gz \
+        tar -acvf mwa_hyperbeam-"${release}"-Linux-Python-${level}.tar.gz \
             LICENSE COPYING-hdf5 LICENSE-erfa README.md \
             ./*.whl
     done
@@ -57,10 +65,10 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     curl https://raw.githubusercontent.com/liberfa/erfa/master/LICENSE -o LICENSE-erfa
 
     mv target/wheels/*.whl target/release/libmwa_hyperbeam.{a,dylib} include/mwa_hyperbeam.h .
-    tar -acvf mwa_hyperbeam-$(git describe --tags)-MacOSX-C-library.tar.gz \
+    tar -acvf mwa_hyperbeam-"${release}"-MacOSX-C-library.tar.gz \
         LICENSE COPYING-hdf5 LICENSE-erfa README.md \
         libmwa_hyperbeam.{a,dylib} mwa_hyperbeam.h
-    tar -acvf mwa_hyperbeam-$(git describe --tags)-MacOSX-Python.tar.gz \
+    tar -acvf mwa_hyperbeam-"${release}"-MacOSX-Python.tar.gz \
         LICENSE COPYING-hdf5 LICENSE-erfa README.md \
         ./*.whl
 fi
