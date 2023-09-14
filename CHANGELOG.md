@@ -6,13 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.6.0] - 2023-09-14
 ### Added
 - Support for compiling GPU code with HIP
 - FFI function `calc_jones_gpu_device_inner`
   - This is the same as `calc_jones_gpu_device`, but allows the caller to pass
     in their own device buffers, so that `hyperbeam` doesn't need to allocate
     its own.
+- Set the $CXX variable to the C++ compiler in $CUDA_PATH, if $CXX is not
+  already set and $CUDA_PATH/bin/g++ exists.
 
 ### Changed
 - The minimum required Rust version is now 1.64.
