@@ -8,8 +8,6 @@ use num_complex::Complex64 as c64;
 
 /// Beamformer delay step \[seconds\]
 pub(crate) const DELAY_STEP: f64 = 435.0e-12;
-/// The number of dipoles per MWA tile.
-pub(crate) const NUM_DIPOLES: u8 = 16;
 
 pub(crate) const J_POWER_TABLE: [c64; 4] = [
     c64::new(1.0, 0.0),

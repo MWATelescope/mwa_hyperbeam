@@ -23,11 +23,18 @@ pub(super) struct AnalyticBeam {
 #[pymethods]
 impl AnalyticBeam {
     /// Create a new `AnalyticBeam` object. This object is used for all beam
-    /// calculations. Here, one can opt into RTS behaviour and/or control the
-    /// dipole height (which also differs between mwa_pb and the RTS).
+    /// calculations. Here, one can opt into RTS behaviour, control the dipole
+    /// height (which also differs between mwa_pb and the RTS), and control the
+    /// number of bowties per row (e.g. 4 for normal MWA tiles for a total of 16
+    /// bowties per tile, 8 for CRAM for a total of 64 per tile). The defaults
+    /// is mwa_pb behaviour with 4 bowties per row.
     #[new]
-    #[pyo3(text_signature = "(rts_behaviour, dipole_height)")]
-    fn new(rts_behaviour: Option<bool>, dipole_height: Option<f64>) -> AnalyticBeam {
+    #[pyo3(text_signature = "(rts_behaviour, dipole_height, bowties_per_row)")]
+    fn new(
+        rts_behaviour: Option<bool>,
+        dipole_height: Option<f64>,
+        bowties_per_row: Option<u8>,
+    ) -> AnalyticBeam {
         let beam_type = if let Some(true) = rts_behaviour {
             AnalyticType::Rts
         } else {
@@ -37,15 +44,17 @@ impl AnalyticBeam {
             beam: AnalyticBeamRust::new_custom(
                 beam_type,
                 dipole_height.unwrap_or(beam_type.get_default_dipole_height()),
+                bowties_per_row.unwrap_or(4),
             ),
         }
     }
 
     /// Calculate the Jones matrix for a single direction given a pointing.
-    /// `delays` must have 16 ints, and `amps` must have either 16 or 32 floats.
-    /// If there are 16, then the dipole gains apply to both X and Y elements of
-    /// dipoles. If there are 32, the first 16 amps are for the X elements, the
-    /// next 16 the Y elements.
+    /// `delays` must have `bowties_per_row * bowties_per_row` ints (which
+    /// was declared when `AnalyticBeam` was created), whereas `amps` can have
+    /// this number or double; if the former is given, then  these map 1:1
+    /// with bowties. If double are given, then the *smallest* of the two amps
+    /// corresponding to a bowtie's dipoles is used.
     #[pyo3(
         text_signature = "(az_rad, za_rad, freq_hz, delays, amps, latitude_rad, norm_to_zenith)"
     )]
@@ -56,7 +65,7 @@ impl AnalyticBeam {
         az_rad: f64,
         za_rad: f64,
         freq_hz: f64,
-        delays: [u32; 16],
+        delays: Vec<u32>,
         amps: Vec<f64>,
         latitude_rad: f64,
         norm_to_zenith: Option<bool>,
@@ -81,7 +90,11 @@ impl AnalyticBeam {
     /// Calculate the Jones matrices for multiple directions given a pointing.
     /// Each direction is calculated in parallel by Rust. The number of parallel
     /// threads used can be controlled by setting RAYON_NUM_THREADS. `delays`
-    /// must have 16 ints, and `amps` must have 16 or 32 floats.
+    /// must have `bowties_per_row * bowties_per_row` ints (which was declared
+    /// when `AnalyticBeam` was created), whereas `amps` can have this number
+    /// or double; if the former is given, then  these map 1:1 with bowties. If
+    /// double are given, then the *smallest* of the two amps corresponding to a
+    /// bowtie's dipoles is used.
     #[pyo3(
         text_signature = "(az_rad, za_rad, freq_hz, delays, amps, latitude_rad, norm_to_zenith)"
     )]
@@ -92,7 +105,7 @@ impl AnalyticBeam {
         az_rad: Vec<f64>,
         za_rad: Vec<f64>,
         freq_hz: f64,
-        delays: [u32; 16],
+        delays: Vec<u32>,
         amps: Vec<f64>,
         latitude_rad: f64,
         norm_to_zenith: Option<bool>,
@@ -125,11 +138,11 @@ impl AnalyticBeam {
     /// Calculate the Jones matrices for multiple directions given a pointing
     /// and multiple frequencies on a GPU.
     ///
-    /// `delays_array` and `amps_array` must have the same number of rows; these
-    /// correspond to tile configurations (i.e. each tile is allowed to have
-    /// distinct delays and amps). `delays_array` must have 16 elements per row,
-    /// but `amps_array` can have 16 or 32 elements per row (see `calc_jones`
-    /// for an explanation).
+    /// `delays_array` and `amps_array` must have the same number of rows;
+    /// these correspond to tile configurations (i.e. each tile is allowed
+    /// to have distinct delays and amps). The number of elements per row of
+    /// `delays_array` and `amps_array` have the same restrictions as `delays`
+    /// and `amps` in `calc_jones`.
     #[cfg(any(feature = "cuda", feature = "hip"))]
     #[pyo3(
         text_signature = "(az_rad, za_rad, freqs_hz, delays_array, amps_array, latitude_rad, norm_to_zenith)"
@@ -149,10 +162,12 @@ impl AnalyticBeam {
         // hyperbeam expects ints for the frequencies. Convert them to make sure
         // everything's OK.
         let freqs: Vec<u32> = freqs_hz.iter().map(|&f| f.round() as _).collect();
-        // We assume that there are 16 delays per row of delays, so we can get
-        // the number of tiles.
-        let num_tiles = delays_array.len() / 16;
-        let delays = Array2::from_shape_vec((num_tiles, 16), delays_array).unwrap();
+        let num_tiles = delays_array.len() / usize::from(self.beam.bowties_per_row).pow(2);
+        let delays = Array2::from_shape_vec(
+            (num_tiles, usize::from(self.beam.bowties_per_row).pow(2)),
+            delays_array,
+        )
+        .unwrap();
         // We then know how many amps per tile are provided.
         let amps =
             Array2::from_shape_vec((num_tiles, amps_array.len() / num_tiles), amps_array).unwrap();

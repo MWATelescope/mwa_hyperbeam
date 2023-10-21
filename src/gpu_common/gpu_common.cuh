@@ -88,8 +88,6 @@
 #endif
 
 const FLOAT M_2PI = 2.0 * M_PI;
-// The number of MWA bowties per tile.
-const FLOAT NUM_DIPOLES = 16.0;
 // MWA dipole separation [metres]
 const FLOAT MWA_DPL_SEP = 1.100;
 /// Speed of light [metres/second]

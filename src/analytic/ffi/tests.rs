@@ -25,43 +25,35 @@ use marlu::Jones;
 
 #[test]
 fn test_ffi_analytic_new() {
-    unsafe {
-        let mut beam = null_mut();
-        let result = new_analytic_beam(0, null(), &mut beam);
-        assert_eq!(result, 0);
+    for (dipole_height_metres, bowties_per_row) in [
+        (None, None),
+        (Some(1.5), None),
+        (None, Some(8_u8)),
+        (Some(1.5), Some(8)),
+    ] {
+        let dipole_height_metres = dipole_height_metres
+            .as_ref()
+            .map(|p| p as *const _)
+            .unwrap_or(null());
+        let bowties_per_row = bowties_per_row
+            .as_ref()
+            .map(|p| p as *const _)
+            .unwrap_or(null());
+        unsafe {
+            let mut beam = null_mut();
+            let result = new_analytic_beam(0, dipole_height_metres, bowties_per_row, &mut beam);
+            assert_eq!(result, 0);
 
-        free_analytic_beam(beam);
-    };
-    unsafe {
-        let mut beam = null_mut();
-        let result = new_analytic_beam(0, &1.5, &mut beam);
-        assert_eq!(result, 0);
-
-        free_analytic_beam(beam);
-    };
-
-    unsafe {
-        let mut beam = null_mut();
-        let result = new_analytic_beam(1, null(), &mut beam);
-        assert_eq!(result, 0);
-
-        free_analytic_beam(beam);
-    };
-
-    unsafe {
-        let mut beam = null_mut();
-        let result = new_analytic_beam(1, &0.2, &mut beam);
-        assert_eq!(result, 0);
-
-        free_analytic_beam(beam);
-    };
+            free_analytic_beam(beam);
+        }
+    }
 }
 
 macro_rules! new_beam {
     () => {{
         unsafe {
             let mut beam = null_mut();
-            let result = new_analytic_beam(0, null(), &mut beam);
+            let result = new_analytic_beam(0, null(), null(), &mut beam);
             assert_eq!(result, 0);
             beam
         }
@@ -375,7 +367,10 @@ fn test_bool_errors() {
         hb_last_error_message(err_ptr, err_len);
         let err = CString::from_raw(err_ptr);
         let err_str = err.to_str().unwrap();
-        assert_eq!(err_str, "A value other than 16 or 32 was used for num_amps");
+        assert_eq!(
+            err_str,
+            "A value other than 0 or 1 was used for norm_to_zenith"
+        );
 
         // Bad norm_to_zenith value.
         let result = analytic_calc_jones(
@@ -431,7 +426,7 @@ fn test_bool_errors() {
         hb_last_error_message(err_ptr, err_len);
         let err = CString::from_raw(err_ptr);
         let err_str = err.to_str().unwrap();
-        assert_eq!(err_str, "A value other than 16 or 32 was used for num_amps");
+        assert_eq!(err_str, "The number of amps wasn't 16 or 32 (got 10); these must either correspond to bowties or X dipoles then Y dipoles in the M&C order");
 
         // Bad norm_to_zenith value.
         let result = analytic_calc_jones_array(

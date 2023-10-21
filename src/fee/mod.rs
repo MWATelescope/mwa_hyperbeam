@@ -112,10 +112,10 @@ impl FEEBeam {
         // Sanity checks.
         match biggest_dip_index {
             None => return Err(InitFEEBeamError::NoDipoles),
-            Some(NUM_DIPOLES) => (),
+            Some(16) => (),
             Some(i) => {
                 return Err(InitFEEBeamError::DipoleCountMismatch {
-                    expected: NUM_DIPOLES,
+                    expected: 16,
                     got: i,
                 });
             }

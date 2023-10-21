@@ -31,7 +31,11 @@ int main(int argc, char *argv[]) {
     AnalyticBeam *beam;
     char rts_style = 0;                  // 1 or RTS style, 0 for mwa_pb
     double *dipole_height_metres = NULL; // Point to a valid float if you want a custom height
-    if (new_analytic_beam(rts_style, dipole_height_metres, &beam))
+    // Point to a valid int if you want a custom number of bowties per row. You
+    // almost certainly want this to be 4, unless you're simulating the CRAM
+    // tile.
+    uint8_t *bowties_per_row = NULL;
+    if (new_analytic_beam(rts_style, dipole_height_metres, bowties_per_row, &beam))
         handle_hyperbeam_error(__FILE__, __LINE__, "new_analytic_beam");
 
     // Set up the direction and pointing to test.
@@ -83,6 +87,28 @@ int main(int argc, char *argv[]) {
     // Free the heap-allocated Jones matrix.
     free(jones_2);
     // Free the beam - we must use a special function to do this.
+    free_analytic_beam(beam);
+
+    /* BONUS ROUND - CRAM TILE */
+    uint8_t cram_bowties_per_row = 8;
+    if (new_analytic_beam(rts_style, dipole_height_metres, &cram_bowties_per_row, &beam))
+        handle_hyperbeam_error(__FILE__, __LINE__, "new_analytic_beam");
+    unsigned delays_cram[64] = {3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2,
+                                1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0,
+                                3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0};
+    double amps_cram[64] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1,
+                            1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+                            1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1};
+    complex double *jones_cram = malloc(4 * sizeof(complex double));
+    if (analytic_calc_jones(beam, az, za, freq_hz, delays_cram, amps_cram, 64, latitude_rad, norm_to_zenith,
+                            (double *)jones_cram))
+        handle_hyperbeam_error(__FILE__, __LINE__, "analytic_calc_jones");
+    printf("The CRAM Jones matrix:\n");
+    printf("[[%+.8f%+.8fi,", creal(jones_cram[0]), cimag(jones_cram[0]));
+    printf(" %+.8f%+.8fi]\n", creal(jones_cram[1]), cimag(jones_cram[1]));
+    printf(" [%+.8f%+.8fi,", creal(jones_cram[2]), cimag(jones_cram[2]));
+    printf(" %+.8f%+.8fi]]\n", creal(jones_cram[3]), cimag(jones_cram[3]));
+    free(jones_cram);
     free_analytic_beam(beam);
 
     return EXIT_SUCCESS;

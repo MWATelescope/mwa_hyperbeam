@@ -415,3 +415,29 @@ fn test_fix_amps_4() {
         [0.0, 0.0, 0.5, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
     );
 }
+
+#[test]
+fn test_cram() {
+    let az_rad = 91.459449355_f64 * PI / 180.0;
+    let za_rad = 56.5383409732_f64 * PI / 180.0;
+    let freq_hz = 180e6 as _;
+    let delays = [
+        0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2,
+        4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6,
+        0, 2, 4, 6,
+    ];
+    let amps = [1.0; 64];
+    let norm_to_zenith = true;
+
+    let beam = AnalyticBeam::new_custom(AnalyticType::MwaPb, 0.3, 8);
+    let result = beam.calc_jones_pair(
+        az_rad,
+        za_rad,
+        freq_hz,
+        &delays,
+        &amps,
+        MWA_LAT_RAD,
+        norm_to_zenith,
+    );
+    result.unwrap();
+}

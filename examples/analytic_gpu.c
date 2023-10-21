@@ -60,7 +60,11 @@ int main(int argc, char *argv[]) {
     AnalyticBeam *beam;
     char rts_style = 0;                  // 1 or RTS style, 0 for mwa_pb
     double *dipole_height_metres = NULL; // Point to a valid float if you want a custom height
-    if (new_analytic_beam(rts_style, dipole_height_metres, &beam))
+    // Point to a valid int if you want a custom number of bowties per row. You
+    // almost certainly want this to be 4, unless you're simulating the CRAM
+    // tile.
+    uint8_t *bowties_per_row = NULL;
+    if (new_analytic_beam(rts_style, dipole_height_metres, bowties_per_row, &beam))
         handle_hyperbeam_error(__FILE__, __LINE__, "new_analytic_beam");
 
     // Set up our telescope array. Here, we are using two distinct tiles

@@ -144,3 +144,48 @@ fn test_no_directions_doesnt_fail() {
         .unwrap();
     assert!(result.is_empty());
 }
+
+#[test]
+fn test_cram() {
+    let az_rad = [91.459449355_f64.to_radians()];
+    let za_rad = [56.5383409732_f64.to_radians()];
+    let freq_hz = [180e6 as _];
+    let bowties_per_row: u8 = 8;
+    let delays = Array2::zeros((1, usize::from(bowties_per_row).pow(2)));
+    let amps = Array2::ones((1, usize::from(bowties_per_row).pow(2)));
+    let norm_to_zenith = true;
+
+    let beam = AnalyticBeam::new_custom(crate::analytic::AnalyticType::MwaPb, 0.3, bowties_per_row);
+    let gpu_beam = unsafe { beam.gpu_prepare(delays.view(), amps.view()) }.unwrap();
+    let gpu_az: Vec<_> = az_rad.into_iter().map(|f| f as GpuFloat).collect();
+    let gpu_za: Vec<_> = za_rad.into_iter().map(|f| f as GpuFloat).collect();
+    let result = gpu_beam.calc_jones_pair(
+        &gpu_az,
+        &gpu_za,
+        &freq_hz,
+        MWA_LAT_RAD as GpuFloat,
+        norm_to_zenith,
+    );
+    let gpu_results = result.unwrap();
+    #[cfg(feature = "gpu-single")]
+    let gpu_results = gpu_results.mapv(|j| Jones::<f64>::from(j));
+
+    // Compare with CPU.
+    let cpu_results = beam
+        .calc_jones_pair(
+            az_rad[0],
+            za_rad[0],
+            freq_hz[0],
+            delays.as_slice().unwrap(),
+            amps.as_slice().unwrap(),
+            MWA_LAT_RAD,
+            norm_to_zenith,
+        )
+        .unwrap();
+
+    #[cfg(not(feature = "gpu-single"))]
+    assert_abs_diff_eq!(gpu_results[(0, 0, 0)], cpu_results, epsilon = 1e-15);
+
+    #[cfg(feature = "gpu-single")]
+    assert_abs_diff_eq!(gpu_results[(0, 0, 0)], cpu_results, epsilon = 1e-6);
+}

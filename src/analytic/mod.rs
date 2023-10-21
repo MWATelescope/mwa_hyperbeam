@@ -3,10 +3,6 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 //! Code for the analytic MWA beam.
-//!
-//! While 32 amps are accepted for each dipole, only 1 amp is used per bowtie
-//! (of which there are 16). If 32 amps are given, then the *smallest* of the
-//! two amps corresponding to a bowtie's dipoles is used.
 
 mod error;
 mod ffi;
@@ -25,7 +21,7 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use marlu::{c64, constants::VEL_C, rayon, AzEl, Jones};
 use rayon::prelude::*;
 
-use crate::constants::{DELAY_STEP, MWA_DPL_SEP, NUM_DIPOLES};
+use crate::constants::{DELAY_STEP, MWA_DPL_SEP};
 
 #[cfg(any(feature = "cuda", feature = "hip"))]
 use ndarray::prelude::*;
@@ -53,10 +49,6 @@ impl AnalyticType {
 }
 
 /// The main struct to be used for calculating analytic pointings.
-///
-/// Methods can accept 32 amps for each dipole, only 1 amp is used per bowtie
-/// (of which there are 16). If 32 amps are given, then the *smallest* of the
-/// two amps corresponding to a bowtie's dipoles is used.
 pub struct AnalyticBeam {
     /// The height of the MWA dipoles we're simulating \[metres\].
     ///
@@ -66,6 +58,12 @@ pub struct AnalyticBeam {
 
     /// Which analytic beam code are we emulating?
     beam_type: AnalyticType,
+
+    /// The number of bowties in a row of an MWA tile. Almost all MWA tiles
+    /// have 4 bowties per row, for a total of 16 bowties. As of October 2023,
+    /// the only exception is the CRAM tile, which has 8 bowties per row, for a
+    /// total of 64 bowties.
+    pub(crate) bowties_per_row: u8,
 }
 
 impl Default for AnalyticBeam {
@@ -74,6 +72,7 @@ impl Default for AnalyticBeam {
         AnalyticBeam {
             dipole_height: beam_type.get_default_dipole_height(),
             beam_type,
+            bowties_per_row: 4,
         }
     }
 }
@@ -92,15 +91,30 @@ impl AnalyticBeam {
         AnalyticBeam {
             dipole_height: beam_type.get_default_dipole_height(),
             beam_type,
+            bowties_per_row: 4,
         }
     }
 
-    /// Create a new [`AnalyticBeam`] struct with custom behaviour and MWA
-    /// dipole height.
-    pub fn new_custom(beam_type: AnalyticType, dipole_height_metres: f64) -> AnalyticBeam {
+    /// Create a new [`AnalyticBeam`] struct with custom behaviour, MWA
+    /// dipole height and variable bowties per row (you want this to be 4 for
+    /// normal MWA tiles, 8 for the CRAM).
+    pub fn new_custom(
+        beam_type: AnalyticType,
+        dipole_height_metres: f64,
+        bowties_per_row: u8,
+    ) -> AnalyticBeam {
+        if bowties_per_row == 0 {
+            panic!("bowties_per_row was 0, why would you do that?");
+        }
+        // We want the number of bowties to fit in a u8; complain if there are
+        // too many damn bowties.
+        if bowties_per_row >= 16 {
+            panic!("bowties_per_row is restricted to be less than 16");
+        }
         AnalyticBeam {
             dipole_height: dipole_height_metres,
             beam_type,
+            bowties_per_row,
         }
     }
 
@@ -110,10 +124,16 @@ impl AnalyticBeam {
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
     /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
-    /// elements; if 16 are given, then these map 1:1 with dipoles. If 32 are
-    /// given, then the *smallest* of the two amps corresponding to a bowtie's
-    /// dipoles is used.
+    /// `delays` *must* have `bowties_per_row * bowties_per_row` elements (which
+    /// was declared when `AnalyticBeam` was created), whereas `amps` can have
+    /// this number or double elements; if the former is given, then these map
+    /// 1:1 with bowties. If double are given, then the *smallest* of the two
+    /// amps corresponding to a bowtie's dipoles is used.
+    ///
+    /// e.g. A normal MWA tile has 4 bowties per row. `delays` must then have
+    /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
+    /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
+    /// or 128 elements.
     pub fn calc_jones(
         &self,
         azel: AzEl,
@@ -140,10 +160,16 @@ impl AnalyticBeam {
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
     /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
-    /// elements; if 16 are given, then these map 1:1 with dipoles. If 32 are
-    /// given, then the *smallest* of the two amps corresponding to a bowtie's
-    /// dipoles is used.
+    /// `delays` *must* have `bowties_per_row * bowties_per_row` elements (which
+    /// was declared when `AnalyticBeam` was created), whereas `amps` can have
+    /// this number or double elements; if the former is given, then these map
+    /// 1:1 with bowties. If double are given, then the *smallest* of the two
+    /// amps corresponding to a bowtie's dipoles is used.
+    ///
+    /// e.g. A normal MWA tile has 4 bowties per row. `delays` must then have
+    /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
+    /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
+    /// or 128 elements.
     #[allow(clippy::too_many_arguments)]
     pub fn calc_jones_pair(
         &self,
@@ -158,18 +184,26 @@ impl AnalyticBeam {
         if za_rad > FRAC_PI_2 {
             return Err(AnalyticBeamError::BelowHorizon { za: za_rad });
         }
-        let delays: &[u32; 16] = delays
-            .try_into()
-            .map_err(|_| AnalyticBeamError::IncorrectDelaysLength(delays.len()))?;
-        if !(amps.len() == 16 || amps.len() == 32) {
-            return Err(AnalyticBeamError::IncorrectAmpsLength(amps.len()));
+        let num_bowties = usize::from(self.bowties_per_row * self.bowties_per_row);
+        if delays.len() != num_bowties {
+            return Err(AnalyticBeamError::IncorrectDelaysLength {
+                got: delays.len(),
+                expected: num_bowties,
+            });
+        }
+        if amps.len() != num_bowties && amps.len() != num_bowties * 2 {
+            return Err(AnalyticBeamError::IncorrectAmpsLength {
+                got: amps.len(),
+                expected1: num_bowties,
+                expected2: num_bowties * 2,
+            });
         }
 
         let amps = fix_amps(amps, delays);
         let (amps, delays) = if matches!(self.beam_type, AnalyticType::Rts) {
             reorder_to_rts(&amps, delays)
         } else {
-            (amps, delay_ints_to_floats(delays))
+            (amps.to_vec(), delay_ints_to_floats(delays))
         };
 
         let lambda_m = VEL_C / freq_hz as f64;
@@ -197,10 +231,16 @@ impl AnalyticBeam {
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
     /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
-    /// elements; if 16 are given, then these map 1:1 with dipoles. If 32 are
-    /// given, then the *smallest* of the two amps corresponding to a bowtie's
-    /// dipoles is used.
+    /// `delays` *must* have `bowties_per_row * bowties_per_row` elements (which
+    /// was declared when `AnalyticBeam` was created), whereas `amps` can have
+    /// this number or double elements; if the former is given, then these map
+    /// 1:1 with bowties. If double are given, then the *smallest* of the two
+    /// amps corresponding to a bowtie's dipoles is used.
+    ///
+    /// e.g. A normal MWA tile has 4 bowties per row. `delays` must then have
+    /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
+    /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
+    /// or 128 elements.
     pub fn calc_jones_array(
         &self,
         azels: &[AzEl],
@@ -230,10 +270,16 @@ impl AnalyticBeam {
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
     /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
-    /// elements; if 16 are given, then these map 1:1 with dipoles. If 32 are
-    /// given, then the *smallest* of the two amps corresponding to a bowtie's
-    /// dipoles is used.
+    /// `delays` *must* have `bowties_per_row * bowties_per_row` elements (which
+    /// was declared when `AnalyticBeam` was created), whereas `amps` can have
+    /// this number or double elements; if the former is given, then these map
+    /// 1:1 with bowties. If double are given, then the *smallest* of the two
+    /// amps corresponding to a bowtie's dipoles is used.
+    ///
+    /// e.g. A normal MWA tile has 4 bowties per row. `delays` must then have
+    /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
+    /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
+    /// or 128 elements.
     #[allow(clippy::too_many_arguments)]
     pub fn calc_jones_array_inner(
         &self,
@@ -251,18 +297,26 @@ impl AnalyticBeam {
                 return Err(AnalyticBeamError::BelowHorizon { za });
             }
         }
-        let delays: &[u32; 16] = delays
-            .try_into()
-            .map_err(|_| AnalyticBeamError::IncorrectDelaysLength(delays.len()))?;
-        if !(amps.len() == 16 || amps.len() == 32) {
-            return Err(AnalyticBeamError::IncorrectAmpsLength(amps.len()));
+        let num_bowties = usize::from(self.bowties_per_row * self.bowties_per_row);
+        if delays.len() != num_bowties {
+            return Err(AnalyticBeamError::IncorrectDelaysLength {
+                got: delays.len(),
+                expected: num_bowties,
+            });
+        }
+        if amps.len() != num_bowties && amps.len() != num_bowties * 2 {
+            return Err(AnalyticBeamError::IncorrectAmpsLength {
+                got: amps.len(),
+                expected1: num_bowties,
+                expected2: num_bowties * 2,
+            });
         }
 
         let amps = fix_amps(amps, delays);
         let (amps, delays) = if matches!(self.beam_type, AnalyticType::Rts) {
             reorder_to_rts(&amps, delays)
         } else {
-            (amps, delay_ints_to_floats(delays))
+            (amps.to_vec(), delay_ints_to_floats(delays))
         };
 
         let lambda_m = VEL_C / freq_hz as f64;
@@ -300,10 +354,16 @@ impl AnalyticBeam {
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
     /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
-    /// elements; if 16 are given, then these map 1:1 with dipoles. If 32 are
-    /// given, then the *smallest* of the two amps corresponding to a bowtie's
-    /// dipoles is used.
+    /// `delays` *must* have `bowties_per_row * bowties_per_row` elements (which
+    /// was declared when `AnalyticBeam` was created), whereas `amps` can have
+    /// this number or double elements; if the former is given, then these map
+    /// 1:1 with bowties. If double are given, then the *smallest* of the two
+    /// amps corresponding to a bowtie's dipoles is used.
+    ///
+    /// e.g. A normal MWA tile has 4 bowties per row. `delays` must then have
+    /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
+    /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
+    /// or 128 elements.
     #[allow(clippy::too_many_arguments)]
     pub fn calc_jones_array_pair(
         &self,
@@ -320,18 +380,26 @@ impl AnalyticBeam {
                 return Err(AnalyticBeamError::BelowHorizon { za });
             }
         }
-        let delays: &[u32; 16] = delays
-            .try_into()
-            .map_err(|_| AnalyticBeamError::IncorrectDelaysLength(delays.len()))?;
-        if !(amps.len() == 16 || amps.len() == 32) {
-            return Err(AnalyticBeamError::IncorrectAmpsLength(amps.len()));
+        let num_bowties = usize::from(self.bowties_per_row * self.bowties_per_row);
+        if delays.len() != num_bowties {
+            return Err(AnalyticBeamError::IncorrectDelaysLength {
+                got: delays.len(),
+                expected: num_bowties,
+            });
+        }
+        if amps.len() != num_bowties && amps.len() != num_bowties * 2 {
+            return Err(AnalyticBeamError::IncorrectAmpsLength {
+                got: amps.len(),
+                expected1: num_bowties,
+                expected2: num_bowties * 2,
+            });
         }
 
         let amps = fix_amps(amps, delays);
         let (amps, delays) = if matches!(self.beam_type, AnalyticType::Rts) {
             reorder_to_rts(&amps, delays)
         } else {
-            (amps, delay_ints_to_floats(delays))
+            (amps.to_vec(), delay_ints_to_floats(delays))
         };
 
         let lambda_m = VEL_C / freq_hz as f64;
@@ -362,10 +430,16 @@ impl AnalyticBeam {
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
     /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
-    /// elements; if 16 are given, then these map 1:1 with dipoles. If 32 are
-    /// given, then the *smallest* of the two amps corresponding to a bowtie's
-    /// dipoles is used.
+    /// `delays` *must* have `bowties_per_row * bowties_per_row` elements (which
+    /// was declared when `AnalyticBeam` was created), whereas `amps` can have
+    /// this number or double elements; if the former is given, then these map
+    /// 1:1 with bowties. If double are given, then the *smallest* of the two
+    /// amps corresponding to a bowtie's dipoles is used.
+    ///
+    /// e.g. A normal MWA tile has 4 bowties per row. `delays` must then have
+    /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
+    /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
+    /// or 128 elements.
     #[allow(clippy::too_many_arguments)]
     pub fn calc_jones_array_pair_inner(
         &self,
@@ -383,18 +457,26 @@ impl AnalyticBeam {
                 return Err(AnalyticBeamError::BelowHorizon { za });
             }
         }
-        let delays: &[u32; 16] = delays
-            .try_into()
-            .map_err(|_| AnalyticBeamError::IncorrectDelaysLength(delays.len()))?;
-        if !(amps.len() == 16 || amps.len() == 32) {
-            return Err(AnalyticBeamError::IncorrectAmpsLength(amps.len()));
+        let num_bowties = usize::from(self.bowties_per_row * self.bowties_per_row);
+        if delays.len() != num_bowties {
+            return Err(AnalyticBeamError::IncorrectDelaysLength {
+                got: delays.len(),
+                expected: num_bowties,
+            });
+        }
+        if amps.len() != num_bowties && amps.len() != num_bowties * 2 {
+            return Err(AnalyticBeamError::IncorrectAmpsLength {
+                got: amps.len(),
+                expected1: num_bowties,
+                expected2: num_bowties * 2,
+            });
         }
 
         let amps = fix_amps(amps, delays);
         let (amps, delays) = if matches!(self.beam_type, AnalyticType::Rts) {
             reorder_to_rts(&amps, delays)
         } else {
-            (amps, delay_ints_to_floats(delays))
+            (amps.to_vec(), delay_ints_to_floats(delays))
         };
 
         let lambda_m = VEL_C / freq_hz as f64;
@@ -437,8 +519,8 @@ impl AnalyticBeam {
         latitude_rad: f64,
         sin_latitude: f64,
         cos_latitude: f64,
-        delays: &[f64; 16],
-        amps: &[f64; 16],
+        delays: &[f64],
+        amps: &[f64],
         norm_to_zenith: bool,
     ) -> Jones<f64> {
         // The following logic could probably be significantly cleaned up, but
@@ -479,8 +561,8 @@ impl AnalyticBeam {
         // Loop over each dipole.
         let mut array_factor = c64::new(0.0, 0.0);
         for (k, (&delay, &amp)) in delays.iter().zip(amps.iter()).enumerate() {
-            let col = k % 4;
-            let row = k / 4;
+            let col = k % usize::from(self.bowties_per_row);
+            let row = k / usize::from(self.bowties_per_row);
             let (dip_e, dip_n) = match self.beam_type {
                 AnalyticType::MwaPb => (
                     (col as f64 - 1.5) * MWA_DPL_SEP,
@@ -513,8 +595,8 @@ impl AnalyticBeam {
             array_factor += amp * c64::new(c_phase, s_phase);
         }
 
-        let mut ground_plane =
-            2.0 * (TAU * self.dipole_height / lambda_m * c_za).sin() / NUM_DIPOLES as f64;
+        let mut ground_plane = 2.0 * (TAU * self.dipole_height / lambda_m * c_za).sin()
+            / usize::from(self.bowties_per_row).pow(2) as f64;
         if norm_to_zenith {
             ground_plane /= 2.0 * (TAU * self.dipole_height / lambda_m).sin();
         }
@@ -538,11 +620,11 @@ impl AnalyticBeam {
     /// given the delays and amps to be used. The resulting object takes
     /// directions and frequencies to compute the beam responses on the device.
     ///
-    /// `delays_array` and `amps_array` must have the same number of rows; these
-    /// correspond to tile configurations (i.e. each tile is allowed to have
-    /// distinct delays and amps). `delays_array` must have 16 elements per row,
-    /// but `amps_array` can have 16 or 32 elements per row (see `calc_jones`
-    /// for an explanation).
+    /// `delays_array` and `amps_array` must have the same number of rows;
+    /// these correspond to tile configurations (i.e. each tile is allowed
+    /// to have distinct delays and amps). The number of elements per row of
+    /// `delays_array` and `amps_array` have the same restrictions as `delays`
+    /// and `amps` in `calc_jones`.
     ///
     /// The code will automatically de-duplicate tile configurations so that no
     /// redundant calculations are done.
@@ -564,23 +646,28 @@ impl AnalyticBeam {
 }
 
 /// Ensure that any delays of 32 have an amplitude (dipole gain) of 0. The
-/// results are bad otherwise! Also convert 32 amps to 16; we use the smaller of
-/// the two gains associated with a bowtie.
-fn fix_amps(amps: &[f64], delays: &[u32]) -> [f64; 16] {
+/// results are bad otherwise! Also potentially halve the number of amps (e.g.
+/// if 32 are given for a 16-bowtie tile, yield 16); we use the smaller of the
+/// two gains associated with a bowtie.
+fn fix_amps(amps: &[f64], delays: &[u32]) -> Vec<f64> {
     // The lengths of `amps` and `delays` should be checked before calling this
     // functions; the asserts are a last resort guard.
-    assert_eq!(delays.len(), 16);
-    assert!(amps.len() == 16 || amps.len() == 32);
+    assert!(amps.len() == delays.len() || amps.len() == delays.len() * 2);
 
-    let mut fixed_amps: [f64; 16] = [0.0; 16];
+    let mut fixed_amps = vec![0.0; delays.len()];
     fixed_amps
         .iter_mut()
-        .zip(amps)
-        .zip(amps.iter().cycle().skip(16))
-        .zip(delays.iter().cycle())
-        .for_each(|(((fixed, &x_amp), &y_amp), &delay)| {
-            *fixed = if delay == 32 { 0.0 } else { x_amp.min(y_amp) };
-        });
+        .zip(amps.iter())
+        .zip(delays.iter())
+        .for_each(|((fixed, &amp), &delay)| *fixed = if delay == 32 { 0.0 } else { amp });
+    if amps.len() == delays.len() * 2 {
+        fixed_amps
+            .iter_mut()
+            .zip(amps.iter().skip(delays.len()))
+            .for_each(|(fixed, &amp)| {
+                *fixed = fixed.min(amp);
+            });
+    }
     fixed_amps
 }
 
@@ -588,12 +675,24 @@ fn fix_amps(amps: &[f64], delays: &[u32]) -> [f64; 16] {
 /// amps and delays, and returns RTS-ordered amps and delays. It also does
 /// extra... things.
 // Several thousand upside down emojis.
-fn reorder_to_rts(amps: &[f64; 16], delays: &[u32; 16]) -> ([f64; 16], [f64; 16]) {
-    let indices = [12, 8, 4, 0, 13, 9, 5, 1, 14, 10, 6, 2, 15, 11, 7, 3];
+fn reorder_to_rts(amps: &[f64], delays: &[u32]) -> (Vec<f64>, Vec<f64>) {
+    // Assume that the number of delays is the number of bowties.
+    let num_bowties = delays.len();
+    // Get the number of bowties per row from the number of bowties. This
+    // assumes that the number is a perfect square.
+    let bowties_per_row = (num_bowties as f64).sqrt().round() as usize;
+    assert_eq!(bowties_per_row * bowties_per_row, num_bowties);
+
+    let mut indices = Vec::with_capacity(num_bowties);
+    for i_col in 0..bowties_per_row {
+        for i_row in (0..bowties_per_row).rev() {
+            indices.push(i_row * bowties_per_row + i_col);
+        }
+    }
 
     // Convert to "RTS order".
-    let mut rts_amps = [0.0; 16];
-    let mut rts_delays = [0.0; 16];
+    let mut rts_amps = vec![0.0; num_bowties];
+    let mut rts_delays = vec![0.0; num_bowties];
     indices
         .into_iter()
         .zip(rts_amps.iter_mut())
@@ -604,31 +703,17 @@ fn reorder_to_rts(amps: &[f64; 16], delays: &[u32; 16]) -> ([f64; 16], [f64; 16]
         });
 
     // Do this crazy stuff.
-    let delay_0 = rts_delays.iter().sum::<f64>() * VEL_C * DELAY_STEP / NUM_DIPOLES as f64;
+    let delay_0 = rts_delays.iter().sum::<f64>() * VEL_C * DELAY_STEP / num_bowties as f64;
     rts_delays.iter_mut().for_each(|d| {
         *d = *d * VEL_C * DELAY_STEP - delay_0;
     });
     (rts_amps, rts_delays)
 }
 
-fn delay_ints_to_floats(delays: &[u32]) -> [f64; 16] {
-    assert_eq!(delays.len(), 16);
-    [
-        delays[0] as f64 * VEL_C * DELAY_STEP,
-        delays[1] as f64 * VEL_C * DELAY_STEP,
-        delays[2] as f64 * VEL_C * DELAY_STEP,
-        delays[3] as f64 * VEL_C * DELAY_STEP,
-        delays[4] as f64 * VEL_C * DELAY_STEP,
-        delays[5] as f64 * VEL_C * DELAY_STEP,
-        delays[6] as f64 * VEL_C * DELAY_STEP,
-        delays[7] as f64 * VEL_C * DELAY_STEP,
-        delays[8] as f64 * VEL_C * DELAY_STEP,
-        delays[9] as f64 * VEL_C * DELAY_STEP,
-        delays[10] as f64 * VEL_C * DELAY_STEP,
-        delays[11] as f64 * VEL_C * DELAY_STEP,
-        delays[12] as f64 * VEL_C * DELAY_STEP,
-        delays[13] as f64 * VEL_C * DELAY_STEP,
-        delays[14] as f64 * VEL_C * DELAY_STEP,
-        delays[15] as f64 * VEL_C * DELAY_STEP,
-    ]
+fn delay_ints_to_floats(delays: &[u32]) -> Vec<f64> {
+    delays
+        .iter()
+        .copied()
+        .map(|d| d as f64 * VEL_C * DELAY_STEP)
+        .collect()
 }

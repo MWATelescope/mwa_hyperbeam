@@ -12,7 +12,7 @@ const char *gpu_analytic_calc_jones(const ANALYTIC_TYPE at, const FLOAT dipole_h
                                     const FLOAT *d_zas, int num_directions, const unsigned int *d_freqs_hz,
                                     const int num_freqs, const FLOAT *d_delays, const FLOAT *d_amps,
                                     const int num_tiles, const FLOAT latitude_rad, const uint8_t norm_to_zenith,
-                                    void *d_results);
+                                    const uint8_t bowties_per_row, void *d_results);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -29,7 +29,7 @@ extern "C" {
 __global__ void analytic_kernel(const ANALYTIC_TYPE at, const FLOAT dipole_height_m, const FLOAT *azs, const FLOAT *zas,
                                 const int num_directions, const unsigned int *freqs_hz, const int num_freqs,
                                 const FLOAT *delays, const FLOAT *amps, const int num_tiles, const FLOAT latitude_rad,
-                                const bool norm_to_zenith, JONES *results) {
+                                const bool norm_to_zenith, const uint8_t bowties_per_row, JONES *results) {
     for (int i_direction = blockIdx.x * blockDim.x + threadIdx.x; i_direction < num_directions;
          i_direction += gridDim.x * blockDim.x) {
         const FLOAT az = azs[i_direction];
@@ -65,6 +65,8 @@ __global__ void analytic_kernel(const ANALYTIC_TYPE at, const FLOAT dipole_heigh
 
         FLOAT proj_e = s_za * s_az;
         FLOAT proj_n = s_za * c_az;
+        int num_bowties = (int)bowties_per_row;
+        num_bowties *= num_bowties;
 
         for (int i_tile = 0; i_tile < num_tiles; i_tile++) {
             for (int i_freq = 0; i_freq < num_freqs; i_freq++) {
@@ -73,14 +75,12 @@ __global__ void analytic_kernel(const ANALYTIC_TYPE at, const FLOAT dipole_heigh
                 JONES jones = jones_original;
 
                 COMPLEX array_factor = MAKE_COMPLEX(0, 0);
-                // Pray to your deity that this unrolls. Or, ya know, don't, because
-                // this is still heaps faster than FEE.
-                for (int row = 0; row < 4; row++) {
-                    for (int col = 0; col < 4; col++) {
+                for (int row = 0; row < bowties_per_row; row++) {
+                    for (int col = 0; col < bowties_per_row; col++) {
                         FLOAT dip_e = 0.0;
                         FLOAT dip_n = 0.0;
                         FLOAT phase = 0.0;
-                        FLOAT delay = delays[i_tile * 16 + row * 4 + col];
+                        FLOAT delay = delays[i_tile * num_bowties + row * (int)bowties_per_row + col];
 
                         if (at == MWA_PB) {
                             dip_e = ((FLOAT)col - 1.5) * MWA_DPL_SEP;
@@ -94,12 +94,12 @@ __global__ void analytic_kernel(const ANALYTIC_TYPE at, const FLOAT dipole_heigh
 
                         FLOAT s_phase, c_phase;
                         SINCOS(phase, &s_phase, &c_phase);
-                        FLOAT amp = amps[i_tile * 16 + row * 4 + col];
+                        FLOAT amp = amps[i_tile * num_bowties + row * (int)bowties_per_row + col];
                         array_factor += MAKE_COMPLEX(c_phase, s_phase) * amp;
                     }
                 }
 
-                FLOAT ground_plane = 2.0 * SIN(M_2PI * dipole_height_m / lambda_m * c_za) / NUM_DIPOLES;
+                FLOAT ground_plane = 2.0 * SIN(M_2PI * dipole_height_m / lambda_m * c_za) / (FLOAT)num_bowties;
                 if (norm_to_zenith) {
                     ground_plane /= 2.0 * SIN(M_2PI * dipole_height_m / lambda_m);
                 }
@@ -128,12 +128,12 @@ extern "C" const char *gpu_analytic_calc_jones(const ANALYTIC_TYPE at, const FLO
                                                const FLOAT *d_zas, int num_directions, const unsigned int *d_freqs_hz,
                                                const int num_freqs, const FLOAT *d_delays, const FLOAT *d_amps,
                                                const int num_tiles, const FLOAT latitude_rad,
-                                               const uint8_t norm_to_zenith, void *d_results) {
+                                               const uint8_t norm_to_zenith, const uint8_t bowties_per_row, void *d_results) {
     dim3 gridDim, blockDim;
     blockDim.x = warpSize;
     gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
     analytic_kernel<<<gridDim, blockDim>>>(at, dipole_height_m, d_azs, d_zas, num_directions, d_freqs_hz, num_freqs,
-                                           d_delays, d_amps, num_tiles, latitude_rad, (bool)norm_to_zenith,
+                                           d_delays, d_amps, num_tiles, latitude_rad, (bool)norm_to_zenith, bowties_per_row,
                                            (JONES *)d_results);
 
     gpuError_t error_id;

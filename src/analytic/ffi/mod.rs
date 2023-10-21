@@ -33,6 +33,11 @@ cfg_if::cfg_if! {
 ///   null, the pointer is dereferenced and used as the dipole height (units of
 ///   metres). If it is null, then a default is used; the default depends on
 ///   whether this beam object is mwa_pb- or RTS-style.
+/// * `bowties_per_row` - an optional pointer to an 8-bit unsigned int. If this
+///   is not null, the pointer is dereferenced and used as the number of bowties
+///   in a single row of a tile. If it is null, a default of 4 is used. Most MWA
+///   tiles have 4 bowties per row for a total of 16 bowties per tile, but the
+///   CRAM tile has 8 bowties per row.
 /// * `analytic_beam` - a double pointer to the `AnalyticBeam` struct
 ///   which is set by this function. This struct must be freed by calling
 ///   `free_analytic_beam`.
@@ -48,6 +53,7 @@ cfg_if::cfg_if! {
 pub unsafe extern "C" fn new_analytic_beam(
     rts_style: u8,
     dipole_height_metres: *const f64,
+    bowties_per_row: *const u8,
     analytic_beam: *mut *mut AnalyticBeam,
 ) -> i32 {
     let analytic_type = match rts_style {
@@ -59,9 +65,11 @@ pub unsafe extern "C" fn new_analytic_beam(
         }
     };
     let dipole_height_metres = dipole_height_metres.as_ref().copied();
+    let bowties_per_row = bowties_per_row.as_ref().copied();
     let beam = AnalyticBeam::new_custom(
         analytic_type,
         dipole_height_metres.unwrap_or_else(|| analytic_type.get_default_dipole_height()),
+        bowties_per_row.unwrap_or(4),
     );
     *analytic_beam = Box::into_raw(Box::new(beam));
     0
@@ -69,7 +77,7 @@ pub unsafe extern "C" fn new_analytic_beam(
 
 /// Get the beam response Jones matrix for the given direction and pointing.
 ///
-/// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
+/// `delays` and `amps` apply to each bowtie in a given MWA tile, and *must*
 /// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
 /// order; see
 /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>).
@@ -124,13 +132,6 @@ pub unsafe extern "C" fn analytic_calc_jones(
     norm_to_zenith: u8,
     jones: *mut f64,
 ) -> i32 {
-    match num_amps {
-        16 | 32 => (),
-        _ => {
-            update_last_error("A value other than 16 or 32 was used for num_amps".to_string());
-            return 1;
-        }
-    };
     let norm_bool = match norm_to_zenith {
         0 => false,
         1 => true,
@@ -141,7 +142,7 @@ pub unsafe extern "C" fn analytic_calc_jones(
     };
 
     let beam = &*analytic_beam;
-    let delays_s = slice::from_raw_parts(delays, 16);
+    let delays_s = slice::from_raw_parts(delays, usize::from(beam.bowties_per_row).pow(2));
     let amps_s = slice::from_raw_parts(amps, num_amps as usize);
 
     // Using the passed-in beam, get the beam response (Jones matrix).
@@ -226,13 +227,6 @@ pub unsafe extern "C" fn analytic_calc_jones_array(
     norm_to_zenith: u8,
     jones: *mut f64,
 ) -> i32 {
-    match num_amps {
-        16 | 32 => (),
-        _ => {
-            update_last_error("A value other than 16 or 32 was used for num_amps".to_string());
-            return 1;
-        }
-    };
     let norm_bool = match norm_to_zenith {
         0 => false,
         1 => true,
@@ -245,7 +239,7 @@ pub unsafe extern "C" fn analytic_calc_jones_array(
     let beam = &*analytic_beam;
     let az = slice::from_raw_parts(az_rad, num_azza as usize);
     let za = slice::from_raw_parts(za_rad, num_azza as usize);
-    let delays_s = slice::from_raw_parts(delays, 16);
+    let delays_s = slice::from_raw_parts(delays, usize::from(beam.bowties_per_row).pow(2));
     let amps_s = slice::from_raw_parts(amps, num_amps as usize);
     let results_s = slice::from_raw_parts_mut(jones.cast(), num_azza as usize);
 
@@ -312,19 +306,14 @@ pub unsafe extern "C" fn new_gpu_analytic_beam(
     num_amps: i32,
     gpu_analytic_beam: *mut *mut AnalyticBeamGpu,
 ) -> i32 {
-    match num_amps {
-        16 | 32 => (),
-        _ => {
-            update_last_error("A value other than 16 or 32 was used for num_amps".to_string());
-            return 1;
-        }
-    };
-
+    let beam = &mut *analytic_beam;
     // Turn the pointers into slices.
     let amps = ArrayView2::from_shape_ptr((num_tiles as usize, num_amps as usize), amps);
-    let delays = ArrayView2::from_shape_ptr((num_tiles as usize, 16), delays);
+    let delays = ArrayView2::from_shape_ptr(
+        (num_tiles as usize, usize::from(beam.bowties_per_row).pow(2)),
+        delays,
+    );
 
-    let beam = &mut *analytic_beam;
     let gpu_beam = ffi_error!(beam.gpu_prepare(delays, amps));
     *gpu_analytic_beam = Box::into_raw(Box::new(gpu_beam));
     0

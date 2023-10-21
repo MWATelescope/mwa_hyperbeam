@@ -17,6 +17,7 @@ extern "C" {
         num_tiles: ::std::os::raw::c_int,
         latitude_rad: f32,
         norm_to_zenith: u8,
+        bowties_per_row: u8,
         d_results: *mut ::std::os::raw::c_void,
     ) -> *const ::std::os::raw::c_char;
 }

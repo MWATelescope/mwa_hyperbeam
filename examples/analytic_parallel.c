@@ -36,7 +36,11 @@ int main(int argc, char *argv[]) {
     char rts_style = 0;
     // Point to a valid float if you want a custom height
     double dipole_height_metres = 0.5;
-    if (new_analytic_beam(rts_style, &dipole_height_metres, &beam))
+    // Point to a valid int if you want a custom number of bowties per row. You
+    // almost certainly want this to be 4, unless you're simulating the CRAM
+    // tile.
+    uint8_t bowties_per_row = 4;
+    if (new_analytic_beam(rts_style, &dipole_height_metres, &bowties_per_row, &beam))
         handle_hyperbeam_error(__FILE__, __LINE__, "new_analytic_beam");
 
     // Set up the directions to test.

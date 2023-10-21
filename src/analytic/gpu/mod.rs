@@ -33,6 +33,7 @@ use crate::gpu::{DevicePointer, GpuError, GpuFloat};
 pub struct AnalyticBeamGpu {
     analytic_type: super::AnalyticType,
     dipole_height: GpuFloat,
+    bowties_per_row: u8,
 
     d_delays: DevicePointer<GpuFloat>,
     d_amps: DevicePointer<GpuFloat>,
@@ -60,16 +61,23 @@ impl AnalyticBeamGpu {
         delays_array: ArrayView2<u32>,
         amps_array: ArrayView2<f64>,
     ) -> Result<AnalyticBeamGpu, AnalyticBeamError> {
-        if delays_array.len_of(Axis(1)) != 16 {
+        let num_bowties =
+            usize::from(analytic_beam.bowties_per_row * analytic_beam.bowties_per_row);
+        if delays_array.len_of(Axis(1)) != num_bowties {
             return Err(AnalyticBeamError::IncorrectDelaysArrayColLength {
                 rows: delays_array.len_of(Axis(0)),
                 num_delays: delays_array.len_of(Axis(1)),
+                expected: usize::from(num_bowties),
             });
         }
-        if !(amps_array.len_of(Axis(1)) == 16 || amps_array.len_of(Axis(1)) == 32) {
-            return Err(AnalyticBeamError::IncorrectAmpsLength(
-                amps_array.len_of(Axis(1)),
-            ));
+        if amps_array.len_of(Axis(1)) != num_bowties
+            && amps_array.len_of(Axis(1)) != num_bowties * 2
+        {
+            return Err(AnalyticBeamError::IncorrectAmpsLength {
+                got: amps_array.len_of(Axis(1)),
+                expected1: num_bowties,
+                expected2: num_bowties * 2,
+            });
         }
 
         // Determine the unique tiles according to the gains and delays. Unlike
@@ -93,7 +101,7 @@ impl AnalyticBeamGpu {
             let (amps, delays) = if matches!(analytic_beam.beam_type, super::AnalyticType::Rts) {
                 reorder_to_rts(&amps, &delays)
             } else {
-                (amps, delay_ints_to_floats(&delays))
+                (amps.to_vec(), delay_ints_to_floats(&delays))
             };
 
             let this_tile_index = if let Some((index, _)) = unique_tiles
@@ -116,6 +124,7 @@ impl AnalyticBeamGpu {
         Ok(AnalyticBeamGpu {
             analytic_type: analytic_beam.beam_type,
             dipole_height: analytic_beam.dipole_height as GpuFloat,
+            bowties_per_row: analytic_beam.bowties_per_row,
             d_delays: DevicePointer::copy_to_device(&unique_delays)?,
             d_amps: DevicePointer::copy_to_device(&unique_amps)?,
             num_unique_tiles: unique_tiles
@@ -257,6 +266,7 @@ impl AnalyticBeamGpu {
             self.num_unique_tiles,
             latitude_rad,
             norm_to_zenith as _,
+            self.bowties_per_row,
             d_results,
         );
         if error_message_ptr.is_null() {
@@ -413,13 +423,12 @@ impl AnalyticBeamGpu {
 pub(super) fn fix_amps_ndarray(
     amps: ArrayView1<f64>,
     delays: ArrayView1<u32>,
-) -> ([f64; 16], [u32; 16]) {
+) -> (Vec<f64>, Vec<u32>) {
     // The lengths of `amps` and `delays` should be checked before calling this
     // functions; the asserts are a last resort guard.
-    assert_eq!(delays.len(), 16);
-    assert!(amps.len() == 16 || amps.len() == 32);
+    assert!(amps.len() == delays.len() || amps.len() == delays.len() * 2);
 
-    let mut fixed_amps = [0.0; 16];
+    let mut fixed_amps = vec![0.0; delays.len()];
     fixed_amps
         .iter_mut()
         .zip(amps.iter())
@@ -431,17 +440,18 @@ pub(super) fn fix_amps_ndarray(
                 *out_amp = in_amp;
             }
         });
-    // Handle 32 amps.
-    fixed_amps
-        .iter_mut()
-        .zip(amps.iter().skip(16))
-        .for_each(|(out_amp, &in_amp)| {
-            *out_amp = out_amp.min(in_amp);
-        });
+    if amps.len() == delays.len() * 2 {
+        fixed_amps
+            .iter_mut()
+            .zip(amps.iter().skip(delays.len()))
+            .for_each(|(fixed, &amp)| {
+                *fixed = fixed.min(amp);
+            });
+    }
 
     // So that we don't have to do .as_slice().unwrap() on our ndarrays outside
     // of this function, return a Rust array of delays here.
-    let mut delays_a: [u32; 16] = [0; 16];
+    let mut delays_a = vec![0; delays.len()];
     delays_a.iter_mut().zip(delays).for_each(|(da, d)| *da = *d);
 
     (fixed_amps, delays_a)
