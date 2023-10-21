@@ -172,7 +172,7 @@ pub unsafe extern "C" fn new_fee_beam_from_env(fee_beam: *mut *mut FEEBeam) -> i
 ///   with a string buffer with a length at least equal to the error length.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones(
+pub unsafe extern "C" fn fee_calc_jones(
     fee_beam: *mut FEEBeam,
     az_rad: f64,
     za_rad: f64,
@@ -291,7 +291,7 @@ pub unsafe extern "C" fn calc_jones(
 ///   with a string buffer with a length at least equal to the error length.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones_array(
+pub unsafe extern "C" fn fee_calc_jones_array(
     fee_beam: *mut FEEBeam,
     num_azza: u32,
     az_rad: *const f64,
@@ -384,7 +384,7 @@ pub unsafe extern "C" fn get_fee_beam_freqs(
 /// * The closest frequency to the specified frequency in Hz.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn closest_freq(fee_beam: *mut FEEBeam, freq: u32) -> u32 {
+pub unsafe extern "C" fn fee_closest_freq(fee_beam: *mut FEEBeam, freq: u32) -> u32 {
     let beam = &*fee_beam;
     beam.find_closest_freq(freq)
 }
@@ -506,7 +506,7 @@ pub unsafe extern "C" fn new_gpu_fee_beam(
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones_gpu(
+pub unsafe extern "C" fn fee_calc_jones_gpu(
     gpu_fee_beam: *mut FEEBeamGpu,
     num_azza: u32,
     az_rad: *const GpuFloat,
@@ -576,7 +576,7 @@ pub unsafe extern "C" fn calc_jones_gpu(
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones_gpu_device(
+pub unsafe extern "C" fn fee_calc_jones_gpu_device(
     gpu_fee_beam: *mut FEEBeamGpu,
     num_azza: i32,
     az_rad: *const GpuFloat,
@@ -647,7 +647,7 @@ pub unsafe extern "C" fn calc_jones_gpu_device(
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn calc_jones_gpu_device_inner(
+pub unsafe extern "C" fn fee_calc_jones_gpu_device_inner(
     gpu_fee_beam: *mut FEEBeamGpu,
     num_azza: i32,
     d_az_rad: *const GpuFloat,
@@ -677,8 +677,8 @@ pub unsafe extern "C" fn calc_jones_gpu_device_inner(
     0
 }
 
-/// Get a pointer to the device tile map. This is necessary to access
-/// de-duplicated beam Jones matrices on the device.
+/// Get a pointer to the tile map. This is necessary to access de-duplicated
+/// beam Jones matrices.
 ///
 /// # Arguments
 ///
@@ -686,14 +686,52 @@ pub unsafe extern "C" fn calc_jones_gpu_device_inner(
 ///
 /// # Returns
 ///
-/// * A pointer to the device beam Jones map. The const annotation is
-///   deliberate; the caller does not own the map.
+/// * A pointer to the tile map. The const annotation is deliberate; the caller
+///   does not own the map.
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn get_tile_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i32 {
+pub unsafe extern "C" fn get_fee_tile_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i32 {
     let beam = &*gpu_fee_beam;
     beam.get_tile_map()
+}
+
+/// Get a pointer to the tile map. This is necessary to access de-duplicated
+/// beam Jones matrices on the device.
+///
+/// # Arguments
+///
+/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
+///
+/// # Returns
+///
+/// * A pointer to the device tile map. The const annotation is deliberate; the
+///   caller does not own the map.
+///
+#[cfg(any(feature = "cuda", feature = "hip"))]
+#[no_mangle]
+pub unsafe extern "C" fn get_fee_device_tile_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i32 {
+    let beam = &*gpu_fee_beam;
+    beam.get_device_tile_map()
+}
+
+/// Get a pointer to the freq map. This is necessary to access de-duplicated
+/// beam Jones matrices.
+///
+/// # Arguments
+///
+/// * `gpu_fee_beam` - the pointer to the `FEEBeamGpu` struct.
+///
+/// # Returns
+///
+/// * A pointer to the freq map. The const annotation is deliberate; the caller
+///   does not own the map.
+///
+#[cfg(any(feature = "cuda", feature = "hip"))]
+#[no_mangle]
+pub unsafe extern "C" fn get_fee_freq_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i32 {
+    let beam = &*gpu_fee_beam;
+    beam.get_freq_map()
 }
 
 /// Get a pointer to the device freq map. This is necessary to access
@@ -705,14 +743,14 @@ pub unsafe extern "C" fn get_tile_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i
 ///
 /// # Returns
 ///
-/// * A pointer to the device beam Jones map. The const annotation is
-///   deliberate; the caller does not own the map.
+/// * A pointer to the device freq map. The const annotation is deliberate; the
+///   caller does not own the map.
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn get_freq_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i32 {
+pub unsafe extern "C" fn get_fee_device_freq_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i32 {
     let beam = &*gpu_fee_beam;
-    beam.get_freq_map()
+    beam.get_device_freq_map()
 }
 
 /// Get the number of de-duplicated tiles associated with this `FEEBeamGpu`.
@@ -727,7 +765,7 @@ pub unsafe extern "C" fn get_freq_map(gpu_fee_beam: *mut FEEBeamGpu) -> *const i
 ///
 #[cfg(any(feature = "cuda", feature = "hip"))]
 #[no_mangle]
-pub unsafe extern "C" fn get_num_unique_tiles(gpu_fee_beam: *mut FEEBeamGpu) -> i32 {
+pub unsafe extern "C" fn get_num_unique_fee_tiles(gpu_fee_beam: *mut FEEBeamGpu) -> i32 {
     let beam = &*gpu_fee_beam;
     beam.num_unique_tiles
 }

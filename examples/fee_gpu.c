@@ -110,13 +110,13 @@ int main(int argc, char *argv[]) {
     double latitude_rad = -0.4660608448386394;
 
     // Allocate a buffer for the results.
-    size_t num_unique_tiles = (size_t)get_num_unique_tiles(gpu_beam);
+    size_t num_unique_tiles = (size_t)get_num_unique_fee_tiles(gpu_beam);
     size_t num_unique_fee_freqs = (size_t)get_num_unique_fee_freqs(gpu_beam);
     complex FLOAT *jones = malloc(num_unique_tiles * num_unique_fee_freqs * num_azzas * 8 * sizeof(FLOAT));
     // hyperbeam expects a pointer to our FLOAT macro. Casting the pointer works
     // fine.
-    if (calc_jones_gpu(gpu_beam, num_azzas, az, za, &latitude_rad, iau_order, (FLOAT *)jones))
-        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_gpu");
+    if (fee_calc_jones_gpu(gpu_beam, num_azzas, az, za, &latitude_rad, iau_order, (FLOAT *)jones))
+        handle_hyperbeam_error(__FILE__, __LINE__, "fee_calc_jones_gpu");
 
     printf("The first Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", CREAL(jones[0]), CIMAG(jones[0]));

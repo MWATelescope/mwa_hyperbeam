@@ -643,17 +643,29 @@ impl FEEBeamGpu {
         self.freq_map.len()
     }
 
+    /// Get a pointer to the tile map associated with this [`FEEBeamGpu`]. This
+    /// is necessary to access de-duplicated beam Jones matrices.
+    pub fn get_tile_map(&self) -> *const i32 {
+        self.tile_map.as_ptr()
+    }
+
     /// Get a pointer to the device tile map associated with this
     /// [`FEEBeamGpu`]. This is necessary to access de-duplicated beam Jones
     /// matrices on the device.
-    pub fn get_tile_map(&self) -> *const i32 {
+    pub fn get_device_tile_map(&self) -> *const i32 {
         self.d_tile_map.get()
+    }
+
+    /// Get a pointer to the freq map associated with this [`FEEBeamGpu`]. This
+    /// is necessary to access de-duplicated beam Jones matrices.
+    pub fn get_freq_map(&self) -> *const i32 {
+        self.freq_map.as_ptr()
     }
 
     /// Get a pointer to the device freq map associated with this
     /// [`FEEBeamGpu`]. This is necessary to access de-duplicated beam Jones
     /// matrices on the device.
-    pub fn get_freq_map(&self) -> *const i32 {
+    pub fn get_device_freq_map(&self) -> *const i32 {
         self.d_freq_map.get()
     }
 

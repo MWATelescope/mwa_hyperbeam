@@ -178,20 +178,20 @@ int main(int argc, char *argv[]) {
     // We need the number of unique tiles and unique frequencies. hyperbeam
     // de-duplicates tiles and frequencies to go faster. Cast the returned ints
     // into size_t just in case we're hitting big numbers.
-    size_t num_unique_tiles = (size_t)get_num_unique_tiles(gpu_beam);
+    size_t num_unique_tiles = (size_t)get_num_unique_fee_tiles(gpu_beam);
     size_t num_unique_fee_freqs = (size_t)get_num_unique_fee_freqs(gpu_beam);
     cudaMalloc(&d_jones, num_unique_tiles * num_unique_fee_freqs * num_directions * sizeof(JONES));
     // hyperbeam expects a pointer to our FLOAT macro. Casting the pointer works
     // fine.
-    if (calc_jones_gpu_device(gpu_beam, num_directions, az, za, &latitude_rad, iau_order, (FLOAT *)d_jones))
-        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_gpu_device");
+    if (fee_calc_jones_gpu_device(gpu_beam, num_directions, az, za, &latitude_rad, iau_order, (FLOAT *)d_jones))
+        handle_hyperbeam_error(__FILE__, __LINE__, "fee_calc_jones_gpu_device");
 
     // The beam responses are now on the device. Let's launch our own kernel and
     // interface with the values. This kernel prints messages if the values are
     // not what was expected. We need to have a couple of bits of metadata to
     // interface with the beam responses.
-    const int *d_tile_map = get_tile_map(gpu_beam);
-    const int *d_freq_map = get_freq_map(gpu_beam);
+    const int *d_tile_map = get_fee_device_tile_map(gpu_beam);
+    const int *d_freq_map = get_fee_device_freq_map(gpu_beam);
 
     dim3 gridDim, blockDim;
     blockDim.x = 128;

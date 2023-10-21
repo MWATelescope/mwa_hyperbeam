@@ -6,6 +6,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+### Added
+- FFI functions
+
+  See the changes below for an explanation.
+
+  - `get_fee_freq_map`
+  - `get_fee_tile_map`
+
+### Changed
+- FFI functions
+
+  Most of these changes are to disambiguate the FEE beam from the analytic beam
+  and hopefully encourage a consistent naming scheme.
+
+  - `calc_jones` -> `fee_calc_jones`
+  - `calc_jones_array` -> `fee_calc_jones_array`
+  - `closest_freq` -> `fee_closest_freq`
+  - `calc_jones_gpu` -> `fee_calc_jones_gpu`
+  - `calc_jones_gpu_device` -> `fee_calc_jones_gpu_device`
+  - `calc_jones_gpu_device_inner` -> `fee_calc_jones_gpu_device_inner`
+  - `get_freq_map` -> `get_fee_device_freq_map`
+  - `get_tile_map` -> `get_fee_device_tile_map`
+    - The old `get_*_map` functions returned device pointers. Callers should now
+      use the `get_fee_device_*_map` functions for this purpose. New functions
+      `get_fee_*_map` yield the host pointers for the maps.
+
 ## [0.6.1] - 2023-10-31
 ### Added
 - The "analytic" MWA beam

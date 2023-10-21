@@ -74,9 +74,9 @@ int main(int argc, char *argv[]) {
 #pragma omp parallel for
     for (int i = 0; i < num_directions; i++) {
         // hyperbeam expects a pointer to doubles. Casting the pointer works fine.
-        if (calc_jones(beam, az[i], za[i], freq_hz, delays, amps, 16, norm_to_zenith, &latitude_rad, iau_order,
-                       (double *)(jones + i * 4)))
-            handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones");
+        if (fee_calc_jones(beam, az[i], za[i], freq_hz, delays, amps, 16, norm_to_zenith, &latitude_rad, iau_order,
+                           (double *)(jones + i * 4)))
+            handle_hyperbeam_error(__FILE__, __LINE__, "fee_calc_jones");
     }
 
     printf("The first Jones matrix:\n");

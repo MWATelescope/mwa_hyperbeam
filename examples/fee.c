@@ -60,8 +60,9 @@ int main(int argc, char *argv[]) {
     // matrix is on the stack.
     complex double jones[4];
     // hyperbeam expects a pointer to doubles. Casting the pointer works fine.
-    if (calc_jones(beam, az, za, freq_hz, delays, amps, 16, norm_to_zenith, &latitude_rad, iau_order, (double *)&jones))
-        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones");
+    if (fee_calc_jones(beam, az, za, freq_hz, delays, amps, 16, norm_to_zenith, &latitude_rad, iau_order,
+                       (double *)&jones))
+        handle_hyperbeam_error(__FILE__, __LINE__, "fee_calc_jones");
 
     printf("The returned Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", creal(jones[0]), cimag(jones[0]));
@@ -75,9 +76,9 @@ int main(int argc, char *argv[]) {
                          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
     // This Jones matrix is on the heap.
     complex double *jones_2 = malloc(4 * sizeof(complex double));
-    if (calc_jones(beam, az, za, freq_hz, delays, amps_2, 32, norm_to_zenith, &latitude_rad, iau_order,
-                   (double *)jones_2))
-        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones");
+    if (fee_calc_jones(beam, az, za, freq_hz, delays, amps_2, 32, norm_to_zenith, &latitude_rad, iau_order,
+                       (double *)jones_2))
+        handle_hyperbeam_error(__FILE__, __LINE__, "fee_calc_jones");
 
     // The resulting Jones matrix has different elements on the second row,
     // corresponding to the Y element; this is because we only altered the Y

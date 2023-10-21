@@ -40,7 +40,7 @@ int main(int argc, char *argv[]) {
         handle_hyperbeam_error(__FILE__, __LINE__, "new_fee_beam");
 
     // Of the available frequencies, which is closest to 255 MHz?
-    printf("Closest freq. to 255 MHz: %.2f MHz\n", (double)closest_freq(beam, 255000000) / 1e6);
+    printf("Closest freq. to 255 MHz: %.2f MHz\n", (double)fee_closest_freq(beam, 255000000) / 1e6);
 
     // Get the frequencies from the FEEBeam struct.
     size_t num_freqs;

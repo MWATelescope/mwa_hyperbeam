@@ -67,9 +67,9 @@ int main(int argc, char *argv[]) {
     // parallel.
     complex double *jones = malloc(num_directions * 4 * sizeof(complex double));
     // hyperbeam expects a pointer to doubles. Casting the pointer works fine.
-    if (calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps, 16, norm_to_zenith, &latitude_rad,
-                         iau_order, (double *)jones))
-        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_array");
+    if (fee_calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps, 16, norm_to_zenith, &latitude_rad,
+                             iau_order, (double *)jones))
+        handle_hyperbeam_error(__FILE__, __LINE__, "fee_calc_jones_array");
 
     printf("The first Jones matrix:\n");
     printf("[[%+.8f%+.8fi,", creal(jones[0]), cimag(jones[0]));
@@ -80,9 +80,9 @@ int main(int argc, char *argv[]) {
     double amps_2[32] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                          1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0};
     complex double *jones_2 = malloc(num_directions * 4 * sizeof(complex double));
-    if (calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps_2, 32, norm_to_zenith, &latitude_rad,
-                         iau_order, (double *)jones_2))
-        handle_hyperbeam_error(__FILE__, __LINE__, "calc_jones_array");
+    if (fee_calc_jones_array(beam, num_directions, az, za, freq_hz, delays, amps_2, 32, norm_to_zenith, &latitude_rad,
+                             iau_order, (double *)jones_2))
+        handle_hyperbeam_error(__FILE__, __LINE__, "fee_calc_jones_array");
 
     printf("The first Jones matrix with altered Y amps:\n");
     printf("[[%+.8f%+.8fi,", creal(jones_2[0]), cimag(jones_2[0]));

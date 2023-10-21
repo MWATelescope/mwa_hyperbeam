@@ -29,8 +29,8 @@ typedef struct FEECoeffs {
 } FEECoeffs;
 
 const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
-                           int num_coeffs, const void *d_norm_jones, const FLOAT *d_latitude_rad,
-                           const int iau_reorder, void *d_results);
+                           int num_coeffs, const void *d_norm_jones, const FLOAT *d_latitude_rad, const int iau_reorder,
+                           void *d_results);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -366,8 +366,7 @@ inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT the
  * blockIdx.x * blockDim.x + threadIdx.x corresponds to direction.
  */
 __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT *zas, const int num_directions,
-                           const JONES *norm_jones, const FLOAT *latitude_rad, const int iau_order,
-                           JONES *fee_jones) {
+                           const JONES *norm_jones, const FLOAT *latitude_rad, const int iau_order, JONES *fee_jones) {
     for (int i_direction = blockIdx.x * blockDim.x + threadIdx.x; i_direction < num_directions;
          i_direction += gridDim.x * blockDim.x) {
         const FLOAT az = azs[i_direction];
@@ -417,8 +416,8 @@ extern "C" const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, in
     blockDim.x = warpSize;
     gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
     gridDim.y = num_coeffs;
-    fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (JONES *)d_norm_jones,
-                                      d_latitude_rad, iau_order, (JONES *)d_results);
+    fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (JONES *)d_norm_jones, d_latitude_rad,
+                                      iau_order, (JONES *)d_results);
 
     gpuError_t error_id;
 #ifdef DEBUG

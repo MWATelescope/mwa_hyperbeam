@@ -51,7 +51,7 @@ fn test_calc_jones_via_ffi() {
         let mut beam = null_mut();
         let result = new_fee_beam(file.into_raw(), &mut beam);
         assert_eq!(result, 0);
-        let result = calc_jones(
+        let result = fee_calc_jones(
             beam,
             45.0_f64.to_radians(),
             10.0_f64.to_radians(),
@@ -91,7 +91,7 @@ fn test_calc_jones_eng_via_ffi() {
         let mut beam = null_mut();
         let result = new_fee_beam(file.into_raw(), &mut beam);
         assert_eq!(result, 0);
-        let result = calc_jones(
+        let result = fee_calc_jones(
             beam,
             45.0_f64.to_radians(),
             10.0_f64.to_radians(),
@@ -131,7 +131,7 @@ fn test_calc_jones_32_amps_via_ffi() {
         let mut beam = null_mut();
         let result = new_fee_beam(file.into_raw(), &mut beam);
         assert_eq!(result, 0);
-        let result = calc_jones(
+        let result = fee_calc_jones(
             beam,
             45.0_f64.to_radians(),
             10.0_f64.to_radians(),
@@ -178,7 +178,7 @@ fn test_calc_jones_array_via_ffi() {
         let az = vec![45.0_f64.to_radians(); num_directions];
         let za = vec![10.0_f64.to_radians(); num_directions];
         let mut jones = Array2::zeros((num_directions, 8));
-        let result = calc_jones_array(
+        let result = fee_calc_jones_array(
             beam,
             num_directions as _,
             az.as_ptr(),
@@ -216,7 +216,7 @@ fn test_calc_jones_array_32_amps_via_ffi() {
         let az = vec![45.0_f64.to_radians(); num_directions];
         let za = vec![10.0_f64.to_radians(); num_directions];
         let mut jones = Array2::zeros((num_directions, 8));
-        let result = calc_jones_array(
+        let result = fee_calc_jones_array(
             beam,
             num_directions as _,
             az.as_ptr(),
@@ -279,7 +279,7 @@ fn test_ffi_fee_freq_functions() {
             assert_eq!(freq, freqs_slice[i]);
         }
 
-        let ffi_closest = closest_freq(ffi_beam, search_freq);
+        let ffi_closest = fee_closest_freq(ffi_beam, search_freq);
         assert_eq!(closest, ffi_closest);
 
         free_fee_beam(ffi_beam);
@@ -331,7 +331,7 @@ fn test_calc_jones_gpu_via_ffi() {
         let num_azza = az.len() as u32;
         let mut jones: Array3<Jones<GpuFloat>> = Array3::zeros((num_tiles, num_freqs, az.len()));
 
-        let result = calc_jones_gpu(
+        let result = fee_calc_jones_gpu(
             gpu_beam,
             num_azza,
             az.as_ptr(),
@@ -480,7 +480,7 @@ fn test_bool_errors() {
         let mut jones = [0.0; 8];
 
         // Bad number of amps.
-        let result = calc_jones(
+        let result = fee_calc_jones(
             beam,
             45.0_f64.to_radians(),
             10.0_f64.to_radians(),
@@ -508,7 +508,7 @@ fn test_bool_errors() {
         assert_eq!(err_str, "A value other than 16 or 32 was used for num_amps");
 
         // Bad norm_to_zenith value.
-        let result = calc_jones(
+        let result = fee_calc_jones(
             beam,
             45.0_f64.to_radians(),
             10.0_f64.to_radians(),
@@ -542,7 +542,7 @@ fn test_bool_errors() {
         let az = [0.1];
         let za = [0.1];
         // Bad number of amps.
-        let result = calc_jones_array(
+        let result = fee_calc_jones_array(
             beam,
             az.len() as _,
             az.as_ptr(),
@@ -566,7 +566,7 @@ fn test_bool_errors() {
         assert_eq!(err_str, "A value other than 16 or 32 was used for num_amps");
 
         // Bad norm_to_zenith value.
-        let result = calc_jones_array(
+        let result = fee_calc_jones_array(
             beam,
             az.len() as _,
             az.as_ptr(),
