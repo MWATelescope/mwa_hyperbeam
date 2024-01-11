@@ -26,8 +26,12 @@ fn test_gpu_calc_jones_no_norm() {
     assert_eq!(cuda_beam.num_coeffs, 1);
     assert_eq!(cuda_beam.num_unique_tiles, 1);
     assert_eq!(cuda_beam.num_unique_freqs, 1);
-
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let n_dirs = std::env::var("N_DIRS")
+        .unwrap_or_else(|_| "1025".to_string()) // 192 passes, 193 fails.
+        .parse::<usize>()
+        .unwrap();
+    assert!(n_dirs < 26904);
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| {
             (
                 0.45 + i as GpuFloat / 10000.0,
@@ -45,7 +49,7 @@ fn test_gpu_calc_jones_no_norm() {
     let mut jones_cpu =
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -98,8 +102,12 @@ fn test_gpu_calc_jones_w_norm() {
     assert_eq!(cuda_beam.num_coeffs, 1);
     assert_eq!(cuda_beam.num_unique_tiles, 1);
     assert_eq!(cuda_beam.num_unique_freqs, 1);
-
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let n_dirs = std::env::var("N_DIRS")
+        .unwrap_or_else(|_| "1025".to_string()) // 192 passes, 193 fails.
+        .parse::<usize>()
+        .unwrap();
+    assert!(n_dirs < 26904);
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| {
             (
                 0.45 + i as GpuFloat / 10000.0,
@@ -117,7 +125,7 @@ fn test_gpu_calc_jones_w_norm() {
     let mut jones_cpu =
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -170,8 +178,12 @@ fn test_gpu_calc_jones_w_norm_and_parallactic() {
     assert_eq!(cuda_beam.num_coeffs, 1);
     assert_eq!(cuda_beam.num_unique_tiles, 1);
     assert_eq!(cuda_beam.num_unique_freqs, 1);
-
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let n_dirs = std::env::var("N_DIRS")
+        .unwrap_or_else(|_| "1025".to_string()) // 192 passes, 193 fails.
+        .parse::<usize>()
+        .unwrap();
+    assert!(n_dirs < 26904);
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| {
             (
                 0.45 + i as GpuFloat / 10000.0,
@@ -189,7 +201,7 @@ fn test_gpu_calc_jones_w_norm_and_parallactic() {
     let mut jones_cpu =
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -243,7 +255,12 @@ fn test_gpu_calc_jones_with_and_without_parallactic() {
     assert_eq!(cuda_beam.num_unique_tiles, 1);
     assert_eq!(cuda_beam.num_unique_freqs, 1);
 
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let n_dirs = std::env::var("N_DIRS")
+        .unwrap_or_else(|_| "1025".to_string()) // 192 passes, 193 fails.
+        .parse::<usize>()
+        .unwrap();
+    assert!(n_dirs < 26904);
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| {
             (
                 0.45 + i as GpuFloat / 10000.0,
@@ -297,7 +314,12 @@ fn test_gpu_calc_jones_deduplication() {
     assert_eq!(cuda_beam.num_unique_tiles, 3);
     assert_eq!(cuda_beam.num_unique_freqs, 3);
 
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let n_dirs = std::env::var("N_DIRS")
+        .unwrap_or_else(|_| "1025".to_string()) // 192 passes, 193 fails.
+        .parse::<usize>()
+        .unwrap();
+    assert!(n_dirs < 26904);
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| {
             (
                 0.45 + i as GpuFloat / 10000.0,
@@ -314,8 +336,9 @@ fn test_gpu_calc_jones_deduplication() {
     // Compare with CPU results.
     let mut jones_cpu =
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
+
     // Maybe need to regenerate the directions, depending on the CUDA precision.
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -387,7 +410,13 @@ fn test_gpu_calc_jones_deduplication_w_norm() {
     assert_eq!(cuda_beam.num_unique_tiles, 3);
     assert_eq!(cuda_beam.num_unique_freqs, 3);
 
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let n_dirs = std::env::var("N_DIRS")
+        .unwrap_or_else(|_| "1025".to_string()) // 192 passes, 193 fails.
+        .parse::<usize>()
+        .unwrap();
+    assert!(n_dirs < 26904);
+    // Maybe need to regenerate the directions, depending on the CUDA precision.
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| {
             (
                 0.45 + i as GpuFloat / 10000.0,
@@ -405,7 +434,7 @@ fn test_gpu_calc_jones_deduplication_w_norm() {
     let mut jones_cpu =
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -466,8 +495,12 @@ fn test_gpu_calc_jones_no_amps() {
     assert_eq!(cuda_beam.num_coeffs, 14);
     assert_eq!(cuda_beam.num_unique_tiles, 2);
     assert_eq!(cuda_beam.num_unique_freqs, 7);
-
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let n_dirs = std::env::var("N_DIRS")
+        .unwrap_or_else(|_| "1025".to_string()) // 192 passes, 193 fails.
+        .parse::<usize>()
+        .unwrap();
+    assert!(n_dirs < 26904);
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| {
             (
                 0.45 + i as GpuFloat / 10000.0,
@@ -485,7 +518,7 @@ fn test_gpu_calc_jones_no_amps() {
     let mut jones_cpu =
         Array3::from_elem((delays.dim().0, freqs.len(), az.len()), Jones::default());
     // Maybe need to regenerate the directions, depending on the CUDA precision.
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
