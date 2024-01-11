@@ -295,7 +295,12 @@ fn test_calc_jones_gpu_via_ffi() {
     let delays = array![[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0]];
     let amps =
         array![[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]];
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let n_dirs = std::env::var("N_DIRS")
+        .unwrap_or_else(|_| "1025".to_string()) // 192 passes, 193 fails on rocm-5.7.1
+        .parse::<usize>()
+        .unwrap();
+    assert!(n_dirs < 26904);
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| {
             (
                 0.45 + i as GpuFloat / 10000.0,
@@ -350,7 +355,7 @@ fn test_calc_jones_gpu_via_ffi() {
     // Compare with CPU results.
     let mut jones_cpu = Array3::zeros((delays.dim().0, freqs.len(), az.len()));
     // Maybe need to regenerate the directions, depending on the GPU precision.
-    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+    let (az, za): (Vec<_>, Vec<_>) = (0..n_dirs)
         .map(|i| (0.45 + i as f64 / 10000.0, 0.45 + i as f64 / 10000.0))
         .unzip();
     for ((mut out, delays), amps) in jones_cpu
@@ -387,12 +392,19 @@ fn test_calc_jones_gpu_via_ffi() {
         free_fee_beam(beam);
     }
 
-    #[cfg(not(feature = "gpu-single"))]
-    assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-15);
-
-    #[cfg(feature = "gpu-single")]
     // The errors are heavily dependent on the directions.
-    assert_abs_diff_eq!(jones_gpu, jones_cpu, epsilon = 1e-6);
+    for ((gpu, cpu), az) in jones_gpu
+        .iter()
+        .zip(jones_cpu.iter())
+        .zip(az.iter())
+    {
+        #[cfg(not(feature = "gpu-single"))]
+        assert!(abs_diff_eq!(gpu, cpu, epsilon = 1e-15), "az: {az} cpu: {cpu} gpu: {gpu}");
+
+        #[cfg(feature = "gpu-single")]
+        assert!(abs_diff_eq!(gpu, cpu, epsilon = 1e-6), "az: {az} cpu: {cpu} gpu: {gpu}");
+    }
+
 }
 
 // Tests to expose errors follow.

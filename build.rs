@@ -215,6 +215,11 @@ mod gpu {
             #[cfg(feature = "cuda-static")]
             println!("cargo:rustc-link-lib=static=cudart_static");
 
+            match env::var("DEBUG").as_deref() {
+                Ok("false") => (),
+                _ => {cuda_target.flag("-G");},
+            };
+
             cuda_target
         };
 
@@ -222,7 +227,18 @@ mod gpu {
         let mut gpu_target = {
             const DEFAULT_HIP_ARCHES: &[&str] = &["gfx90a"];
 
-            let hip_path = hip_sys::hiprt::get_hip_path();
+            println!("cargo:rerun-if-env-changed=HIP_PATH");
+            let hip_path = match env::var_os("HIP_PATH") {
+                Some(p) => {
+                    println!("cargo:warning=HIP_PATH set from env {}", p.to_string_lossy());
+                    std::path::PathBuf::from(p)
+                }
+                None => {
+                    let hip_path = hip_sys::hiprt::get_hip_path();
+                    println!("cargo:warning=HIP_PATH set from hip_sys {}", hip_path.display());
+                    hip_path
+                },
+            };
             if !hip_path.exists() {
                 panic!("Couldn't find HIP path at {}", hip_path.display());
             }
@@ -248,8 +264,19 @@ mod gpu {
                 .file("src/fee/gpu/fee.cu")
                 .file("src/analytic/gpu/analytic.cu");
 
+            println!("cargo:rerun-if-env-changed=HIP_FLAGS");
+            match env::var_os("HIP_FLAGS") {
+                Some(p) => {
+                    println!("cargo:warning=HIP_FLAGS set from env {}", p.to_string_lossy());
+                    hip_target.flag(&p.to_string_lossy());
+                }
+                None => (),
+            }
+
             hip_target.flag("-O0"); // <- hip can't handle optimizations
 
+            println!("cargo:rerun-if-env-changed=ROCM_VER");
+            println!("cargo:rerun-if-env-changed=ROCM_PATH");
             println!("cargo:rerun-if-env-changed=HYPERBEAM_HIP_ARCH");
             println!("cargo:rerun-if-env-changed=HYPERDRIVE_HIP_ARCH");
             let arches: Vec<String> = match (
@@ -275,6 +302,11 @@ mod gpu {
             for arch in arches {
                 hip_target.flag(&format!("--offload-arch={arch}"));
             }
+
+            match env::var("DEBUG").as_deref() {
+                Ok("false") => (),
+                _ => {hip_target.flag("-ggdb");},
+            };
 
             hip_target
         };
