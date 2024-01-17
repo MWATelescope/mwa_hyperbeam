@@ -14,7 +14,7 @@ for PRECISION in SINGLE DOUBLE; do
     echo "Generating bindings for ${LOWER_CASE}-precision GPU code"
 
     bindgen "${SCRIPTPATH}"/fee/gpu/fee.h \
-        --allowlist-function "gpu_calc_jones.*" \
+        --allowlist-function "gpu_fee_calc_jones.*" \
         --allowlist-type "FEECoeffs" \
         -- -D BINDGEN -D "${PRECISION}" \
         -I "${SCRIPTPATH}"/gpu_common/ \

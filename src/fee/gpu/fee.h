@@ -28,9 +28,9 @@ typedef struct FEECoeffs {
     const unsigned char n_max;
 } FEECoeffs;
 
-const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
-                           int num_coeffs, const void *d_norm_jones, const FLOAT *d_latitude_rad, const int iau_reorder,
-                           void *d_results);
+const char *gpu_fee_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions, const FEECoeffs *d_coeffs,
+                               int num_coeffs, const void *d_norm_jones, const FLOAT *d_latitude_rad,
+                               const int iau_reorder, void *d_results);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -409,9 +409,9 @@ __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT
     }
 }
 
-extern "C" const char *gpu_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions,
-                                      const FEECoeffs *d_coeffs, int num_coeffs, const void *d_norm_jones,
-                                      const FLOAT *d_latitude_rad, const int iau_order, void *d_results) {
+extern "C" const char *gpu_fee_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions,
+                                          const FEECoeffs *d_coeffs, int num_coeffs, const void *d_norm_jones,
+                                          const FLOAT *d_latitude_rad, const int iau_order, void *d_results) {
     dim3 gridDim, blockDim;
     blockDim.x = warpSize;
     gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);

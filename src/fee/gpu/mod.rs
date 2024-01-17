@@ -478,7 +478,7 @@ impl FEEBeamGpu {
 
         // The return value is a pointer to a CUDA/HIP error string. If it's null
         // then everything is fine.
-        let error_message_ptr = gpu_calc_jones(
+        let error_message_ptr = gpu_fee_calc_jones(
             d_az_rad,
             d_za_rad,
             num_directions,
@@ -498,7 +498,7 @@ impl FEEBeamGpu {
             let error_message = CStr::from_ptr(error_message_ptr)
                 .to_str()
                 .unwrap_or("<cannot read GPU error string>");
-            let our_error_str = format!("fee.h:gpu_calc_jones failed with: {error_message}");
+            let our_error_str = format!("fee.h:gpu_fee_calc_jones failed with: {error_message}");
             Err(FEEBeamError::Gpu(GpuError::Kernel {
                 msg: our_error_str.into(),
                 file: file!(),
