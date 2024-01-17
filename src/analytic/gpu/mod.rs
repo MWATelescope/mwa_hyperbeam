@@ -67,7 +67,7 @@ impl AnalyticBeamGpu {
             return Err(AnalyticBeamError::IncorrectDelaysArrayColLength {
                 rows: delays_array.len_of(Axis(0)),
                 num_delays: delays_array.len_of(Axis(1)),
-                expected: usize::from(num_bowties),
+                expected: num_bowties,
             });
         }
         if amps_array.len_of(Axis(1)) != num_bowties
