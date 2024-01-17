@@ -207,7 +207,7 @@ fn bindgen_test_layout_FEECoeffs() {
     );
 }
 extern "C" {
-    pub fn gpu_calc_jones(
+    pub fn gpu_fee_calc_jones(
         d_azs: *const f64,
         d_zas: *const f64,
         num_directions: ::std::os::raw::c_int,
