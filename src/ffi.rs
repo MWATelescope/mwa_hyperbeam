@@ -14,7 +14,7 @@ use std::{
 };
 
 thread_local! {
-    static LAST_ERROR: RefCell<Option<String>> = RefCell::new(None);
+    static LAST_ERROR: RefCell<Option<String>> = const { RefCell::new(None) };
 }
 
 /// Update the most recent error, clearing whatever may have been there before.

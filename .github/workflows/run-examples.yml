@@ -28,7 +28,7 @@ jobs:
             python-version: [3.7, 3.8, 3.9, 3.10, 3.11]
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
@@ -102,7 +102,6 @@ jobs:
 
       - name: CUDA examples
         if: runner.os == 'Linux'
-        continue-on-error: true
         run: |
           wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
           sudo dpkg -i cuda-keyring_1.0-1_all.deb
@@ -111,34 +110,39 @@ jobs:
           PATH+=:/usr/local/cuda/bin
 
           # Examples may fail because there's no GPU
-          cargo run --features=cuda --example fee_cuda 10
-          cargo run --features=cuda --example analytic_cuda 10
-          cargo run --features=cuda,gpu-single --example fee_cuda 10
-          cargo run --features=cuda,gpu-single --example analytic_cuda 10
+          cargo build --features=cuda --example fee_cuda
+          ./target/debug/examples/fee_cuda 10 || true
+          cargo build --features=cuda --example analytic_cuda
+          ./target/debug/examples/analytic_cuda 10 || true
+          cargo build --features=cuda,gpu-single --example fee_cuda
+          ./target/debug/examples/fee_cuda 10 || true
+          cargo build --features=cuda,gpu-single --example analytic_cuda
+          ./target/debug/examples/analytic_cuda 10 || true
 
           cargo build --release --features=cuda
           gcc -O3 examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5 || true
           nvcc -O3 examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5 || true
           gcc -O3 examples/analytic_gpu.c -o analytic_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./analytic_cuda
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./analytic_cuda || true
           nvcc -O3 examples/analytic_cuda_device.cu -o analytic_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./analytic_cuda_device
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./analytic_cuda_device || true
 
           cargo build --release --features=cuda,gpu-single
           gcc -O3 -D SINGLE examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5 || true
           nvcc -O3 -D SINGLE examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5 || true
           gcc -O3 -D SINGLE examples/analytic_gpu.c -o analytic_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./analytic_cuda
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./analytic_cuda || true
           nvcc -O3 -D SINGLE examples/analytic_cuda_device.cu -o analytic_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./analytic_cuda_device
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./analytic_cuda_device || true
 
+          . ./venv/bin/activate
           maturin develop -b pyo3 --features=python,cuda
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/analytic_gpu.py
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5 || true
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/analytic_gpu.py || true
           maturin develop -b pyo3 --features=python,cuda,gpu-single
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/analytic_gpu.py
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5 || true
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/analytic_gpu.py || true
