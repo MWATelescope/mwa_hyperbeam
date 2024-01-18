@@ -394,15 +394,19 @@ impl FEEBeamGpu {
             let d_zas = DevicePointer::copy_to_device(&zas)?;
 
             // Allocate the latitude if we have to.
-            let d_latitude_rad = latitude_rad
-                .map(|f| DevicePointer::copy_to_device(&[f as GpuFloat]))
-                .transpose()?;
+            let d_latitude_rad = match latitude_rad {
+                Some(f) => DevicePointer::copy_to_device(&[f as GpuFloat])?,
+
+                // This won't allocate and accessing the pointer will give a
+                // null ptr.
+                None => DevicePointer::default(),
+            };
 
             self.calc_jones_device_pair_inner(
                 d_azs.get(),
                 d_zas.get(),
                 azels.len().try_into().expect("much fewer than i32::MAX"),
-                d_latitude_rad.map(|p| p.get()).unwrap_or(std::ptr::null()),
+                d_latitude_rad.get(),
                 iau_reorder,
                 d_results.get_mut() as *mut std::ffi::c_void,
             )?;
@@ -433,15 +437,19 @@ impl FEEBeamGpu {
             let d_zas = DevicePointer::copy_to_device(za_rad)?;
 
             // Allocate the latitude if we have to.
-            let d_latitude_rad = latitude_rad
-                .map(|f| DevicePointer::copy_to_device(&[f as GpuFloat]))
-                .transpose()?;
+            let d_latitude_rad = match latitude_rad {
+                Some(f) => DevicePointer::copy_to_device(&[f as GpuFloat])?,
+
+                // This won't allocate and accessing the pointer will give a
+                // null ptr.
+                None => DevicePointer::default(),
+            };
 
             self.calc_jones_device_pair_inner(
                 d_azs.get(),
                 d_zas.get(),
                 az_rad.len().try_into().expect("much fewer than i32::MAX"),
-                d_latitude_rad.map(|p| p.get()).unwrap_or(std::ptr::null()),
+                d_latitude_rad.get(),
                 iau_reorder,
                 d_results.get_mut() as *mut std::ffi::c_void,
             )?;

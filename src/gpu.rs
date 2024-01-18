@@ -61,13 +61,17 @@ impl<T> DevicePointer<T> {
     /// attempt to catch problems but there are no guarantees.
     #[track_caller]
     pub unsafe fn malloc(size: usize) -> Result<DevicePointer<T>, GpuError> {
-        let mut d_ptr = std::ptr::null_mut();
-        gpuMalloc(&mut d_ptr, size);
-        check_for_errors(GpuCall::Malloc)?;
-        Ok(Self {
-            ptr: d_ptr.cast(),
-            num_elements: size / std::mem::size_of::<T>(),
-        })
+        if size == 0 {
+            Ok(Self::default())
+        } else {
+            let mut d_ptr = std::ptr::null_mut();
+            gpuMalloc(&mut d_ptr, size);
+            check_for_errors(GpuCall::Malloc)?;
+            Ok(Self {
+                ptr: d_ptr.cast(),
+                num_elements: size / std::mem::size_of::<T>(),
+            })
+        }
     }
 
     /// Get the number of elements of `T` that have been allocated on the
@@ -156,6 +160,15 @@ impl<T> Drop for DevicePointer<T> {
     fn drop(&mut self) {
         unsafe {
             gpuFree(self.ptr.cast());
+        }
+    }
+}
+
+impl<T> Default for DevicePointer<T> {
+    fn default() -> Self {
+        Self {
+            ptr: std::ptr::null_mut(),
+            num_elements: 0,
         }
     }
 }
