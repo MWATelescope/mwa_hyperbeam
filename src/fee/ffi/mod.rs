@@ -599,15 +599,17 @@ pub unsafe extern "C" fn fee_calc_jones_gpu_device(
     let za = slice::from_raw_parts(za_rad, num_azza as usize);
     let d_az = ffi_error!(DevicePointer::copy_to_device(az));
     let d_za = ffi_error!(DevicePointer::copy_to_device(za));
-    let d_latitude_rad = ffi_error!(latitude_rad
-        .as_ref()
-        .map(|f| DevicePointer::copy_to_device(&[*f as GpuFloat]))
-        .transpose());
+    let d_latitude_rad = match latitude_rad.as_ref() {
+        Some(f) => ffi_error!(DevicePointer::copy_to_device(&[*f as GpuFloat])),
+
+        // This won't allocate and accessing the pointer will give a null ptr.
+        None => DevicePointer::default(),
+    };
     ffi_error!(beam.calc_jones_device_pair_inner(
         d_az.get(),
         d_za.get(),
         num_azza,
-        d_latitude_rad.map(|p| p.get()).unwrap_or(std::ptr::null()),
+        d_latitude_rad.get(),
         iau_bool,
         d_jones.cast()
     ));
