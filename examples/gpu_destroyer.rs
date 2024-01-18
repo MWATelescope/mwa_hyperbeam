@@ -143,9 +143,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             {let s:f64=norm.iter().sum(); (min.min(s), max.max(s))}
         );
         if pass {
-            eprintln!("attempt {:4} passed, min_norm={:?} max_norm={:?}", i, min_norm, max_norm);
+            eprintln!("     attempt {:4} passed, min_norm={:?} max_norm={:?}", i, min_norm, max_norm);
         } else {
-            eprintln!("attempt {:4} failed, min_norm={:?} max_norm={:?}", i, min_norm, max_norm);
+            eprintln!(" !!! attempt {:4} failed, min_norm={:?} max_norm={:?}", i, min_norm, max_norm);
         }
 
     });
