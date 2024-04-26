@@ -552,8 +552,7 @@ dependencies = [
 [[package]]
 name = "hip-runtime-sys"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "901a5d54cfff799dd9e6f6e1d53883bb50afdd92edce7680b1ca299d1805f65a"
+source = "git+https://github.com/d3v-null/hip-sys?branch=rocm6#784d156785b1aefc9e9b78c7d36bd1033ff87ea7"
 dependencies = [
  "libc",
 ]
@@ -561,8 +560,7 @@ dependencies = [
 [[package]]
 name = "hip-sys"
 version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f399629f98b6249efc10039e949baa70e2ff2bf84d3c30e7a0ca49f179a04287"
+source = "git+https://github.com/d3v-null/hip-sys?branch=rocm6#784d156785b1aefc9e9b78c7d36bd1033ff87ea7"
 dependencies = [
  "hip-runtime-sys",
 ]
@@ -796,6 +794,7 @@ dependencies = [
  "cuda-runtime-sys",
  "hdf5",
  "hdf5-sys",
+ "hip-runtime-sys",
  "hip-sys",
  "marlu",
  "ndarray",

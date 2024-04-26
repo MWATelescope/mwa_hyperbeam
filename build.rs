@@ -228,7 +228,7 @@ mod gpu {
             const DEFAULT_HIP_ARCHES: &[&str] = &["gfx90a"];
 
             println!("cargo:rerun-if-env-changed=HIP_PATH");
-            let hip_path = match env::var_os("HIP_PATH") {
+            let mut hip_path = match env::var_os("HIP_PATH") {
                 Some(p) => {
                     println!("cargo:warning=HIP_PATH set from env {}", p.to_string_lossy());
                     std::path::PathBuf::from(p)
@@ -239,38 +239,41 @@ mod gpu {
                     hip_path
                 },
             };
-            if !hip_path.exists() {
-                panic!("Couldn't find HIP path at {}", hip_path.display());
-            }
 
             // It seems that various ROCm releases change where hipcc is...
             let mut compiler = hip_path.join("bin/hipcc");
             if !compiler.exists() {
                 // Try the dir above, which might be the ROCm dir.
-                compiler = hip_path.join("../bin/hipcc");
+                hip_path = hip_path.parent().unwrap().into();
+                compiler = hip_path.join("bin/hipcc");
+                if !compiler.exists() {
+                    panic!("Couldn't find hipcc in either {} or {}", hip_sys::hiprt::get_hip_path().display(), hip_path.parent().unwrap().display());
+                }
             }
-            if !compiler.exists() {
-                panic!(
-                    "Couldn't find hipcc in {}/bin/hipcc or {}",
-                    hip_path.display(),
-                    compiler.display()
-                );
+            if !hip_path.join("include/hip/hip_runtime_api.h").exists() {
+                panic!("Couldn't find include/hip/hip_runtime_api.h in {}", hip_path.display());
             }
+            // TODO: this
+            // if !hip_path.join("llvm/lib/clang/17.0.0/include/cuda_wrappers/cmath").exists() {
+            //     panic!("Seriously AMD? What are you doing? {}", hip_path.display());
+            // }
+            println!("cargo:warning=install libstdc++-12-dev if you get cmath errors");
+            // TODO: set the env LIBCLANG_PATH=/opt/rocm/llvm/lib to fix clang errors
+            println!("cargo:warning=If you get clang errors, set LIBCLANG_PATH={}", hip_path.join("llvm/lib").display());
+
             let mut hip_target = cc::Build::new();
             hip_target
                 .compiler(compiler)
+                .flag("-gmodules")
                 .include(hip_path.join("include/hip"))
                 .include("src/gpu_common/")
                 .file("src/fee/gpu/fee.cu")
                 .file("src/analytic/gpu/analytic.cu");
 
             println!("cargo:rerun-if-env-changed=HIP_FLAGS");
-            match env::var_os("HIP_FLAGS") {
-                Some(p) => {
-                    println!("cargo:warning=HIP_FLAGS set from env {}", p.to_string_lossy());
-                    hip_target.flag(&p.to_string_lossy());
-                }
-                None => (),
+            if let Some(p) = env::var_os("HIP_FLAGS") {
+                println!("cargo:warning=HIP_FLAGS set from env {}", p.to_string_lossy());
+                hip_target.flag(&p.to_string_lossy());
             }
 
             hip_target.flag("-O0"); // <- hip can't handle optimizations
@@ -305,27 +308,33 @@ mod gpu {
 
             match env::var("DEBUG").as_deref() {
                 Ok("false") => (),
-                _ => {hip_target.flag("-ggdb");},
+                _ => {
+                    hip_target.flag("-ggdb");
+                },
             };
 
             hip_target
         };
 
-        gpu_target.define(
-            // The DEBUG env. variable is set by cargo. If running "cargo build
-            // --release", DEBUG is "false", otherwise "true". C/C++/CUDA like
-            // the compile option "NDEBUG" to be defined when using assert.h, so
-            // if appropriate, define that here. We also define "DEBUG" so that
-            // can be used.
-            match env::var("DEBUG").as_deref() {
-                Ok("false") => "NDEBUG",
-                _ => "DEBUG",
+        // The DEBUG env. variable is set by cargo. If running "cargo build
+        // --release", DEBUG is "false", otherwise "true". C/C++/CUDA like
+        // the compile option "NDEBUG" to be defined when using assert.h, so
+        // if appropriate, define that here. We also define "DEBUG" so that
+        // can be used.
+        match env::var("DEBUG").as_deref() {
+            Ok("false") => {
+                gpu_target.define("NDEBUG", "");
             },
-            None,
-        );
+            _ => {
+                gpu_target
+                    .define("DEBUG", "")
+                    .flag("-v");
+            },
+        };
 
         // Break in case of emergency.
         // gpu_target.debug(true);
+        // println!("cargo:warning={gpu_target:?}");
 
         // If we're told to, use single-precision floats. The default in the GPU
         // code is to use double-precision.
