@@ -62,25 +62,21 @@ jobs:
       - name: Run C examples
         run: |
           cargo build
-
           echo "*** Compiling C examples ***"
           # The macOS runner has clang symlinked as gcc, and attempting to alias
           # gcc as /usr/local/bin/gcc doesn't work! Why???
           if [ "$RUNNER_OS" == "Linux" ]; then
-            gcc -O3 examples/fee.c -o fee -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            gcc -O3 examples/fee_parallel.c -o fee_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            gcc -O3 -fopenmp examples/fee_parallel_omp.c -o fee_parallel_omp -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            gcc -O3 examples/fee_get_freqs.c -o fee_get_freqs -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            gcc -O3 examples/analytic.c -o analytic -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            gcc -O3 examples/analytic_parallel.c -o analytic_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            export CC=gcc
           else
-            /usr/local/bin/gcc-12 -O3 examples/fee.c -o fee -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            /usr/local/bin/gcc-12 -O3 examples/fee_parallel.c -o fee_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            /usr/local/bin/gcc-12 -O3 -fopenmp examples/fee_parallel_omp.c -o fee_parallel_omp -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            /usr/local/bin/gcc-12 -O3 examples/fee_get_freqs.c -o fee_get_freqs -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            /usr/local/bin/gcc-12 -O3 examples/analytic.c -o analytic -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
-            /usr/local/bin/gcc-12 -O3 examples/analytic_parallel.c -o analytic_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+            brew install gcc@13
+            export CC=$(brew --prefix gcc)/bin/gcc-13
           fi
+          $CC -O3 examples/fee.c -o fee -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          $CC -O3 examples/fee_parallel.c -o fee_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          $CC -O3 -fopenmp examples/fee_parallel_omp.c -o fee_parallel_omp -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          $CC -O3 examples/fee_get_freqs.c -o fee_get_freqs -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          $CC -O3 examples/analytic.c -o analytic -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          $CC -O3 examples/analytic_parallel.c -o analytic_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
           echo "*** Running C examples ***"
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee mwa_full_embedded_element_pattern.h5
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee_parallel mwa_full_embedded_element_pattern.h5
