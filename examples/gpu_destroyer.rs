@@ -79,8 +79,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // }
 
     // compute on CPU for comparison.
-    let mut cpu_jones =
-        Array3::from_elem((delays.dim().0, freqs_hz.len(), az.len()), Jones::default());
+    #[cfg(feature = "gpu-single")]
+    let elem: Jones<f32> = Jones::default();
+    #[cfg(not(feature = "gpu-single"))]
+    let elem: Jones<f64> = Jones::default();
+    let mut cpu_jones = Array3::from_elem((delays.dim().0, freqs_hz.len(), az.len()), elem);
 
     for ((mut out, delays), amps) in cpu_jones
         .outer_iter_mut()
@@ -143,24 +146,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut pass = true;
         for (&cpu, &gpu) in cpu_jones.iter().zip(gpu_jones.iter()) {
             let norm = (cpu - gpu).norm_sqr();
-            // #[cfg(feature = "gpu-single")]
-            // if norm.iter().sum::<f32>() > 1e-6_f32 { pass = false; break }
-            // #[cfg(not(feature = "gpu-single"))]
+            #[cfg(feature = "gpu-single")]
+            if norm.iter().sum::<f32>() > 1e-6_f32 {
+                pass = false;
+                break;
+            }
+            #[cfg(not(feature = "gpu-single"))]
             if norm.iter().sum::<f64>() > 1e-12_f64 {
                 pass = false;
                 paniq_();
                 break;
             }
         }
+        #[cfg(feature = "gpu-single")]
+        let init: (f32, f32) = (f32::MAX, f32::MIN);
+        #[cfg(not(feature = "gpu-single"))]
+        let init: (f64, f64) = (f64::MAX, f64::MIN);
         let (min_norm, max_norm) = cpu_jones
             .iter()
             .zip(gpu_jones.iter())
             .map(|(&cpu, &gpu)| (cpu - gpu).norm_sqr())
-            .fold((f64::MAX, f64::MIN), |(min, max), norm|
-            // #[cfg(feature = "gpu-single")]
-            // {let s:f32=norm.iter().sum(); (min.min(s), max.max(s))}
-            // #[cfg(not(feature = "gpu-single"))]
-            {let s:f64=norm.iter().sum(); (min.min(s), max.max(s))});
+            .fold(init, |(min, max), norm| {
+                #[cfg(feature = "gpu-single")]
+                let s: f32 = norm.iter().sum();
+                #[cfg(not(feature = "gpu-single"))]
+                let s: f64 = norm.iter().sum();
+                (min.min(s), max.max(s))
+            });
         if pass {
             eprintln!(
                 "     attempt {:4} passed, min_norm={:?} max_norm={:?}",

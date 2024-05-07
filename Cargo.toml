@@ -105,6 +105,7 @@ required-features = ["hip"]
 
 [[example]]
 name = "gpu_destroyer"
+required-features = ["hip"]
 
 [patch.crates-io]
 hip-sys = { git = "https://github.com/d3v-null/hip-sys", branch = "rocm6" }
