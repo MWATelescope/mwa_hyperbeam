@@ -48,7 +48,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set up our "GPU beam".
     let num_freqs = 1;
-    let freqs_hz = (0..num_freqs).map(|i| (150_000 + 1000 * i) as u32).collect::<Vec<_>>();
+    let freqs_hz = (0..num_freqs)
+        .map(|i| (150_000 + 1000 * i) as u32)
+        .collect::<Vec<_>>();
     let latitude_rad = Some(-0.4660608448386394); // MWA
     let iau_order = true;
 
@@ -109,45 +111,67 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // let gpu_az = az.iter().map(|&a| a as GpuFloat).collect::<Vec<_>>();
     // let gpu_za = za.iter().map(|&a| a as GpuFloat).collect::<Vec<_>>();
-    let azels: Vec<_> = az.iter().zip(za.iter()).map(|(&az, &za)| AzEl { az, el: FRAC_PI_2 - za }).collect();
+    let azels: Vec<_> = az
+        .iter()
+        .zip(za.iter())
+        .map(|(&az, &za)| AzEl {
+            az,
+            el: FRAC_PI_2 - za,
+        })
+        .collect();
 
     let num_attempts = 9999;
     (0..num_attempts).into_par_iter().for_each(|i| {
-        let gpu_beam =
-            unsafe { beam.gpu_prepare(freqs_hz.as_slice(), delays.view(), amps.view(), norm_to_zenith).expect("beam.gpu_prepare") };
+        let gpu_beam = unsafe {
+            beam.gpu_prepare(
+                freqs_hz.as_slice(),
+                delays.view(),
+                amps.view(),
+                norm_to_zenith,
+            )
+            .expect("beam.gpu_prepare")
+        };
 
         // Call hyperbeam GPU code.
-        let gpu_jones = gpu_beam.calc_jones(azels.as_slice(), latitude_rad, iau_order).expect("gpu_beam.calc_jones");
+        let gpu_jones = gpu_beam
+            .calc_jones(azels.as_slice(), latitude_rad, iau_order)
+            .expect("gpu_beam.calc_jones");
 
         // assert_eq!(gpu_jones.dim(), cpu_jones.dim());
 
         // Compare the differences with the CPU-generated Jones matrices
         let mut pass = true;
-        for (&cpu, &gpu) in cpu_jones
-            .iter()
-            .zip(gpu_jones.iter())
-        {
+        for (&cpu, &gpu) in cpu_jones.iter().zip(gpu_jones.iter()) {
             let norm = (cpu - gpu).norm_sqr();
             // #[cfg(feature = "gpu-single")]
             // if norm.iter().sum::<f32>() > 1e-6_f32 { pass = false; break }
             // #[cfg(not(feature = "gpu-single"))]
-            if norm.iter().sum::<f64>() > 1e-12_f64 { pass = false; paniq_(); break; }
+            if norm.iter().sum::<f64>() > 1e-12_f64 {
+                pass = false;
+                paniq_();
+                break;
+            }
         }
-        let (min_norm, max_norm) = cpu_jones.iter().zip(gpu_jones.iter()).map(|(&cpu, &gpu)|
-            (cpu - gpu).norm_sqr()
-        ).fold((f64::MAX, f64::MIN),
-            |(min, max), norm|
+        let (min_norm, max_norm) = cpu_jones
+            .iter()
+            .zip(gpu_jones.iter())
+            .map(|(&cpu, &gpu)| (cpu - gpu).norm_sqr())
+            .fold((f64::MAX, f64::MIN), |(min, max), norm|
             // #[cfg(feature = "gpu-single")]
             // {let s:f32=norm.iter().sum(); (min.min(s), max.max(s))}
             // #[cfg(not(feature = "gpu-single"))]
-            {let s:f64=norm.iter().sum(); (min.min(s), max.max(s))}
-        );
+            {let s:f64=norm.iter().sum(); (min.min(s), max.max(s))});
         if pass {
-            eprintln!("     attempt {:4} passed, min_norm={:?} max_norm={:?}", i, min_norm, max_norm);
+            eprintln!(
+                "     attempt {:4} passed, min_norm={:?} max_norm={:?}",
+                i, min_norm, max_norm
+            );
         } else {
-            eprintln!(" !!! attempt {:4} failed, min_norm={:?} max_norm={:?}", i, min_norm, max_norm);
+            eprintln!(
+                " !!! attempt {:4} failed, min_norm={:?} max_norm={:?}",
+                i, min_norm, max_norm
+            );
         }
-
     });
 
     Ok(())
@@ -234,4 +258,3 @@ attempt 346 passed, min_norm=[0.0, 0.0, 0.0, 0.0]
 attempt 2527 passed, min_norm=[0.0, 0.0, 0.0, 0.0]
 
 */
-

@@ -393,18 +393,19 @@ fn test_calc_jones_gpu_via_ffi() {
     }
 
     // The errors are heavily dependent on the directions.
-    for ((gpu, cpu), az) in jones_gpu
-        .iter()
-        .zip(jones_cpu.iter())
-        .zip(az.iter())
-    {
+    for ((gpu, cpu), az) in jones_gpu.iter().zip(jones_cpu.iter()).zip(az.iter()) {
         #[cfg(not(feature = "gpu-single"))]
-        assert!(abs_diff_eq!(gpu, cpu, epsilon = 1e-15), "az: {az} cpu: {cpu} gpu: {gpu}");
+        assert!(
+            abs_diff_eq!(gpu, cpu, epsilon = 1e-15),
+            "az: {az} cpu: {cpu} gpu: {gpu}"
+        );
 
         #[cfg(feature = "gpu-single")]
-        assert!(abs_diff_eq!(gpu, cpu, epsilon = 1e-6), "az: {az} cpu: {cpu} gpu: {gpu}");
+        assert!(
+            abs_diff_eq!(gpu, cpu, epsilon = 1e-6),
+            "az: {az} cpu: {cpu} gpu: {gpu}"
+        );
     }
-
 }
 
 // Tests to expose errors follow.

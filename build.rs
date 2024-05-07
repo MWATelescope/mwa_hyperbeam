@@ -217,7 +217,9 @@ mod gpu {
 
             match env::var("DEBUG").as_deref() {
                 Ok("false") => (),
-                _ => {cuda_target.flag("-G");},
+                _ => {
+                    cuda_target.flag("-G");
+                }
             };
 
             cuda_target
@@ -230,14 +232,20 @@ mod gpu {
             println!("cargo:rerun-if-env-changed=HIP_PATH");
             let mut hip_path = match env::var_os("HIP_PATH") {
                 Some(p) => {
-                    println!("cargo:warning=HIP_PATH set from env {}", p.to_string_lossy());
+                    println!(
+                        "cargo:warning=HIP_PATH set from env {}",
+                        p.to_string_lossy()
+                    );
                     std::path::PathBuf::from(p)
                 }
                 None => {
                     let hip_path = hip_sys::hiprt::get_hip_path();
-                    println!("cargo:warning=HIP_PATH set from hip_sys {}", hip_path.display());
+                    println!(
+                        "cargo:warning=HIP_PATH set from hip_sys {}",
+                        hip_path.display()
+                    );
                     hip_path
-                },
+                }
             };
 
             // It seems that various ROCm releases change where hipcc is...
@@ -247,11 +255,18 @@ mod gpu {
                 hip_path = hip_path.parent().unwrap().into();
                 compiler = hip_path.join("bin/hipcc");
                 if !compiler.exists() {
-                    panic!("Couldn't find hipcc in either {} or {}", hip_sys::hiprt::get_hip_path().display(), hip_path.parent().unwrap().display());
+                    panic!(
+                        "Couldn't find hipcc in either {} or {}",
+                        hip_sys::hiprt::get_hip_path().display(),
+                        hip_path.parent().unwrap().display()
+                    );
                 }
             }
             if !hip_path.join("include/hip/hip_runtime_api.h").exists() {
-                panic!("Couldn't find include/hip/hip_runtime_api.h in {}", hip_path.display());
+                panic!(
+                    "Couldn't find include/hip/hip_runtime_api.h in {}",
+                    hip_path.display()
+                );
             }
             // TODO: this
             // if !hip_path.join("llvm/lib/clang/17.0.0/include/cuda_wrappers/cmath").exists() {
@@ -259,7 +274,10 @@ mod gpu {
             // }
             println!("cargo:warning=install libstdc++-12-dev if you get cmath errors");
             // TODO: set the env LIBCLANG_PATH=/opt/rocm/llvm/lib to fix clang errors
-            println!("cargo:warning=If you get clang errors, set LIBCLANG_PATH={}", hip_path.join("llvm/lib").display());
+            println!(
+                "cargo:warning=If you get clang errors, set LIBCLANG_PATH={}",
+                hip_path.join("llvm/lib").display()
+            );
 
             let mut hip_target = cc::Build::new();
             hip_target
@@ -272,7 +290,10 @@ mod gpu {
 
             println!("cargo:rerun-if-env-changed=HIP_FLAGS");
             if let Some(p) = env::var_os("HIP_FLAGS") {
-                println!("cargo:warning=HIP_FLAGS set from env {}", p.to_string_lossy());
+                println!(
+                    "cargo:warning=HIP_FLAGS set from env {}",
+                    p.to_string_lossy()
+                );
                 hip_target.flag(&p.to_string_lossy());
             }
 
@@ -310,7 +331,7 @@ mod gpu {
                 Ok("false") => (),
                 _ => {
                     hip_target.flag("-ggdb");
-                },
+                }
             };
 
             hip_target
@@ -324,12 +345,10 @@ mod gpu {
         match env::var("DEBUG").as_deref() {
             Ok("false") => {
                 gpu_target.define("NDEBUG", "");
-            },
+            }
             _ => {
-                gpu_target
-                    .define("DEBUG", "")
-                    .flag("-v");
-            },
+                gpu_target.define("DEBUG", "").flag("-v");
+            }
         };
 
         // Break in case of emergency.
