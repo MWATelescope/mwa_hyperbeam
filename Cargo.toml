@@ -1,10 +1,11 @@
 [package]
 name = "mwa_hyperbeam"
-version = "0.7.1"
+version = "0.7.2"
 authors = [
     "Christopher H. Jordan <christopherjordan87@gmail.com>",
     "Jack L. B. Line <jack.line@curtin.edu.au>",
     "Marcin Sokolowski <marcin.sokolowski@curtin.edu.au>",
+    "Dev Null <dev.null@curtin.edu.au",
 ]
 edition = "2021"
 rust-version = "1.64"
@@ -71,7 +72,7 @@ serial_test = "2.0.0"
 ndarray = { version = "0.15.4", features = ["approx-0_5"] }
 
 [build-dependencies]
-cbindgen = { version = "0.25.0", default_features = false }
+cbindgen = { version = "0.25.0", default-features = false }
 cfg-if = "1.0.0"
 cc = { version = "1.0.0", features = ["parallel"], optional = true }
 hip-sys = { version = "0.1.0", optional = true }

@@ -18,40 +18,45 @@ env:
 
 jobs:
   test:
-    name: Test ${{matrix.os}} - Rust ${{matrix.rust}}
+    name: Test ${{matrix.os}} Rust ${{matrix.rust.ver}} ex ${{matrix.rust.examples}}
     runs-on: ${{matrix.os}}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-20.04, macos-latest]
-        rust: [nightly, beta, stable, 1.64.0] # MSRV
-        include:
-          - os: macos-latest
-            python-version: [3.7, 3.8, 3.9, 3.10, 3.11]
+        os:
+          - ubuntu-22.04
+          - macos-13
+          - macos-14
+        rust:
+          - ver: nightly
+            examples: false
+          - ver: beta
+            examples: false
+          - ver: stable
+            examples: true
+          - ver: "1.64.0" # MSRV
+            examples: false
+
     steps:
       - name: Checkout sources
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Install Dependencies
+      - name: (macos) install dependencies
+        if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
-          if [ "$RUNNER_OS" == "Linux" ]; then
-            sudo apt -y update
-            sudo apt -y install libhdf5-dev gcc pkg-config python3 curl wget git jq
-          elif [ "$RUNNER_OS" == "macOS" ]; then
-            brew install pkg-config
-            # 1.12 doesn't work?
-            brew install hdf5@1.10
-          else
-            echo "$RUNNER_OS not supported"
-            exit 1
-          fi
+          brew install automake autoconf pkg-config hdf5@1.10
+      - name: (ubuntu) install dependencies
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: |
+          sudo apt -y update
+          sudo apt -y install libhdf5-dev gcc pkg-config python3{,-pip,-venv} curl wget git jq
 
       - name: Install stable toolchain
         uses: actions-rs/toolchain@v1
         with:
-          toolchain: ${{matrix.rust}}
+          toolchain: ${{matrix.rust.ver}}
           profile: minimal
           override: true
           components: rustfmt, clippy
@@ -72,23 +77,124 @@ jobs:
       # Taken from https://github.com/dtolnay/thiserror/blob/a2d1ed1ccfc2a5dbb2a8fb45d4f938175a28bc86/.github/workflows/ci.yml
       - name: Enable type layout randomization
         run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout >> $GITHUB_ENV
-        if: matrix.rust == 'nightly'
+        if: ${{ matrix.rust.ver == 'nightly' }}
 
-      - name: Run tests
-        run: cargo test --lib --bins
+      - name: Run tests (dynamic)
+        run: cargo test
 
-      - name: CUDA tests
-        if: runner.os == 'Linux'
+      - name: Run tests (static)
+        run: cargo test --features=all-static
+
+      - name: Setup example environment
+        if: ${{ matrix.rust.examples }} # only run examples on stable
+        run: |
+          echo LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${PWD}/target/debug/ >> $GITHUB_ENV
+          which gcc || true
+          which gcc-12 || true
+          which gcc-13 || true
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            echo CC=gcc >> $GITHUB_ENV
+          else
+            echo CC=gcc-12 >> $GITHUB_ENV
+          fi
+
+      - name: Run Rust example
+        if: ${{ matrix.rust.examples }} # only run examples on stable
+        run: cargo run --example fee 10
+
+      - name: Run C examples
+        if: ${{ matrix.rust.examples }} # only run examples on stable
+        run: |
+          cargo build
+          echo "*** Compiling C examples ***"
+          # The macOS runner has clang symlinked as gcc, and attempting to alias
+          # gcc as /usr/local/bin/gcc doesn't work! Why???
+          $CC -O3 examples/fee.c -o fee -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          $CC -O3 examples/fee_parallel.c -o fee_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          $CC -O3 -fopenmp examples/fee_parallel_omp.c -o fee_parallel_omp -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          $CC -O3 examples/fee_get_freqs.c -o fee_get_freqs -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          $CC -O3 examples/analytic.c -o analytic -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          $CC -O3 examples/analytic_parallel.c -o analytic_parallel -I ./include/ -L ./target/debug/ -l mwa_hyperbeam
+          echo "*** Running C examples ***"
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee_parallel mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee_parallel_omp mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./fee_get_freqs mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./analytic
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./analytic_parallel
+
+      - name: (ubuntu) Run Python tests
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: cargo test --features=python
+
+      - name: Run Python example
+        if: ${{ matrix.rust.examples }} # only run examples on stable
+        run: |
+          python3 -m venv venv
+          . ./venv/bin/activate
+          pip install numpy maturin
+          echo "*** Compiling Python hyperbeam ***"
+          maturin develop -b pyo3 --features=python
+          echo "*** Running Python examples ***"
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./examples/fee.py mwa_full_embedded_element_pattern.h5
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./examples/analytic.py
+
+      - name: (ubuntu) install CUDA
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
           wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/cuda-keyring_1.0-1_all.deb
           sudo dpkg -i cuda-keyring_1.0-1_all.deb
           sudo apt -y update
           sudo apt -y install cuda --no-install-recommends
-          PATH+=:/usr/local/cuda/bin
+          echo PATH=${PATH}:/usr/local/cuda/bin >> $GITHUB_ENV
 
+      - name: (ubuntu) CUDA smoke tests
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: |
           # Can't run the tests; there's no GPU
           cargo test --all --no-run --features=cuda
           cargo test --all --no-run --features=cuda,gpu-single
 
           cargo test --all --no-run --features=python,cuda
           cargo test --all --no-run --features=python,cuda,gpu-single
+
+      - name: (ubuntu) CUDA examples
+        if: ${{ startsWith(matrix.os, 'ubuntu') && matrix.rust.examples }}
+        run: |
+          # Examples may fail because there's no GPU
+          cargo build --features=cuda --example fee_cuda
+          ./target/debug/examples/fee_cuda 10 || true
+          cargo build --features=cuda --example analytic_cuda
+          ./target/debug/examples/analytic_cuda 10 || true
+          cargo build --features=cuda,gpu-single --example fee_cuda
+          ./target/debug/examples/fee_cuda 10 || true
+          cargo build --features=cuda,gpu-single --example analytic_cuda
+          ./target/debug/examples/analytic_cuda 10 || true
+
+          cargo build --release --features=cuda
+          $CC -O3 examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5 || true
+          nvcc -O3 examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5 || true
+          $CC -O3 examples/analytic_gpu.c -o analytic_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./analytic_cuda || true
+          nvcc -O3 examples/analytic_cuda_device.cu -o analytic_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./analytic_cuda_device || true
+
+          cargo build --release --features=cuda,gpu-single
+          $CC -O3 -D SINGLE examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5 || true
+          nvcc -O3 -D SINGLE examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5 || true
+          $CC -O3 -D SINGLE examples/analytic_gpu.c -o analytic_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./analytic_cuda || true
+          nvcc -O3 -D SINGLE examples/analytic_cuda_device.cu -o analytic_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./analytic_cuda_device || true
+
+          . ./venv/bin/activate
+          maturin develop -b pyo3 --features=python,cuda
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5 || true
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/analytic_gpu.py || true
+          maturin develop -b pyo3 --features=python,cuda,gpu-single
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5 || true
+          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/analytic_gpu.py || true

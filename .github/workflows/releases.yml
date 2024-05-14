@@ -12,9 +12,12 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  build-linux-release:
-    name: Build release for Linux
-    runs-on: ubuntu-22.04
+  build-release:
+    name: Build release for ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, macos-13, macos-14]
 
     steps:
     - name: Checkout sources
@@ -22,107 +25,180 @@ jobs:
       with:
         fetch-depth: 0
 
-    # - name: Install CUDA
-    #   run: |
-    #     wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.0-1_all.deb
-    #     sudo dpkg -i cuda-keyring_1.0-1_all.deb
-    #     sudo apt -y update
-    #     sudo apt -y install cuda --no-install-recommends
+    - name: (macos) install dependencies
+      if: ${{ startsWith(matrix.os, 'macos') }}
+      run: |
+        brew install automake autoconf pkg-config hdf5@1.10
+    - name: (ubuntu) install dependencies
+      if: ${{ startsWith(matrix.os, 'ubuntu') }}
+      run: |
+        sudo apt -y update
+        sudo apt -y install libhdf5-dev gcc pkg-config python3 curl wget git jq
 
-    # - name: Check semver
-    #   uses: obi1kenobi/cargo-semver-checks-action@v2
-    #   env:
-    #     NVCC: /usr/local/cuda/bin/nvcc
-
-    - name: Build hyperbeam
-      uses: docker://quay.io/pypa/manylinux_2_28_x86_64:latest
+    - name: Install Rust, stable minimal toolchain
+      uses: dtolnay/rust-toolchain@v1
       with:
-        entrypoint: /bin/bash
-        args: .github/workflows/build.sh
-
-    - name: Upload tarball
-      uses: actions/upload-artifact@v2
-      with:
-        name: linux.tar.gz
-        path: "*.tar.gz"
-        if-no-files-found: error
-
-  build-macos-release:
-    name: Build release for MacOS
-    runs-on: macos-latest
-
-    steps:
-    - name: Checkout sources
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-
-    - name: Install stable toolchain
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
         toolchain: stable
-        override: true
-
-    - name: Add Python 3.7
-      uses: actions/setup-python@v2
-      with:
-        python-version: "3.7"
-        architecture: "x64"
 
     - name: Add Python 3.8
-      uses: actions/setup-python@v2
+      if: ${{ matrix.os != 'macos-14' }}
+      uses: actions/setup-python@v5
+      continue-on-error: true
       with:
         python-version: "3.8"
-        architecture: "x64"
 
     - name: Add Python 3.9
-      uses: actions/setup-python@v2
+      if: ${{ matrix.os != 'macos-14' }}
+      uses: actions/setup-python@v5
+      continue-on-error: true
       with:
         python-version: "3.9"
-        architecture: "x64"
 
     - name: Add Python 3.10
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
+      continue-on-error: true
       with:
         python-version: "3.10"
-        architecture: "x64"
 
     - name: Add Python 3.11
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v5
+      continue-on-error: true
       with:
         python-version: "3.11"
-        architecture: "x64"
 
-    - name: Build hyperbeam
-      run: .github/workflows/build.sh
+    - name: Add Python 3.12
+      uses: actions/setup-python@v5
+      continue-on-error: true
+      with:
+        python-version: "3.12"
+
+    - name: install maturin
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install maturin
+
+    - name: build mwa_hyperbeam
+      run: |
+        # Copy the release readme to the project root so it can neatly be put in the
+        # release tarballs.
+        cp .github/workflows/releases-readme.md README.md
+
+        # Because we've compiled HDF5 and ERFA into hyperbeam products, we
+        # legally must distribute their licenses with the products.
+        curl https://raw.githubusercontent.com/HDFGroup/hdf5/develop/COPYING -o COPYING-hdf5
+        curl https://raw.githubusercontent.com/liberfa/erfa/master/LICENSE -o LICENSE-erfa
+
+        export TAG="$(git describe --tags)"
+        export VER="v$(grep version Cargo.toml -m1 | cut -d' ' -f3 | tr -d '"')"
+        export REF="${{ github.ref_name }}"
+        echo "TAG=$TAG, VER=$VER, REF=$REF"
+
+        # determine which target cpus for rustc to build for from machine type
+        export ARCH="$(uname -m)"
+        case $ARCH in
+          x86_64)
+            if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+              export TARGETS="x86-64 x86-64-v2 x86-64-v3"
+            else
+              export TARGETS="x86-64"
+            fi
+            ;;
+          arm64) export TARGETS="apple-m1" ;;
+          *) echo "unknown arch (uname -m) $ARCH"; exit 1 ;;
+        esac
+
+        # determine which library file extensions to include in archive from kernel
+        export KERNEL="$(uname -s | tr '[:upper:]' '[:lower:]')"
+        case $KERNEL in
+          darwin*) export LIB_GLOB="{a,dylib}" ;;
+          linux*) export LIB_GLOB="{a,so}" ;;
+          *) echo "unknown kernel (uname -s) $KERNEL"; exit 1 ;;
+        esac
+
+        # determine which python versions are available
+        export PYTHONS=$(maturin list-python 2>&1 | grep CPython | cut -d' ' -f 4 | tr $'\n' ' ')
+
+        for TARGET in $TARGETS; do
+          echo "building target $TARGET"
+          export RUSTFLAGS="-C target-cpu=$TARGET"
+          # Build python first
+          maturin build --release --features python,all-static --strip -i $PYTHONS
+          # Build C objects
+          cargo build --release --features all-static
+
+          # Create new release asset tarballs
+          eval mv target/wheels/*.whl target/release/libmwa_hyperbeam.${LIB_GLOB} include/mwa_hyperbeam.h .
+          eval tar -acvf mwa_hyperbeam-${TAG}-${KERNEL}-${TARGET}.tar.gz \
+              LICENSE COPYING-hdf5 LICENSE-erfa README.md CHANGELOG.md \
+              libmwa_hyperbeam.${LIB_GLOB} mwa_hyperbeam.h
+          eval tar -acvf mwa_hyperbeam-${TAG}-${KERNEL}-${TARGET}-python.tar.gz \
+              LICENSE COPYING-hdf5 LICENSE-erfa README.md CHANGELOG.md \
+              ./*.whl
+        done
 
     - name: Upload tarball
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
-        name: macos.tar.gz
+        name: ${{ matrix.os }}.tar.gz
         path: "*.tar.gz"
         if-no-files-found: error
 
-  create-release:
-    name: Create a new release
+  create-rust-release:
+    name: Publish to crates.io
     runs-on: ubuntu-latest
-    needs: [build-linux-release, build-macos-release]
+    needs: [build-release]
+    environment: CI
     steps:
-      - name: Download Linux artifact
-        uses: actions/download-artifact@v2
-        with:
-          name: linux.tar.gz
+      - name: Checkout sources
+        uses: actions/checkout@v4
 
-      - name: Download MacOS artifact
-        uses: actions/download-artifact@v2
+      - name: Install stable, minimal toolchain
+        uses: dtolnay/rust-toolchain@v1
         with:
-          name: macos.tar.gz
+          toolchain: stable
 
-      - name: Provide new release asset
-        uses: "marvinpinto/action-automatic-releases@latest"
+      - name: Build release on latest stable rust
+        run: |
+          sudo apt -y update
+          sudo apt -y install libhdf5-dev pkg-config
+          cargo build --release --features hdf5-static
+
+      - uses: katyo/publish-crates@v2
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          prerelease: false
-          files: |
-            *.tar.gz
+            registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+            args: --no-verify
+
+  create-github-and-pypi-release:
+    name: Create a new github and pypi release
+    runs-on: ubuntu-latest
+    needs: [create-rust-release]
+    environment: CI
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          gh release create "$tag" \
+              --repo="$GITHUB_REPOSITORY" \
+              --title="${GITHUB_REPOSITORY#*/} ${tag#v}" \
+              --generate-notes *.tar.gz
+
+      - name: Place all python wheels into dir for publish to pypi
+        run: |
+          mkdir for_pypi
+          tar xvf *-darwin-apple-m1-python.tar.gz -C for_pypi/ --wildcards "*.whl"
+          tar xvf *-darwin-x86-64-python.tar.gz -C for_pypi/ --wildcards "*.whl"
+          tar xvf *-linux-x86-64-python.tar.gz -C for_pypi/ --wildcards "*.whl"
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: for_pypi/
+          password: ${{ secrets.PYPI_API_TOKEN }}
