@@ -869,7 +869,7 @@ dependencies = [
 
 [[package]]
 name = "mwa_hyperbeam"
-version = "0.7.2"
+version = "0.8.0"
 dependencies = [
  "approx",
  "cbindgen",
