@@ -227,8 +227,6 @@ mod gpu {
 
         #[cfg(feature = "hip")]
         let mut gpu_target = {
-            const DEFAULT_HIP_ARCHES: &[&str] = &["gfx90a"];
-
             println!("cargo:rerun-if-env-changed=HIP_PATH");
             let mut hip_path = match env::var_os("HIP_PATH") {
                 Some(p) => {
@@ -282,7 +280,6 @@ mod gpu {
             let mut hip_target = cc::Build::new();
             hip_target
                 .compiler(compiler)
-                .flag("-gmodules")
                 .include(hip_path.join("include/hip"))
                 .include("src/gpu_common/")
                 .file("src/fee/gpu/fee.cu")
@@ -296,8 +293,6 @@ mod gpu {
                 );
                 hip_target.flag(&p.to_string_lossy());
             }
-
-            hip_target.flag("-O0"); // <- hip can't handle optimizations
 
             println!("cargo:rerun-if-env-changed=ROCM_VER");
             println!("cargo:rerun-if-env-changed=ROCM_PATH");
@@ -315,11 +310,8 @@ mod gpu {
                 _ => {
                     // Print out all of the default arches and computes as a
                     // warning.
-                    println!("cargo:warning=No HYPERBEAM_HIP_ARCH; Passing --offload-arch={DEFAULT_HIP_ARCHES:?} to hip");
-                    DEFAULT_HIP_ARCHES
-                        .iter()
-                        .map(|&s| String::from(s))
-                        .collect()
+                    println!("cargo:warning=No offload arch found, try HYPERBEAM_HIP_ARCH");
+                    vec![]
                 }
             };
 
@@ -330,7 +322,10 @@ mod gpu {
             match env::var("DEBUG").as_deref() {
                 Ok("false") => (),
                 _ => {
-                    hip_target.flag("-ggdb");
+                    hip_target
+                        .flag("-ggdb")
+                        .flag("-O1") // <- don't use -O0 https://github.com/ROCm/HIP/issues/3183
+                        .flag("-gmodules");
                 }
             };
 
