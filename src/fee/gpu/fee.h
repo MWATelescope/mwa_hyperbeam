@@ -205,37 +205,45 @@ inline __device__ void lpmv_device(FLOAT *output, int n, FLOAT x) {
     }
 }
 
-inline __device__ int lidx_device(const int l, const int m) {
+inline __device__ int lidx_device(const int i_direction, const int l, const int m) {
+    // lengendre table is now ((NMAX + 1)*(NMAX + 2)) >> 1) by n_dirs which is why i_direction is now needed.
     // summation series over l + m => (l*(l+1))/2 + m
-    return ((l * (l + 1)) >> 1) + m;
+    return i_direction*(((NMAX + 1)*(NMAX + 2)) >> 1) + ((l * (l + 1)) >> 1) + m;
 }
 
-inline __device__ void legendre_polynomials_device(FLOAT *legendre, const FLOAT x, const int P) {
-    // This factor is reuse 342210222sqrt(1 342210222 x^2)
+inline __device__ int Pidx_device(const int i_direction, const int i) {
+    // all P arrays are now NMAX*(NMAX + 2) by i_direction, so that's why we need this.
+    // Used for P1sin_arr and P1_arr
+    return i_direction*NMAX*(NMAX + 2) + i;
+}
+
+inline __device__ void legendre_polynomials_device(FLOAT *legendre, const FLOAT *thetas, int i_direction) {
     int l, m;
+    const FLOAT x = COS(thetas[i_direction]);
     const FLOAT factor = -SQRT(1.0 - (x * x));
 
     // Init legendre
-    legendre[lidx_device(0, 0)] = 1.0; // P_0,0(x) = 1
-    // Easy values
-    legendre[lidx_device(1, 0)] = x;      // P_1,0(x) = x
-    legendre[lidx_device(1, 1)] = factor; // P_1,1(x) = 342210222sqrt(1 342210222 x^2)
+    legendre[lidx_device(i_direction, 0, 0)] = 1.0; // P_0,0(x) = 1
 
-    for (l = 2; l <= P; ++l) {
+    // Easy values
+    legendre[lidx_device(i_direction, 1, 0)] = x;      // P_1,0(x) = x
+    legendre[lidx_device(i_direction, 1, 1)] = factor; // P_1,1(x) = 342210222sqrt(1 342210222 x^2)
+
+    for (l = 2; l <= NMAX; ++l) {
         for (m = 0; m < l - 1; ++m) {
             // P_l,m = (2l-1)*x*P_l-1,m - (l+m-1)*x*P_l-2,m / (l-k)
-            legendre[lidx_device(l, m)] = ((FLOAT)(2 * l - 1) * x * legendre[lidx_device(l - 1, m)] -
-                                           (FLOAT)(l + m - 1) * legendre[lidx_device(l - 2, m)]) /
+            legendre[lidx_device(i_direction, l, m)] = ((FLOAT)(2 * l - 1) * x * legendre[lidx_device(i_direction, l - 1, m)] -
+                                           (FLOAT)(l + m - 1) * legendre[lidx_device(i_direction, l - 2, m)]) /
                                           (FLOAT)(l - m);
         }
         // P_l,l-1 = (2l-1)*x*P_l-1,l-1
-        legendre[lidx_device(l, l - 1)] = (FLOAT)(2 * l - 1) * x * legendre[lidx_device(l - 1, l - 1)];
+        legendre[lidx_device(i_direction, l, l - 1)] = (FLOAT)(2 * l - 1) * x * legendre[lidx_device(i_direction, l - 1, l - 1)];
         // P_l,l = (2l-1)*factor*P_l-1,l-1
-        legendre[lidx_device(l, l)] = (FLOAT)(2 * l - 1) * factor * legendre[lidx_device(l - 1, l - 1)];
+        legendre[lidx_device(i_direction, l, l)] = (FLOAT)(2 * l - 1) * factor * legendre[lidx_device(i_direction, l - 1, l - 1)];
     }
 }
 
-inline __device__ int jones_p1sin_device(const int nmax, const FLOAT theta, FLOAT *p1sin_out, FLOAT *p1_out) {
+inline __device__ int jones_p1sin_device(const FLOAT *thetas, int i_direction, FLOAT *p1sin_out, FLOAT *p1_out, FLOAT *legendret) {
     int n, m;
     int ind_start, ind_stop;
     int modified;
@@ -243,23 +251,14 @@ inline __device__ int jones_p1sin_device(const int nmax, const FLOAT theta, FLOA
     const FLOAT delu = 1e-6;
     FLOAT P[NMAX + 1], Pm1[NMAX + 1], Pm_sin[NMAX + 1], Pu_mdelu[NMAX + 1], Pm_sin_merged[NMAX * 2 + 1],
         Pm1_merged[NMAX * 2 + 1];
-    FLOAT legendre_table[NMAX * (NMAX + 1)], legendret[(((NMAX + 2) * (NMAX + 1)) / 2)];
 
+    const FLOAT theta = thetas[i_direction];
     SINCOS(theta, &sin_th, &u);
-    // Create a look-up table for the legendre polynomials
-    // Such that legendre_table[ m * nmax + (n-1) ] = legendre(n, m, u)
-    legendre_polynomials_device(legendret, u, nmax);
-    for (n = 1; n <= nmax; n++) {
-        for (m = 0; m != n + 1; ++m)
-            legendre_table[m * nmax + (n - 1)] = legendret[lidx_device(n, m)];
-        for (m = n + 1; m != nmax + 1; ++m)
-            legendre_table[m * nmax + (n - 1)] = 0.0;
-    }
 
-    for (n = 1; n <= nmax; n++) {
+    for (n = 1; n <= NMAX; n++) {
         int i;
         for (m = 0; m != n + 1; ++m) {
-            P[m] = legendre_table[m * nmax + (n - 1)];
+            P[m] = legendret[lidx_device(i_direction, n, m)];
         }
         memcpy(Pm1, &(P[1]), n * sizeof(FLOAT));
         Pm1[n] = 0;
@@ -291,7 +290,7 @@ inline __device__ int jones_p1sin_device(const int nmax, const FLOAT theta, FLOA
 
         modified = 0;
         for (i = ind_start; i < ind_stop; i++) {
-            p1sin_out[i] = Pm_sin_merged[modified];
+            p1sin_out[Pidx_device(i_direction, i)] = Pm_sin_merged[modified];
             modified++;
         }
 
@@ -301,20 +300,20 @@ inline __device__ int jones_p1sin_device(const int nmax, const FLOAT theta, FLOA
 
         modified = 0;
         for (i = ind_start; i < ind_stop; i++) {
-            p1_out[i] = Pm1_merged[modified];
+            p1_out[Pidx_device(i_direction, i)] = Pm1_merged[modified];
             modified++;
         }
     }
 
-    return nmax;
+    return NMAX;
 }
 
-inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT theta, const COMPLEX *q1_accum,
+inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT *thetas, const int i_direction, const COMPLEX *q1_accum,
                                                 const COMPLEX *q2_accum, const int8_t *m_accum, const int8_t *n_accum,
                                                 const int8_t *m_signs, const int8_t *m_abs_m, const int coeff_length,
                                                 const FLOAT *P1sin_arr, const FLOAT *P1_arr, const char pol,
                                                 JONES *jm) {
-    const FLOAT u = COS(theta);
+    const FLOAT u = COS(thetas[i_direction]);
     COMPLEX sigma_P = MAKE_COMPLEX(0.0, 0.0);
     COMPLEX sigma_T = MAKE_COMPLEX(0.0, 0.0);
     COMPLEX ejm_phi;
@@ -336,15 +335,15 @@ inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT the
         const COMPLEX j_power_n = J_POWERS[n % 4];
         const COMPLEX q1 = q1_accum[i];
         const COMPLEX q2 = q2_accum[i];
-        const COMPLEX s1 = q2 * (P1sin_arr[i] * FABS(M) * u);
-        const COMPLEX s2 = q1 * (P1sin_arr[i] * M);
-        const COMPLEX s3 = q2 * P1_arr[i];
+        const COMPLEX s1 = q2 * (P1sin_arr[Pidx_device(i_direction, i)] * FABS(M) * u);
+        const COMPLEX s2 = q1 * (P1sin_arr[Pidx_device(i_direction, i)] * M);
+        const COMPLEX s3 = q2 * P1_arr[Pidx_device(i_direction, i)];
         const COMPLEX s4 = CSUB(s1, s2);
         const COMPLEX E_theta_mn = CMUL(j_power_n, CADD(s4, s3));
         const COMPLEX j_power_np1 = J_POWERS[(n + 1) % 4];
-        const COMPLEX o1 = q2 * (P1sin_arr[i] * M);
-        const COMPLEX o2 = q1 * (P1sin_arr[i] * FABS(M) * u);
-        const COMPLEX o3 = q1 * P1_arr[i];
+        const COMPLEX o1 = q2 * (P1sin_arr[Pidx_device(i_direction, i)] * M);
+        const COMPLEX o2 = q1 * (P1sin_arr[Pidx_device(i_direction, i)] * FABS(M) * u);
+        const COMPLEX o3 = q1 * P1_arr[Pidx_device(i_direction, i)];
         const COMPLEX o4 = CSUB(o1, o2);
         const COMPLEX E_phi_mn = CMUL(j_power_np1, CSUB(o4, o3));
         sigma_P += CMUL(phi_comp, E_phi_mn);
@@ -366,70 +365,83 @@ inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT the
  * blockIdx.x * blockDim.x + threadIdx.x corresponds to direction.
  */
 __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT *zas, const int num_directions,
-                           const JONES *norm_jones, const FLOAT *latitude_rad, const int iau_order, JONES *fee_jones) {
-    for (int i_direction = blockIdx.x * blockDim.x + threadIdx.x; i_direction < num_directions;
-         i_direction += gridDim.x * blockDim.x) {
-        const FLOAT az = azs[i_direction];
-        const FLOAT za = zas[i_direction];
-        const FLOAT phi = M_PI_2 - az;
+                           const JONES *norm_jones, const FLOAT *latitude_rad, const int iau_order, JONES *fee_jones,
+                           FLOAT *legendret, FLOAT *P1sin_arr, FLOAT *P1_arr) {
+    int i_direction = blockIdx.x * blockDim.x + threadIdx.x;
 
-        // Set up our "P1sin" arrays. This is pretty expensive, but only depends
-        // on the zenith angle and "n_max".
-        FLOAT P1sin_arr[NMAX * NMAX + 2 * NMAX], P1_arr[NMAX * NMAX + 2 * NMAX];
-        jones_p1sin_device(coeffs.n_max, za, P1sin_arr, P1_arr);
+    if (i_direction >= num_directions)
+        return;
 
-        const int x_offset = coeffs.x_offsets[blockIdx.y];
-        const int y_offset = coeffs.y_offsets[blockIdx.y];
-        JONES jm;
-        jones_calc_sigmas_device(phi, za, (const COMPLEX *)coeffs.x_q1_accum + x_offset,
-                                 (const COMPLEX *)coeffs.x_q2_accum + x_offset, coeffs.x_m_accum + x_offset,
-                                 coeffs.x_n_accum + x_offset, coeffs.x_m_signs + x_offset, coeffs.x_m_abs_m + x_offset,
-                                 coeffs.x_lengths[blockIdx.y], P1sin_arr, P1_arr, 'x', &jm);
-        jones_calc_sigmas_device(phi, za, (const COMPLEX *)coeffs.y_q1_accum + y_offset,
-                                 (const COMPLEX *)coeffs.y_q2_accum + y_offset, coeffs.y_m_accum + y_offset,
-                                 coeffs.y_n_accum + y_offset, coeffs.y_m_signs + y_offset, coeffs.y_m_abs_m + y_offset,
-                                 coeffs.y_lengths[blockIdx.y], P1sin_arr, P1_arr, 'y', &jm);
+    const FLOAT az = azs[i_direction];
+    const FLOAT za = zas[i_direction];
+    const FLOAT phi = M_PI_2 - az;
 
-        if (norm_jones != NULL) {
-            JONES norm = norm_jones[blockIdx.y];
-            jm.j00 = CDIV(jm.j00, norm.j00);
-            jm.j01 = CDIV(jm.j01, norm.j01);
-            jm.j10 = CDIV(jm.j10, norm.j10);
-            jm.j11 = CDIV(jm.j11, norm.j11);
-        }
+    // Create a look-up table for the legendre polynomials
+    // Such that legendre_table[ m * nmax + (n-1) ] = legendre(n, m, u)
+    legendre_polynomials_device(legendret, zas, i_direction);
 
-        if (latitude_rad != NULL) {
-            HADec hadec = azel_to_hadec(az, M_PI_2 - za, *latitude_rad);
-            FLOAT pa = get_parallactic_angle(hadec, *latitude_rad);
-            apply_pa_correction(&jm, pa, iau_order);
-        }
+    // Set up our "P1sin" arrays. This is pretty expensive, but only depends
+    // on the zenith angle and "n_max".
+    jones_p1sin_device(zas, i_direction, P1sin_arr, P1_arr, legendret);
 
-        // Copy the Jones matrix to global memory.
-        fee_jones[blockIdx.y * num_directions + i_direction] = jm;
+    const int x_offset = coeffs.x_offsets[blockIdx.y];
+    const int y_offset = coeffs.y_offsets[blockIdx.y];
+    JONES jm;
+    jones_calc_sigmas_device(phi, zas, i_direction, (const COMPLEX *)coeffs.x_q1_accum + x_offset,
+                             (const COMPLEX *)coeffs.x_q2_accum + x_offset, coeffs.x_m_accum + x_offset,
+                             coeffs.x_n_accum + x_offset, coeffs.x_m_signs + x_offset, coeffs.x_m_abs_m + x_offset,
+                             coeffs.x_lengths[blockIdx.y], P1sin_arr, P1_arr, 'x', &jm);
+    jones_calc_sigmas_device(phi, zas, i_direction, (const COMPLEX *)coeffs.y_q1_accum + y_offset,
+                             (const COMPLEX *)coeffs.y_q2_accum + y_offset, coeffs.y_m_accum + y_offset,
+                             coeffs.y_n_accum + y_offset, coeffs.y_m_signs + y_offset, coeffs.y_m_abs_m + y_offset,
+                             coeffs.y_lengths[blockIdx.y], P1sin_arr, P1_arr, 'y', &jm);
+
+    if (norm_jones != NULL) {
+        JONES norm = norm_jones[blockIdx.y];
+        jm.j00 = CDIV(jm.j00, norm.j00);
+        jm.j01 = CDIV(jm.j01, norm.j01);
+        jm.j10 = CDIV(jm.j10, norm.j10);
+        jm.j11 = CDIV(jm.j11, norm.j11);
     }
+
+    if (latitude_rad != NULL) {
+        HADec hadec = azel_to_hadec(az, M_PI_2 - za, *latitude_rad);
+        FLOAT pa = get_parallactic_angle(hadec, *latitude_rad);
+        apply_pa_correction(&jm, pa, iau_order);
+    }
+
+    // Copy the Jones matrix to global memory.
+    fee_jones[blockIdx.y * num_directions + i_direction] = jm;
 }
 
 extern "C" const char *gpu_fee_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions,
                                           const FEECoeffs *d_coeffs, int num_coeffs, const void *d_norm_jones,
                                           const FLOAT *d_latitude_rad, const int iau_order, void *d_results) {
+    // Allocate device memory for legendre polynomials
+    FLOAT *d_legendret;
+    FLOAT *d_P1sin_arr, *d_P1_arr;
+    // TODO: replace NMAX with d_coeffs->n_max
+    GPUCHECK(gpuMalloc(&d_legendret, num_directions * (((NMAX+1)*(NMAX+2)) >> 1) * sizeof(FLOAT)));
+    GPUCHECK(gpuMalloc(&d_P1sin_arr, num_directions * (NMAX*(NMAX+2)) * sizeof(FLOAT)));
+    GPUCHECK(gpuMalloc(&d_P1_arr,    num_directions * (NMAX*(NMAX+2)) * sizeof(FLOAT)));
+
     dim3 gridDim, blockDim;
-    blockDim.x = warpSize;
-    gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
+    blockDim.x = num_directions < warpSize ? num_directions : warpSize ;
+    gridDim.x =  num_directions < warpSize ? 1 : (num_directions - 1) / blockDim.x + 1;
     gridDim.y = num_coeffs;
     fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (JONES *)d_norm_jones, d_latitude_rad,
-                                      iau_order, (JONES *)d_results);
+                                      iau_order, (JONES *)d_results, d_legendret, d_P1sin_arr, d_P1_arr);
 
     gpuError_t error_id;
 #ifdef DEBUG
-    error_id = gpuDeviceSynchronize();
-    if (error_id != gpuSuccess) {
-        return gpuGetErrorString(error_id);
-    }
+    GPUCHECK(gpuDeviceSynchronize());
 #endif
-    error_id = gpuGetLastError();
-    if (error_id != gpuSuccess) {
-        return gpuGetErrorString(error_id);
-    }
+    GPUCHECK(gpuGetLastError());
+
+    // Free device memory
+    GPUCHECK(gpuFree(d_legendret));
+    GPUCHECK(gpuFree(d_P1sin_arr));
+    GPUCHECK(gpuFree(d_P1_arr));
 
     return NULL;
 }

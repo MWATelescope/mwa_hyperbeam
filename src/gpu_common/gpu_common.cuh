@@ -3,6 +3,8 @@
 #include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <stdio.h>
+
 
 #ifdef SINGLE
 #define FLOAT  float
@@ -213,6 +215,18 @@ inline static __device__ FLOAT get_parallactic_angle(HADec hadec, FLOAT latitude
 }
 
 #endif // BINDGEN
+
+#define GPUCHECK(error)                                               \
+    {                                                                 \
+        gpuError_t localError = error;                                \
+        if ((localError != gpuSuccess))                               \
+        {                                                             \
+            const char *errorString = gpuGetErrorString(localError);  \
+            printf("error: '%s'(%d) from %s at %s:%d\n", errorString, \
+                   localError, #error, __FILE__, __LINE__);           \
+            return errorString;                                       \
+        }                                                             \
+    }
 
 /*----------------------------------------------------------------------
 **
