@@ -434,15 +434,9 @@ extern "C" const char *gpu_fee_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas
 
     gpuError_t error_id;
 #ifdef DEBUG
-    error_id = gpuDeviceSynchronize();
-    if (error_id != gpuSuccess) {
-        return gpuGetErrorString(error_id);
-    }
+    GPUCHECK(gpuDeviceSynchronize());
 #endif
-    error_id = gpuGetLastError();
-    if (error_id != gpuSuccess) {
-        return gpuGetErrorString(error_id);
-    }
+    GPUCHECK(gpuGetLastError());
 
     // Free device memory
     GPUCHECK(gpuFree(d_legendret));
