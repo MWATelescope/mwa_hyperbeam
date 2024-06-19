@@ -87,6 +87,18 @@
 #include <hip/hip_runtime.h>
 #endif
 
+#define GPUCHECK(error)                                                                 \
+    {                                                                                   \
+        gpuError_t localError = error;                                                  \
+        if ((localError != gpuSuccess))                                                 \
+        {                                                                               \
+            printf("error: '%s'(%d) from %s at %s:%d\n", gpuGetErrorString(localError), \
+                   localError, #error, __FILE__, __LINE__);                             \
+            printf("API returned error code.");                                         \
+            abort();                                                                    \
+        }                                                                               \
+    }
+
 const FLOAT M_2PI = 2.0 * M_PI;
 // MWA dipole separation [metres]
 const FLOAT MWA_DPL_SEP = 1.100;
