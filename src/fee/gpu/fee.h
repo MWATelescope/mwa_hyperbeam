@@ -206,11 +206,13 @@ inline __device__ void lpmv_device(FLOAT *output, int n, FLOAT x) {
 }
 
 inline __device__ int lidx_device(const int i_direction, const int l, const int m) {
+    // lengendre table is now ((NMAX + 1)*(NMAX + 2)) >> 1) by n_dirs which is why i_direction is now needed.
     // summation series over l + m => (l*(l+1))/2 + m
     return i_direction*(((NMAX + 1)*(NMAX + 2)) >> 1) + ((l * (l + 1)) >> 1) + m;
 }
 
 inline __device__ int Pidx_device(const int i_direction, const int i) {
+    // all P arrays are now NMAX*(NMAX + 2) by i_direction, so that's why we need this.
     // Used for P1sin_arr and P1_arr
     return i_direction*NMAX*(NMAX + 2) + i;
 }
@@ -418,6 +420,7 @@ extern "C" const char *gpu_fee_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas
     // Allocate device memory for legendre polynomials
     FLOAT *d_legendret;
     FLOAT *d_P1sin_arr, *d_P1_arr;
+    // TODO: replace NMAX with d_coeffs->n_max
     GPUCHECK(gpuMalloc(&d_legendret, num_directions * (((NMAX+1)*(NMAX+2)) >> 1) * sizeof(FLOAT)));
     GPUCHECK(gpuMalloc(&d_P1sin_arr, num_directions * (NMAX*(NMAX+2)) * sizeof(FLOAT)));
     GPUCHECK(gpuMalloc(&d_P1_arr,    num_directions * (NMAX*(NMAX+2)) * sizeof(FLOAT)));
@@ -426,7 +429,6 @@ extern "C" const char *gpu_fee_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas
     blockDim.x = num_directions < warpSize ? num_directions : warpSize ;
     gridDim.x =  num_directions < warpSize ? 1 : (num_directions - 1) / blockDim.x + 1;
     gridDim.y = num_coeffs;
-    debug_printf("gridDim (%3d,%3d,%3d) blockDim: [%3d,%3d,%3d]\n", gridDim.x, gridDim.y, gridDim.z, blockDim.x, blockDim.y, blockDim.z);
     fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (JONES *)d_norm_jones, d_latitude_rad,
                                       iau_order, (JONES *)d_results, d_legendret, d_P1sin_arr, d_P1_arr);
 
