@@ -587,9 +587,9 @@ dependencies = [
 
 [[package]]
 name = "hip-runtime-sys"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "901a5d54cfff799dd9e6f6e1d53883bb50afdd92edce7680b1ca299d1805f65a"
+checksum = "606d9a952a33b70c688e6bf6853f4b70545c40ba5e0a2ca6318e498d5b41b1c6"
 dependencies = [
  "libc",
 ]

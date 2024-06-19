@@ -215,18 +215,68 @@ mod gpu {
             #[cfg(feature = "cuda-static")]
             println!("cargo:rustc-link-lib=static=cudart_static");
 
+            match env::var("DEBUG").as_deref() {
+                Ok("false") => (),
+                _ => {
+                    cuda_target.flag("-G");
+                }
+            };
+
             cuda_target
         };
 
         #[cfg(feature = "hip")]
         let mut gpu_target = {
-            let hip_path = hip_sys::hiprt::get_hip_path();
+            println!("cargo:rerun-if-env-changed=HIP_PATH");
+            let mut hip_path = match env::var_os("HIP_PATH") {
+                Some(p) => {
+                    println!(
+                        "cargo:warning=HIP_PATH set from env {}",
+                        p.to_string_lossy()
+                    );
+                    std::path::PathBuf::from(p)
+                }
+                None => {
+                    let hip_path = hip_sys::hiprt::get_hip_path();
+                    println!(
+                        "cargo:warning=HIP_PATH set from hip_sys {}",
+                        hip_path.display()
+                    );
+                    hip_path
+                }
+            };
+
             // It seems that various ROCm releases change where hipcc is...
             let mut compiler = hip_path.join("bin/hipcc");
             if !compiler.exists() {
                 // Try the dir above, which might be the ROCm dir.
-                compiler = hip_path.join("../bin/hipcc");
+                hip_path = hip_path.parent().unwrap().into();
+                compiler = hip_path.join("bin/hipcc");
+                if !compiler.exists() {
+                    panic!(
+                        "Couldn't find hipcc in either {} or {}",
+                        hip_sys::hiprt::get_hip_path().display(),
+                        hip_path.parent().unwrap().display()
+                    );
+                }
             }
+            if !hip_path.join("include/hip/hip_runtime_api.h").exists() {
+                panic!(
+                    "Couldn't find include/hip/hip_runtime_api.h in {}",
+                    hip_path.display()
+                );
+            }
+            // TODO: this
+            // if !hip_path.join("llvm/lib/clang/17.0.0/include/cuda_wrappers/cmath").exists() {
+            //     panic!("Seriously AMD? What are you doing? {}", hip_path.display());
+            // }
+            // println!("cargo:warning=install libstdc++-12-dev if you get cmath errors");
+            // TODO: set the env LIBCLANG_PATH=/opt/rocm/llvm/lib to fix clang errors
+            // println!(
+            //     "cargo:warning=If you get clang errors, set LIBCLANG_PATH={}",
+            //     hip_path.join("llvm/lib").display()
+            // );
+
             let mut hip_target = cc::Build::new();
             hip_target
                 .compiler(compiler)
@@ -235,24 +285,70 @@ mod gpu {
                 .file("src/fee/gpu/fee.cu")
                 .file("src/analytic/gpu/analytic.cu");
 
+            println!("cargo:rerun-if-env-changed=HIP_FLAGS");
+            if let Some(p) = env::var_os("HIP_FLAGS") {
+                println!(
+                    "cargo:warning=HIP_FLAGS set from env {}",
+                    p.to_string_lossy()
+                );
+                hip_target.flag(&p.to_string_lossy());
+            }
+
+            println!("cargo:rerun-if-env-changed=ROCM_VER");
+            println!("cargo:rerun-if-env-changed=ROCM_PATH");
+            println!("cargo:rerun-if-env-changed=HYPERBEAM_HIP_ARCH");
+            println!("cargo:rerun-if-env-changed=HYPERDRIVE_HIP_ARCH");
+            let arches: Vec<String> = match (
+                env::var("HYPERBEAM_HIP_ARCH"),
+                env::var("HYPERDRIVE_HIP_ARCH"),
+            ) {
+                // When a user-supplied variable exists, use it as the CUDA arch and
+                // compute level.
+                (Ok(c), _) | (Err(_), Ok(c)) => {
+                    vec![c]
+                }
+                _ => {
+                    // Print out all of the default arches and computes as a
+                    // warning.
+                    println!("cargo:warning=No offload arch found, try HYPERBEAM_HIP_ARCH");
+                    vec![]
+                }
+            };
+
+            for arch in arches {
+                hip_target.flag(&format!("--offload-arch={arch}"));
+            }
+
+            match env::var("DEBUG").as_deref() {
+                Ok("false") => (),
+                _ => {
+                    hip_target
+                        .flag("-ggdb")
+                        .flag("-O1") // <- don't use -O0 https://github.com/ROCm/HIP/issues/3183
+                        .flag("-gmodules");
+                }
+            };
+
             hip_target
         };
 
-        gpu_target.define(
-            // The DEBUG env. variable is set by cargo. If running "cargo build
-            // --release", DEBUG is "false", otherwise "true". C/C++/CUDA like
-            // the compile option "NDEBUG" to be defined when using assert.h, so
-            // if appropriate, define that here. We also define "DEBUG" so that
-            // can be used.
-            match env::var("DEBUG").as_deref() {
-                Ok("false") => "NDEBUG",
-                _ => "DEBUG",
-            },
-            None,
-        );
+        // The DEBUG env. variable is set by cargo. If running "cargo build
+        // --release", DEBUG is "false", otherwise "true". C/C++/CUDA like
+        // the compile option "NDEBUG" to be defined when using assert.h, so
+        // if appropriate, define that here. We also define "DEBUG" so that
+        // can be used.
+        match env::var("DEBUG").as_deref() {
+            Ok("false") => {
+                gpu_target.define("NDEBUG", "");
+            }
+            _ => {
+                gpu_target.define("DEBUG", "").flag("-v");
+            }
+        };
 
         // Break in case of emergency.
         // gpu_target.debug(true);
+        // println!("cargo:warning={gpu_target:?}");
 
         // If we're told to, use single-precision floats. The default in the GPU
         // code is to use double-precision.

@@ -432,7 +432,6 @@ extern "C" const char *gpu_fee_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas
     fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (JONES *)d_norm_jones, d_latitude_rad,
                                       iau_order, (JONES *)d_results, d_legendret, d_P1sin_arr, d_P1_arr);
 
-    gpuError_t error_id;
 #ifdef DEBUG
     GPUCHECK(gpuDeviceSynchronize());
 #endif
