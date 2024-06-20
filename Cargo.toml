@@ -6,6 +6,7 @@ authors = [
     "Jack L. B. Line <jack.line@curtin.edu.au>",
     "Marcin Sokolowski <marcin.sokolowski@curtin.edu.au>",
     "Dev Null <dev.null@curtin.edu.au",
+    "Sammy McSweeney <sammy.mcsweeney@gmail.com>",
 ]
 edition = "2021"
 rust-version = "1.64"
