@@ -227,36 +227,35 @@ extern "C"
         return i_direction * NMAX * (NMAX + 2) + i;
     }
 
-    inline __device__ void legendre_polynomials_device(FLOAT *legendre, const FLOAT *thetas, int i_direction)
+    inline __device__ void legendre_polynomials_device(FLOAT *legendre, const FLOAT u, int i_direction)
     {
         int l, m;
-        const FLOAT x = COS(thetas[i_direction]);
-        const FLOAT factor = -SQRT(1.0 - (x * x));
+        const FLOAT factor = -SQRT(1.0 - (u * u));
 
         // Init legendre
-        legendre[lidx_device(i_direction, 0, 0)] = 1.0; // P_0,0(x) = 1
+        legendre[lidx_device(i_direction, 0, 0)] = 1.0; // P_0,0(u) = 1
 
         // Easy values
-        legendre[lidx_device(i_direction, 1, 0)] = x;      // P_1,0(x) = x
-        legendre[lidx_device(i_direction, 1, 1)] = factor; // P_1,1(x) = 342210222sqrt(1 342210222 x^2)
+        legendre[lidx_device(i_direction, 1, 0)] = u;      // P_1,0(u) = u
+        legendre[lidx_device(i_direction, 1, 1)] = factor; // P_1,1(u) = -sqrt(1 - u^2)
 
         for (l = 2; l <= NMAX; ++l)
         {
             for (m = 0; m < l - 1; ++m)
             {
-                // P_l,m = (2l-1)*x*P_l-1,m - (l+m-1)*x*P_l-2,m / (l-k)
-                legendre[lidx_device(i_direction, l, m)] = ((FLOAT)(2 * l - 1) * x * legendre[lidx_device(i_direction, l - 1, m)] -
+                // P_l,m = (2l-1)*u*P_l-1,m - (l+m-1)*u*P_l-2,m / (l-k)
+                legendre[lidx_device(i_direction, l, m)] = ((FLOAT)(2 * l - 1) * u * legendre[lidx_device(i_direction, l - 1, m)] -
                                                             (FLOAT)(l + m - 1) * legendre[lidx_device(i_direction, l - 2, m)]) /
                                                            (FLOAT)(l - m);
             }
-            // P_l,l-1 = (2l-1)*x*P_l-1,l-1
-            legendre[lidx_device(i_direction, l, l - 1)] = (FLOAT)(2 * l - 1) * x * legendre[lidx_device(i_direction, l - 1, l - 1)];
+            // P_l,l-1 = (2l-1)*u*P_l-1,l-1
+            legendre[lidx_device(i_direction, l, l - 1)] = (FLOAT)(2 * l - 1) * u * legendre[lidx_device(i_direction, l - 1, l - 1)];
             // P_l,l = (2l-1)*factor*P_l-1,l-1
             legendre[lidx_device(i_direction, l, l)] = (FLOAT)(2 * l - 1) * factor * legendre[lidx_device(i_direction, l - 1, l - 1)];
         }
     }
 
-    inline __device__ int jones_p1sin_device(const FLOAT *thetas, int i_direction, FLOAT *p1sin_out, FLOAT *p1_out, FLOAT *legendret)
+    inline __device__ int jones_p1sin_device(const FLOAT theta, int i_direction, FLOAT *p1sin_out, FLOAT *p1_out, FLOAT *legendret)
     {
         int n, m;
         int ind_start, ind_stop;
@@ -266,7 +265,6 @@ extern "C"
         FLOAT P[NMAX + 1], Pm1[NMAX + 1], Pm_sin[NMAX + 1], Pu_mdelu[NMAX + 1], Pm_sin_merged[NMAX * 2 + 1],
             Pm1_merged[NMAX * 2 + 1];
 
-        const FLOAT theta = thetas[i_direction];
         SINCOS(theta, &sin_th, &u);
 
         for (n = 1; n <= NMAX; n++)
@@ -330,13 +328,12 @@ extern "C"
         return NMAX;
     }
 
-    inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT *thetas, const int i_direction, const COMPLEX *q1_accum,
+    inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT u, const int i_direction, const COMPLEX *q1_accum,
                                                     const COMPLEX *q2_accum, const int8_t *m_accum, const int8_t *n_accum,
                                                     const int8_t *m_signs, const int8_t *m_abs_m, const int coeff_length,
                                                     const FLOAT *P1sin_arr, const FLOAT *P1_arr, const char pol,
                                                     JONES *jm)
     {
-        const FLOAT u = COS(thetas[i_direction]);
         COMPLEX sigma_P = MAKE_COMPLEX(0.0, 0.0);
         COMPLEX sigma_T = MAKE_COMPLEX(0.0, 0.0);
         COMPLEX ejm_phi;
@@ -392,8 +389,9 @@ extern "C"
      * blockIdx.x * blockDim.x + threadIdx.x corresponds to direction.
      */
     __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT *zas, const int num_directions,
-                               const JONES *norm_jones, const FLOAT *latitude_rad, const int iau_order, JONES *fee_jones,
-                               FLOAT *legendret, FLOAT *P1sin_arr, FLOAT *P1_arr)
+                               const JONES *norm_jones, const FLOAT *latitude_rad, const int iau_order, JONES *fee_jones
+                            //   , FLOAT *legendret, FLOAT *P1sin_arr, FLOAT *P1_arr
+                               )
     {
         int i_direction = blockIdx.x * blockDim.x + threadIdx.x;
 
@@ -403,23 +401,30 @@ extern "C"
         const FLOAT az = azs[i_direction];
         const FLOAT za = zas[i_direction];
         const FLOAT phi = M_PI_2 - az;
+        const FLOAT u = COS(za);
+
+        const uint legendret_size = (((NMAX + 1) * (NMAX + 2)) >> 1);
+        const uint P_size = NMAX * (NMAX + 2);
+        FLOAT legendret[legendret_size];
+        FLOAT P1sin_arr[P_size];
+        FLOAT P1_arr[P_size];
 
         // Create a look-up table for the legendre polynomials
         // Such that legendre_table[ m * nmax + (n-1) ] = legendre(n, m, u)
-        legendre_polynomials_device(legendret, zas, i_direction);
+        legendre_polynomials_device(legendret, u, 0);
 
         // Set up our "P1sin" arrays. This is pretty expensive, but only depends
         // on the zenith angle and "n_max".
-        jones_p1sin_device(zas, i_direction, P1sin_arr, P1_arr, legendret);
+        jones_p1sin_device(za, 0, P1sin_arr, P1_arr, legendret);
 
         const int x_offset = coeffs.x_offsets[blockIdx.y];
         const int y_offset = coeffs.y_offsets[blockIdx.y];
         JONES jm;
-        jones_calc_sigmas_device(phi, zas, i_direction, (const COMPLEX *)coeffs.x_q1_accum + x_offset,
+        jones_calc_sigmas_device(phi, u, 0, (const COMPLEX *)coeffs.x_q1_accum + x_offset,
                                  (const COMPLEX *)coeffs.x_q2_accum + x_offset, coeffs.x_m_accum + x_offset,
                                  coeffs.x_n_accum + x_offset, coeffs.x_m_signs + x_offset, coeffs.x_m_abs_m + x_offset,
                                  coeffs.x_lengths[blockIdx.y], P1sin_arr, P1_arr, 'x', &jm);
-        jones_calc_sigmas_device(phi, zas, i_direction, (const COMPLEX *)coeffs.y_q1_accum + y_offset,
+        jones_calc_sigmas_device(phi, u, 0, (const COMPLEX *)coeffs.y_q1_accum + y_offset,
                                  (const COMPLEX *)coeffs.y_q2_accum + y_offset, coeffs.y_m_accum + y_offset,
                                  coeffs.y_n_accum + y_offset, coeffs.y_m_signs + y_offset, coeffs.y_m_abs_m + y_offset,
                                  coeffs.y_lengths[blockIdx.y], P1sin_arr, P1_arr, 'y', &jm);
@@ -449,11 +454,10 @@ extern "C"
                                               const FLOAT *d_latitude_rad, const int iau_order, void *d_results)
     {
         // Allocate device memory for legendre polynomials
-        FLOAT *d_legendret;
-        FLOAT *d_P1sin_arr, *d_P1_arr;
-        GPUCHECK(gpuMalloc(&d_legendret, num_directions * (((NMAX + 1) * (NMAX + 2)) >> 1) * sizeof(FLOAT)));
-        GPUCHECK(gpuMalloc(&d_P1sin_arr, num_directions * (NMAX * (NMAX + 2)) * sizeof(FLOAT)));
-        GPUCHECK(gpuMalloc(&d_P1_arr, num_directions * (NMAX * (NMAX + 2)) * sizeof(FLOAT)));
+        // FLOAT *d_legendret, *d_P1sin_arr, *d_P1_arr;
+        // GPUCHECK(gpuMalloc(&d_legendret, num_directions * (((NMAX + 1) * (NMAX + 2)) >> 1) * sizeof(FLOAT)));
+        // GPUCHECK(gpuMalloc(&d_P1sin_arr, num_directions * (NMAX * (NMAX + 2)) * sizeof(FLOAT)));
+        // GPUCHECK(gpuMalloc(&d_P1_arr, num_directions * (NMAX * (NMAX + 2)) * sizeof(FLOAT)));
 
         dim3 gridDim, blockDim;
         blockDim.x = num_directions < warpSize ? num_directions : warpSize;
@@ -461,7 +465,9 @@ extern "C"
         gridDim.y = num_coeffs;
         // debug_printf("gridDim (%3d,%3d,%3d) blockDim: [%3d,%3d,%3d]\n", gridDim.x, gridDim.y, gridDim.z, blockDim.x, blockDim.y, blockDim.z);
         fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (JONES *)d_norm_jones, d_latitude_rad,
-                                          iau_order, (JONES *)d_results, d_legendret, d_P1sin_arr, d_P1_arr);
+                                          iau_order, (JONES *)d_results
+                                        //   , d_legendret, d_P1sin_arr, d_P1_arr
+                                          );
 
         gpuError_t error_id;
 #ifdef DEBUG
@@ -478,9 +484,9 @@ extern "C"
         }
 
         // Free device memory
-        GPUCHECK(gpuFree(d_legendret));
-        GPUCHECK(gpuFree(d_P1sin_arr));
-        GPUCHECK(gpuFree(d_P1_arr));
+        // GPUCHECK(gpuFree(d_legendret));
+        // GPUCHECK(gpuFree(d_P1sin_arr));
+        // GPUCHECK(gpuFree(d_P1_arr));
 
         return NULL;
     }
