@@ -217,19 +217,11 @@ extern "C"
 
     inline __device__ int lidx_device(const int l, const int m)
     {
-        // lengendre table is now ((NMAX + 1)*(NMAX + 2)) >> 1) by n_dirs which is why i_direction is now needed.
         // summation series over l + m => (l*(l+1))/2 + m
         return ((l * (l + 1)) >> 1) + m;
     }
 
-    inline __device__ int Pidx_device(const int i)
-    {
-        // all P arrays are now NMAX*(NMAX + 2) by i_direction, so that's why we need this.
-        // Used for P1sin_arr and P1_arr
-        return i;
-    }
-
-    inline __device__ void legendre_polynomials_device(FLOAT *legendre, const FLOAT u)
+    inline __device__ void legendre_polynomials_device(FLOAT *legendre, const FLOAT u, const int nmax)
     {
         int l, m;
         const FLOAT factor = -SQRT(1.0 - (u * u));
@@ -241,7 +233,7 @@ extern "C"
         legendre[lidx_device(1, 0)] = u;      // P_1,0(u) = u
         legendre[lidx_device(1, 1)] = factor; // P_1,1(u) = -sqrt(1 - u^2)
 
-        for (l = 2; l <= NMAX; ++l)
+        for (l = 2; l <= nmax; ++l)
         {
             for (m = 0; m < l - 1; ++m)
             {
@@ -257,7 +249,7 @@ extern "C"
         }
     }
 
-    inline __device__ int jones_p1sin_device(const FLOAT theta, FLOAT *p1sin_out, FLOAT *p1_out, FLOAT *legendret)
+    inline __device__ void jones_p1sin_device(const FLOAT theta, FLOAT *p1sin_out, FLOAT *p1_out, FLOAT *legendret, const int nmax)
     {
         int n, m;
         int ind_start, ind_stop;
@@ -269,7 +261,7 @@ extern "C"
 
         SINCOS(theta, &sin_th, &u);
 
-        for (n = 1; n <= NMAX; n++)
+        for (n = 1; n <= nmax; n++)
         {
             int i;
             for (m = 0; m != n + 1; ++m)
@@ -311,7 +303,7 @@ extern "C"
             modified = 0;
             for (i = ind_start; i < ind_stop; i++)
             {
-                p1sin_out[Pidx_device(i)] = Pm_sin_merged[modified];
+                p1sin_out[i] = Pm_sin_merged[modified];
                 modified++;
             }
 
@@ -322,12 +314,10 @@ extern "C"
             modified = 0;
             for (i = ind_start; i < ind_stop; i++)
             {
-                p1_out[Pidx_device(i)] = Pm1_merged[modified];
+                p1_out[i] = Pm1_merged[modified];
                 modified++;
             }
         }
-
-        return NMAX;
     }
 
     inline __device__ void jones_calc_sigmas_device(const FLOAT phi, const FLOAT u, const COMPLEX *q1_accum,
@@ -358,15 +348,15 @@ extern "C"
             const COMPLEX j_power_n = J_POWERS[n % 4];
             const COMPLEX q1 = q1_accum[i];
             const COMPLEX q2 = q2_accum[i];
-            const COMPLEX s1 = q2 * (P1sin_arr[Pidx_device(i)] * FABS(M) * u);
-            const COMPLEX s2 = q1 * (P1sin_arr[Pidx_device(i)] * M);
-            const COMPLEX s3 = q2 * P1_arr[Pidx_device(i)];
+            const COMPLEX s1 = q2 * (P1sin_arr[i] * FABS(M) * u);
+            const COMPLEX s2 = q1 * (P1sin_arr[i] * M);
+            const COMPLEX s3 = q2 * P1_arr[i];
             const COMPLEX s4 = CSUB(s1, s2);
             const COMPLEX E_theta_mn = CMUL(j_power_n, CADD(s4, s3));
             const COMPLEX j_power_np1 = J_POWERS[(n + 1) % 4];
-            const COMPLEX o1 = q2 * (P1sin_arr[Pidx_device(i)] * M);
-            const COMPLEX o2 = q1 * (P1sin_arr[Pidx_device(i)] * FABS(M) * u);
-            const COMPLEX o3 = q1 * P1_arr[Pidx_device(i)];
+            const COMPLEX o1 = q2 * (P1sin_arr[i] * M);
+            const COMPLEX o2 = q1 * (P1sin_arr[i] * FABS(M) * u);
+            const COMPLEX o3 = q1 * P1_arr[i];
             const COMPLEX o4 = CSUB(o1, o2);
             const COMPLEX E_phi_mn = CMUL(j_power_np1, CSUB(o4, o3));
             sigma_P += CMUL(phi_comp, E_phi_mn);
@@ -413,11 +403,11 @@ extern "C"
 
         // Create a look-up table for the legendre polynomials
         // Such that legendre_table[ m * nmax + (n-1) ] = legendre(n, m, u)
-        legendre_polynomials_device(legendret, u);
+        legendre_polynomials_device(legendret, u, coeffs.n_max);
 
         // Set up our "P1sin" arrays. This is pretty expensive, but only depends
         // on the zenith angle and "n_max".
-        jones_p1sin_device(za, P1sin_arr, P1_arr, legendret);
+        jones_p1sin_device(za, P1sin_arr, P1_arr, legendret, coeffs.n_max);
 
         const int x_offset = coeffs.x_offsets[blockIdx.y];
         const int y_offset = coeffs.y_offsets[blockIdx.y];
@@ -455,31 +445,24 @@ extern "C"
                                               const FEECoeffs *d_coeffs, int num_coeffs, const void *d_norm_jones,
                                               const FLOAT *d_latitude_rad, const int iau_order, void *d_results)
     {
-        // Allocate device memory for legendre polynomials
-        // TODO: replace NMAX with d_coeffs->n_max
-        // FLOAT *d_legendret, *d_P1sin_arr, *d_P1_arr;
-        // GPUCHECK(gpuMalloc(&d_legendret, num_directions * (((NMAX + 1) * (NMAX + 2)) >> 1) * sizeof(FLOAT)));
-        // GPUCHECK(gpuMalloc(&d_P1sin_arr, num_directions * (NMAX * (NMAX + 2)) * sizeof(FLOAT)));
-        // GPUCHECK(gpuMalloc(&d_P1_arr, num_directions * (NMAX * (NMAX + 2)) * sizeof(FLOAT)));
+        if (d_coeffs->n_max > NMAX)
+        {
+            char *error = (char *)malloc(100);
+            sprintf(error, "n_max exceeds maximum value %d", NMAX);
+            return error;
+        }
 
         dim3 gridDim, blockDim;
         blockDim.x = num_directions < warpSize ? num_directions : warpSize;
         gridDim.x = num_directions < warpSize ? 1 : (num_directions - 1) / blockDim.x + 1;
         gridDim.y = num_coeffs;
         fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (JONES *)d_norm_jones, d_latitude_rad,
-                                          iau_order, (JONES *)d_results
-                                          //   , d_legendret, d_P1sin_arr, d_P1_arr
-        );
+                                          iau_order, (JONES *)d_results);
 
 #ifdef DEBUG
         GPUCHECK(gpuDeviceSynchronize());
 #endif
         GPUCHECK(gpuGetLastError());
-
-        // Free device memory
-        // GPUCHECK(gpuFree(d_legendret));
-        // GPUCHECK(gpuFree(d_P1sin_arr));
-        // GPUCHECK(gpuFree(d_P1_arr));
 
         return NULL;
     }
