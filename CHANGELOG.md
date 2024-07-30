@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.3] - 2024-07-31
+### Fixed
+- fix a compile error when specifying env `HIP_FLAGS` with `--features=hip`
+
+## [0.9.2] - 2024-06-21
+### Fixed
+- reduce wasted cycles if the number of coefficients in the beam file is less than
+  maximum N that the beam kernels are sized for. Since NMAX=31 and the default beam file
+  is in the low 20s, this speeds things up.
+
+## [0.9.1] - 2024-06-21
+### Fixed
+- fix #11 : revert some of #9 , moving device memory allocations back onto the stack,
+  this is fine because the kernels are smaller than before.
+
 ## [0.9.0] - 2024-05-24
 ### Fixed
 - Huge thanks to @robotopia for fixing https://github.com/MWATelescope/mwa_hyperbeam/issues/9
