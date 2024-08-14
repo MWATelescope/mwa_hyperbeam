@@ -6,7 +6,7 @@
 
 use std::path::PathBuf;
 
-use ndarray::prelude::*;
+use self::ndarray::prelude::*;
 use num_complex::Complex64 as c64;
 use numpy::*;
 use pyo3::prelude::*;

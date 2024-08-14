@@ -4,8 +4,8 @@
 
 //! Python interface to hyperbeam analytic beam code.
 
+use self::ndarray::prelude::*;
 use marlu::c64;
-use ndarray::prelude::*;
 use numpy::*;
 use pyo3::prelude::*;
 
