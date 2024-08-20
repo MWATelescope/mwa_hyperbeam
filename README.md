@@ -127,7 +127,10 @@ their respective licenses are also distributed.
 
 Clone the repo, and run:
 
-    cargo build --release
+```bash
+export RUSTFLAGS="-C target-cpu=native" # (optional) Use native CPU features (not portable!)
+cargo build --release
+```
 
 For usage with other languages, an include file will be in the `include`
 directory, along with C-compatible shared and static objects in the
@@ -137,13 +140,17 @@ directory, along with C-compatible shared and static objects in the
 Are you running `hyperbeam` on a desktop GPU? Then you probably want to compile
 with single-precision floats:
 
-    cargo build --release --features=cuda,gpu-single
-    cargo build --release --features=hip,gpu-single
+```bash
+cargo build --release --features=cuda,gpu-single
+cargo build --release --features=hip,gpu-single
+```
 
 Otherwise, go ahead with double-precision floats:
 
-    cargo build --release --features=cuda
-    cargo build --release --features=hip
+```bash
+cargo build --release --features=cuda
+cargo build --release --features=hip
+```
 
 Desktop GPUs (e.g. NVIDIA GeForce RTX 2070) have significantly less
 double-precision compute capability than "data center" GPUs (e.g. NVIDIA V100).
@@ -152,7 +159,9 @@ between the performance and precision compromise.
 
 `CUDA` can also be linked statically:
 
-    cargo build --release --features=cuda,cuda-static
+```bash
+cargo build --release --features=cuda,cuda-static
+```
 
 #### HIP
 The situation with `HIP` is similar to that of `CUDA`; use the `hip` feature and
@@ -163,7 +172,9 @@ not appear to offer static libraries, so no static feature is provided.
 To make `hyperbeam` without a dependence on a system `HDF5` library, give the
 `build` command a feature flag:
 
-    cargo build --release --features=hdf5-static
+```bash
+cargo build --release --features=hdf5-static
+```
 
 This will automatically compile the HDF5 source code and "bake" it into the
 `hyperbeam` products, meaning that HDF5 is not needed as a system dependency.
@@ -171,18 +182,24 @@ This will automatically compile the HDF5 source code and "bake" it into the
 
 To compile all C libraries statically:
 
-    cargo build --release --features=all-static
+```bash
+cargo build --release --features=all-static
+```
 
 #### Python
 To install `hyperbeam` to your currently-in-use virtualenv or conda environment,
 you'll need the Python package `maturin` (can get it with `pip`), then run:
 
-    maturin develop --release -b pyo3 --features=python --strip
+```bash
+maturin develop --release -b pyo3 --features=python --strip
+```
 
 If you don't have or don't want to install HDF5 as a system dependency, include
 the `hdf5-static` feature:
 
-    maturin develop --release -b pyo3 --features=python,hdf5-static --strip
+```bash
+maturin develop --release -b pyo3 --features=python,hdf5-static --strip
+```
 
 ## Comparing with other FEE beam codes
 Below is a table comparing other implementations of the FEE beam code. All
@@ -222,7 +239,9 @@ know.
 Run your code with `hyperbeam` again, but this time with the debug build. This
 should be as simple as running:
 
-    cargo build
+```bash
+cargo build
+```
 
 and then using the results in `./target/debug`.
 

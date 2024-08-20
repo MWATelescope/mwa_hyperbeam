@@ -13,6 +13,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  RUSTFLAGS: -C target-cpu=native
   DEBIAN_FRONTEND: noninteractive
   MWA_BEAM_FILE: mwa_full_embedded_element_pattern.h5
 
