@@ -38,7 +38,7 @@ pub enum InitFEEBeamError {
 
     /// An error associated with the hdf5 crate.
     #[error("HDF5 error: {0}")]
-    Hdf5(#[from] hdf5::Error),
+    Hdf5(#[from] hdf5_metno::Error),
 }
 
 #[derive(Error, Debug)]
@@ -68,7 +68,7 @@ pub enum FEEBeamError {
 
     /// An error associated with the hdf5 crate.
     #[error("HDF5 error: {0}")]
-    Hdf5Error(#[from] hdf5::Error),
+    Hdf5Error(#[from] hdf5_metno::Error),
 
     #[cfg(any(feature = "cuda", feature = "hip"))]
     #[error(transparent)]

@@ -16,25 +16,17 @@ RUN apt-get update && \
     clang \
     cmake \
     curl \
-    cython3 \
     fontconfig \
     g++ \
     git \
-    ipython3 \
     jq \
     lcov \
     libcfitsio-dev \
     liberfa-dev \
     libhdf5-dev \
     libpng-dev \
-    libpython3-dev \
     pkg-config \
     procps \
-    python3 \
-    python3-dev \
-    python3-pip \
-    python3-wheel \
-    python3-importlib-metadata \
     tzdata \
     unzip \
     wget \
@@ -46,31 +38,17 @@ RUN apt-get update && \
 
 # Get Rust
 ARG RUST_VERSION=stable
-ENV RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/cargo PATH="/opt/cargo/bin:${PATH}"
+ENV RUSTUP_HOME=/opt/rust CARGO_HOME=/opt/cargo
+ENV PATH="/opt/cargo/bin:${PATH}"
 RUN mkdir -m755 $RUSTUP_HOME $CARGO_HOME && ( \
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | env RUSTUP_HOME=$RUSTUP_HOME CARGO_HOME=$CARGO_HOME sh -s -- -y \
     --profile=minimal \
     --default-toolchain=${RUST_VERSION} \
     )
 
-# install python prerequisites
-# - newer pip needed for mwalib maturin install
-# - other versions pinned to avoid issues with numpy==2
-ARG SSINS_BRANCH=master
-ARG MWAQA_BRANCH=dev
 RUN python -m pip install --no-cache-dir \
-    importlib_metadata==8.2.0 \
-    maturin[patchelf]==1.7.0 \
-    pip==24.2 \
+    maturin[patchelf]==1.7.2 \
     ;
-
-ARG MWALIB_BRANCH=v1.5.0
-RUN git clone --depth 1 --branch=${MWALIB_BRANCH} https://github.com/MWATelescope/mwalib.git /mwalib && \
-    cd /mwalib && \
-    maturin build --release --features=python && \
-    python -m pip install $(ls -1 target/wheels/*.whl | tail -n 1) && \
-    cd / && \
-    rm -rf /mwalib ${CARGO_HOME}/registry
 
 ADD . /app
 WORKDIR /app

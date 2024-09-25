@@ -168,7 +168,7 @@ fn test_cram() {
     );
     let gpu_results = result.unwrap();
     #[cfg(feature = "gpu-single")]
-    let gpu_results = gpu_results.mapv(|j| Jones::<f64>::from(j));
+    let gpu_results = gpu_results.mapv(Jones::<f64>::from);
 
     // Compare with CPU.
     let cpu_results = beam
