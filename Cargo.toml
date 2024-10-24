@@ -9,7 +9,7 @@ authors = [
     "Sammy McSweeney <sammy.mcsweeney@gmail.com>",
 ]
 edition = "2021"
-rust-version = "1.64"
+rust-version = "1.65"
 license = "MPL-2.0"
 readme = "README.md"
 description = "Primary beam code for the Murchison Widefield Array (MWA) radio telescope."
@@ -48,7 +48,7 @@ codegen-units = 1 # Set this to 1 in Cargo.toml to allow for maximum size reduct
 [dependencies]
 cfg-if = "1.0.0"
 hdf5 = "0.8.0"
-marlu = { version = "0.14.0", default-features = false }
+marlu = { version = "0.15.0", default-features = false } # don't forget dev-dependencies
 ndarray = "0.16.0"
 num-complex = "0.4.1"
 panic-message = "0.3.0"
@@ -71,7 +71,7 @@ numpy = { version = "0.19.0", optional = true }
 [dev-dependencies]
 approx = { version = "0.5.0", features = ["num-complex"] }
 criterion = "0.5.1"
-marlu = { version = "0.14.0", default-features = false, features = ["approx"] }
+marlu = { version = "0.15.0", default-features = false, features = ["approx"] }
 serial_test = "2.0.0"
 
 ndarray = { version = "0.16.0", features = ["approx"] }
@@ -104,4 +104,4 @@ required-features = ["hip"]
 
 [patch.crates-io]
 # marlu = { path = "../Marlu" }
-# marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "DUT1" }
+marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "mwalib-1.7.1" }
