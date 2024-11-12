@@ -45,7 +45,8 @@ jobs:
           cache-to: type=gha,mode=max
   check:
     name: Docker Test and Release
-    needs: build
+    # todo needs: build
+    needs: push
     runs-on: ubuntu-latest
     container: mwatelescope/hyperbeam:latest
     steps:

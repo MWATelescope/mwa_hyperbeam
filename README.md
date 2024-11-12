@@ -26,6 +26,7 @@ See the
 for the latest changes to the code.
 
 ## Polarisation order
+
 See [this
 document](https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf)
 for details on the polarisation order of the beam-response Jones matrices. If
@@ -33,9 +34,12 @@ the parallactic-angle correction is applied, then it is possible for the code to
 re-order the Jones matrices.
 
 ## Usage
+
 `hyperbeam` requires the MWA FEE HDF5 file. This can be obtained with:
 
-  `wget http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5`
+```bash
+wget http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5
+```
 
 When making a new beam object, `hyperbeam` needs to know where this HDF5 file
 is. The easiest thing to do is set the environment variable `MWA_BEAM_FILE`:
@@ -49,48 +53,56 @@ MWA_BEAM_FILE=/pawsey/mwa/mwa_full_embedded_element_pattern.h5`)
 other words, most languages. See Rust, C and Python examples of usage in the
 `examples` directory. A simple Python example is:
 
-    >>> import mwa_hyperbeam
-    >>> beam = mwa_hyperbeam.FEEBeam()
-    >>> help(beam.calc_jones)
-    Help on built-in function calc_jones:
+```python
+>>> import mwa_hyperbeam
+>>> beam = mwa_hyperbeam.FEEBeam()
+>>> help(beam.calc_jones)
+Help on built-in function calc_jones:
 
-    calc_jones(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad, iau_order) method of builtins.FEEBeam instance
-        Calculate the beam-response Jones matrix for a given direction and
-        pointing. If `latitude_rad` is *not* supplied, the result will match
-        the original specification of the FEE beam code (possibly more useful
-        for engineers).
+calc_jones(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad, iau_order) method of builtins.FEEBeam instance
+    Calculate the beam-response Jones matrix for a given direction and
+    pointing. If `latitude_rad` is *not* supplied, the result will match
+    the original specification of the FEE beam code (possibly more useful
+    for engineers).
 
-        Astronomers are more likely to want to specify `latitude_rad` (which
-        will apply the parallactic-angle correction using the Earth latitude
-        provided for the telescope) and `iau_order`. If `latitude_rad` is not
-        given, then `iau_reorder` does nothing. See this document for more
-        information:
-        <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
+    Astronomers are more likely to want to specify `latitude_rad` (which
+    will apply the parallactic-angle correction using the Earth latitude
+    provided for the telescope) and `iau_order`. If `latitude_rad` is not
+    given, then `iau_reorder` does nothing. See this document for more
+    information:
+    <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
 
-        `delays` and `amps` apply to each dipole in an MWA tile in the M&C
-        order; see
-        <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-        `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
-        elements; if 16 are given, then these map 1:1 with dipoles, otherwise
-        the first 16 are for X dipole elements, and the next 16 are for Y.
+    `delays` and `amps` apply to each dipole in an MWA tile in the M&C
+    order; see
+    <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
+    `delays` *must* have 16 elements, whereas `amps` can have 16 or 32
+    elements; if 16 are given, then these map 1:1 with dipoles, otherwise
+    the first 16 are for X dipole elements, and the next 16 are for Y.
 
-    >>> print(beam.calc_jones(0, 0.7, 167e6, [0]*16, [1]*16, True, -0.4660608448386394, True))
-    [-1.51506097e-01-4.35034884e-02j -9.76099405e-06-1.21699926e-05j
-      1.73003520e-05-1.53580286e-05j -2.23184781e-01-4.51051073e-02j]
+>>> print(beam.calc_jones(0, 0.7, 167e6, [0]*16, [1]*16, True, -0.4660608448386394, True))
+[-1.51506097e-01-4.35034884e-02j -9.76099405e-06-1.21699926e-05j
+  1.73003520e-05-1.53580286e-05j -2.23184781e-01-4.51051073e-02j]
+```
 
 ### CUDA / HIP
+
 `hyperbeam` also can also be run on NVIDIA GPUs, or AMD GPUs. To see an example
 of usage, see any of the examples with "cuda" or "hip" in the name. GPU
 functionality is provided with Cargo features; see installing from source
 instructions below.
 
 ## Installation
+
 ### Python PyPI
+
 If you're using Python version >=3.6:
 
-    pip install mwa_hyperbeam
+```bash
+pip install mwa_hyperbeam
+```
 
 ### Pre-compiled
+
 Have a look at the [GitHub
 releases](https://github.com/MWATelescope/mwa_hyperbeam/releases) page. There is
 a Python wheel for all versions of Python 3.6+, as well as shared and static
@@ -102,17 +114,20 @@ Because these `hyperbeam` objects have the HDF5 and ERFA libraries compiled in,
 their respective licenses are also distributed.
 
 ### From source
+
 #### Prerequisites
+
 <details>
 
 - Cargo and a Rust compiler. `rustup` is recommended:
 
   `https://www.rust-lang.org/tools/install`
 
-  The Rust compiler must be at least version 1.64.0:
+  The Rust compiler must be at least version 1.65.0:
+
   ```bash
   $ rustc -V
-  rustc 1.64.0 (a55dd71d5 2022-09-19)
+  rustc 1.65.0 (897e37553 2022-11-02)
   ```
 
 - [hdf5](https://www.hdfgroup.org/hdf5)
@@ -137,6 +152,7 @@ directory, along with C-compatible shared and static objects in the
 `target/release` directory.
 
 #### CUDA
+
 Are you running `hyperbeam` on a desktop GPU? Then you probably want to compile
 with single-precision floats:
 
@@ -164,11 +180,13 @@ cargo build --release --features=cuda,cuda-static
 ```
 
 #### HIP
+
 The situation with `HIP` is similar to that of `CUDA`; use the `hip` feature and
 use `gpu-single` if you want the code to use single-precision floats. `HIP` does
 not appear to offer static libraries, so no static feature is provided.
 
 #### Static dependencies
+
 To make `hyperbeam` without a dependence on a system `HDF5` library, give the
 `build` command a feature flag:
 
@@ -187,6 +205,7 @@ cargo build --release --features=all-static
 ```
 
 #### Python
+
 To install `hyperbeam` to your currently-in-use virtualenv or conda environment,
 you'll need the Python package `maturin` (can get it with `pip`), then run:
 
@@ -202,6 +221,7 @@ maturin develop --release -b pyo3 --features=python,hdf5-static --strip
 ```
 
 ## Comparing with other FEE beam codes
+
 Below is a table comparing other implementations of the FEE beam code. All
 benchmarks were done with unique azimuth and zenith angle directions, and all
 on the same system. The CPU is a Ryzen 9 3900X, which has 12 cores and SMT (24
@@ -249,4 +269,5 @@ If that doesn't help reveal the problem, report the version of the software
 used, your usage and the program output in a new GitHub issue.
 
 ## hyperbeam?
+
 AERODACTYL used HYPER BEAM!

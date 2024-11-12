@@ -6,44 +6,68 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2024-11-12
+
+- update marlu 0.15.0 with:
+  - mwalib v1.8.2, with newer lazy_static, fitsio, fitsio-sys, msrv
+- msrv 1.65
+
 ## [0.9.4] - 2024-08-20
-### Changes
+
+Changes
+
 - Native CPU compiler options off by default for better portability.
 
 ## [0.9.3] - 2024-07-31
-### Fixed
+
+Fixed
+
 - fix a compile error when specifying env `HIP_FLAGS` with `--features=hip`
 
 ## [0.9.2] - 2024-06-21
-### Fixed
+
+Fixed
+
 - reduce wasted cycles if the number of coefficients in the beam file is less than
   maximum N that the beam kernels are sized for. Since NMAX=31 and the default beam file
   is in the low 20s, this speeds things up.
 
 ## [0.9.1] - 2024-06-21
-### Fixed
+
+Fixed
+
 - fix #11 : revert some of #9 , moving device memory allocations back onto the stack,
   this is fine because the kernels are smaller than before.
 
 ## [0.9.0] - 2024-05-24
-### Fixed
-- Huge thanks to @robotopia for fixing https://github.com/MWATelescope/mwa_hyperbeam/issues/9
+
+Fixed
+
+- Huge thanks to @robotopia for fixing <https://github.com/MWATelescope/mwa_hyperbeam/issues/9>
 
 ## [0.8.0] - 2024-05-24
-### Fixed
+
+Fixed
+
 - update marlu 0.11.0 (no code changes)
 
 ## [0.7.2] - 2024-05-14
-### Fixed
+
+Fixed
+
 - CI (no code changes).
 
 ## [0.7.1] - 2024-01-19
-### Fixed
+
+Fixed
+
 - A (seemingly rare) race condition in FEE GPU code.
 - examples/analytic_cuda_device.cu wasn't complete.
 
 ## [0.7.0] - 2023-10-31
-### Added
+
+Added
+
 - Expose Rust function `fix_amps_ndarray`
 - FFI functions
 
@@ -52,7 +76,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   - `get_fee_freq_map`
   - `get_fee_tile_map`
 
-### Changed
+Changed
+
 - FFI functions
 
   Most of these changes are to disambiguate the FEE beam from the analytic beam
@@ -71,13 +96,17 @@ Versioning](https://semver.org/spec/v2.0.0.html).
       `get_fee_*_map` yield the host pointers for the maps.
 
 ## [0.6.1] - 2023-10-31
-### Added
+
+Added
+
 - The "analytic" MWA beam
   - There are (unfortunately) two flavours -- "RTS" and "mwa_pb". Both are
     supported.
 
 ## [0.6.0] - 2023-09-14
-### Added
+
+Added
+
 - Support for compiling GPU code with HIP
 - FFI function `calc_jones_gpu_device_inner`
   - This is the same as `calc_jones_gpu_device`, but allows the caller to pass
@@ -86,7 +115,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Set the $CXX variable to the C++ compiler in $CUDA_PATH, if $CXX is not
   already set and $CUDA_PATH/bin/g++ exists.
 
-### Changed
+Changed
+
 - The minimum required Rust version is now 1.64.
 - Using single-precision floating point calculations on a GPU (CUDA or HIP) is
   now done with the `gpu-single` feature, not `cuda-single`.
@@ -105,11 +135,14 @@ Versioning](https://semver.org/spec/v2.0.0.html).
     "array" was used in the sense of the Murchison Widefield _Array_, not as a
     collection of numbers.
 
-### Fixed
+Fixed
+
 - Calling GPU FEE functions without any directions no longer causes a GPU error.
 
 ## [0.5.1] - 2023-02-19
-### Fixed
+
+Fixed
+
 - A seemingly-rarely-occurring bug in CUDA FEE code.
   - Some Y dipole values were being used for X dipole values (:facepalm:), but
     despite this bug being present for many people over many thousands of
@@ -119,13 +152,16 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Some clippy lints.
 
 ## [0.5.0] - 2022-08-23
-### Added
+
+Added
+
 - `calc_jones` functions have now been renamed to "_pair" functions, which take
   independent arguments of azimuths and zenith angles. The original functions
   (e.g. `FEEBeam::calc_jones`) now take `marlu::AzEl`, which may be more
   convenient for the caller by avoiding the need to allocate new arrays.
 
-### Changed
+Changed
+
 - The minimum required Rust version is now 1.60.
 - Python 3.6 support has been dropped, but 3.10 support is available.
 - Rust function APIs have changed.
@@ -138,7 +174,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   with the new include file and/or examples.
 - Function documentation is now more consistent and hopefully more readable.
 
-### Fixed
+Fixed
+
 - CUDA compilation on ozstar failed because of an arithmetic operation between
   two different types. Compilation has succeeded elsewhere, such as on Ubuntu,
   Arch, Pawsey's garrawarla and DUG. The code has changed to prevent the issue
@@ -150,7 +187,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
   the PKG_CONFIG environment variables is set.
 
 ## [0.4.0] - 2021-10-14
-### Added
+
+Added
+
 - FEE beam code for CUDA
   - The original code is courtesy of Cristian Di Pietrantonio and Maciej
     Cytowski on behalf of the Pawsey Supercomputing Centre.
@@ -173,7 +212,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
     harmonic coefficients are nonsensical, so this binary is an attempt to
     ensure that the files used are sensible.
 
-### Changed
+Changed
+
 - Rust API
   - `calc_jones*_array` functions now return a `Vec`, not an `Array1`.
 - Rust internals

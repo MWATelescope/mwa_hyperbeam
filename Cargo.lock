@@ -144,9 +144,8 @@ dependencies = [
 
 [[package]]
 name = "ciborium"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42e69ffd6f0917f5c029256a24d0161db17cea3997d185db0d35926308770f0e"
+version = "0.2.1"
+source = "git+https://github.com/enarx/ciborium?tag=v0.2.1#7d8f6e499db51fe52f5d3c2ce1d0e0be61c7eaa2"
 dependencies = [
  "ciborium-io",
  "ciborium-ll",
@@ -155,15 +154,13 @@ dependencies = [
 
 [[package]]
 name = "ciborium-io"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05afea1e0a06c9be33d539b876f1ce3692f4afea2cb41f740e7743225ed1c757"
+version = "0.2.1"
+source = "git+https://github.com/enarx/ciborium?tag=v0.2.1#7d8f6e499db51fe52f5d3c2ce1d0e0be61c7eaa2"
 
 [[package]]
 name = "ciborium-ll"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57663b653d948a338bfb3eeba9bb2fd5fcfaecb9e199e87e1eda4d9e8b240fd9"
+version = "0.2.1"
+source = "git+https://github.com/enarx/ciborium?tag=v0.2.1#7d8f6e499db51fe52f5d3c2ce1d0e0be61c7eaa2"
 dependencies = [
  "ciborium-io",
  "half",
@@ -171,18 +168,16 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0956a43b323ac1afaffc053ed5c4b7c1f1800bacd1683c353aabbb752515dd3"
+version = "4.3.24"
+source = "git+https://github.com/clap-rs/clap?tag=v4.3.24#88cf306216de20fbce84bbe7aae230824f972042"
 dependencies = [
  "clap_builder",
 ]
 
 [[package]]
 name = "clap_builder"
-version = "4.5.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4d72166dd41634086d5803a47eb71ae740e61d84709c36f3c34110173db3961b"
+version = "4.3.24"
+source = "git+https://github.com/clap-rs/clap?tag=v4.3.24#88cf306216de20fbce84bbe7aae230824f972042"
 dependencies = [
  "anstyle",
  "clap_lex",
@@ -190,9 +185,8 @@ dependencies = [
 
 [[package]]
 name = "clap_lex"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1462739cb27611015575c0c11df5df7601141071f07518d56fcc1be504cbec97"
+version = "0.5.0"
+source = "git+https://github.com/clap-rs/clap?tag=v4.3.24#88cf306216de20fbce84bbe7aae230824f972042"
 
 [[package]]
 name = "cmake"
@@ -271,12 +265,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22ec99545bb0ed0ea7bb9b8e1e9122ea386ff8a48c0922e43f36d45ab09e0e80"
 
 [[package]]
-name = "crunchy"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a81dae078cea95a014a339291cec439d2f232ebe854a9d672b796c6afafa9b7"
-
-[[package]]
 name = "cuda-config"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -353,8 +341,7 @@ dependencies = [
 [[package]]
 name = "form_urlencoded"
 version = "1.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e13624c2627564efccf4934284bdd98cbaa14e79b0b5a141218e507b3a823456"
+source = "git+https://github.com/servo/rust-url?tag=v2.5.2#54346fa288e16b25b71c45149d7067c752b450e0"
 dependencies = [
  "percent-encoding",
 ]
@@ -457,13 +444,9 @@ checksum = "d2fabcfbdc87f4758337ca535fb41a6d701b65693ce38287d856d1674551ec9b"
 
 [[package]]
 name = "half"
-version = "2.4.1"
+version = "1.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dd08c532ae367adf81c312a4580bc67f1d0fe8bc9c460520283f4c0ff277888"
-dependencies = [
- "cfg-if",
- "crunchy",
-]
+checksum = "1b43ede17f21864e81be2fa654110bf1e793774238d86ef8555c37e6519c0403"
 
 [[package]]
 name = "hashbrown"
@@ -614,8 +597,7 @@ dependencies = [
 [[package]]
 name = "idna"
 version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "634d9b1461af396cad843f47fdba5597a4f9e6ddd4bfb6ff5d85028c25cb12f6"
+source = "git+https://github.com/servo/rust-url?tag=v2.5.2#54346fa288e16b25b71c45149d7067c752b450e0"
 dependencies = [
  "unicode-bidi",
  "unicode-normalization",
@@ -819,7 +801,8 @@ checksum = "a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24"
 [[package]]
 name = "marlu"
 version = "0.15.0"
-source = "git+https://github.com/MWATelescope/Marlu?branch=mwalib-1.7.1#743aa3d4a821e8517e2c37aa217ac7534f99b701"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b1e6599e6af128994344fdeb7091e936f3b429e0de69ca09eda2f644cb9442a"
 dependencies = [
  "approx",
  "built",
@@ -1035,8 +1018,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 [[package]]
 name = "percent-encoding"
 version = "2.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3148f5046208a5d56bcfc03053e3ca6334e51da8dfb19b6cdc8b306fae3283e"
+source = "git+https://github.com/servo/rust-url?tag=v2.5.2#54346fa288e16b25b71c45149d7067c752b450e0"
 
 [[package]]
 name = "pin-project-lite"
@@ -1516,8 +1498,7 @@ checksum = "e1766d682d402817b5ac4490b3c3002d91dfa0d22812f341609f97b08757359c"
 [[package]]
 name = "url"
 version = "2.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22784dbdf76fdde8af1aeda5622b546b422b6fc585325248a2bf9f5e41e94d6c"
+source = "git+https://github.com/servo/rust-url?tag=v2.5.2#54346fa288e16b25b71c45149d7067c752b450e0"
 dependencies = [
  "form_urlencoded",
  "idna",
