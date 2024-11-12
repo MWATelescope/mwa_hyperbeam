@@ -36,9 +36,9 @@ pub enum InitFEEBeamError {
     #[error("Unexpected array shape when reading HDF5 dataset 'modes': expected 3 rows")]
     ModesShape,
 
-    /// An error associated with the hdf5 crate.
+    /// An error associated with the hdf5_metno crate.
     #[error("HDF5 error: {0}")]
-    Hdf5(#[from] hdf5::Error),
+    Hdf5(#[from] hdf5_metno::Error),
 }
 
 #[derive(Error, Debug)]
@@ -66,9 +66,9 @@ pub enum FEEBeamError {
     #[error("The number of delays wasn't 16 (got {rows} tiles with {num_delays} each); each tile's 16 delays these must correspond to bowties in the M&C order")]
     IncorrectDelaysArrayColLength { rows: usize, num_delays: usize },
 
-    /// An error associated with the hdf5 crate.
+    /// An error associated with the hdf5_metno crate.
     #[error("HDF5 error: {0}")]
-    Hdf5Error(#[from] hdf5::Error),
+    Hdf5Error(#[from] hdf5_metno::Error),
 
     #[cfg(any(feature = "cuda", feature = "hip"))]
     #[error(transparent)]

@@ -40,9 +40,9 @@ use crate::{
 /// The main struct to be used for calculating Jones matrices.
 #[allow(clippy::upper_case_acronyms)]
 pub struct FEEBeam {
-    /// The [`hdf5::File`] struct associated with the opened HDF5 file. It is
+    /// The [`hdf5_metno::File`] struct associated with the opened HDF5 file. It is
     /// behind a [`Mutex`] to prevent parallel usage of the file.
-    hdf5_file: Mutex<hdf5::File>,
+    hdf5_file: Mutex<hdf5_metno::File>,
     /// An ascendingly-sorted vector of frequencies available in the HDF5 file.
     /// Not allowed to be empty.
     freqs: Vec<u32>,
@@ -61,16 +61,16 @@ impl FEEBeam {
     /// Given the path to an FEE beam file, create a new [`FEEBeam`] struct.
     pub fn new<T: AsRef<std::path::Path>>(file: T) -> Result<Self, InitFEEBeamError> {
         // so that libhdf5 doesn't print errors to stdout
-        hdf5::silence_errors(true);
+        hdf5_metno::silence_errors(true);
 
-        // If the file doesn't exist, hdf5::File::open will handle it, but the
+        // If the file doesn't exist, hdf5_metno::File::open will handle it, but the
         // error message is horrendous.
         if !file.as_ref().exists() {
             return Err(InitFEEBeamError::BeamFileDoesntExist(
                 file.as_ref().display().to_string(),
             ));
         }
-        let h5 = hdf5::File::open(file)?;
+        let h5 = hdf5_metno::File::open(file)?;
         // We want all of the available frequencies and the biggest antenna index.
         let mut freqs: Vec<u32> = vec![];
         let mut biggest_dip_index: Option<u8> = None;

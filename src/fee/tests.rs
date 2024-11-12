@@ -97,7 +97,7 @@ fn new() {
 #[test]
 #[serial]
 fn new_from_env() {
-    std::env::set_var("MWA_BEAM_FILE", "mwa_full_embedded_element_pattern.h5");
+    unsafe { std::env::set_var("MWA_BEAM_FILE", "mwa_full_embedded_element_pattern.h5") };
     let beam = FEEBeam::new_from_env();
     assert!(beam.is_ok());
 }
@@ -939,7 +939,7 @@ fn test_error_file_doesnt_exist() {
 #[test]
 fn test_error_env_file_doesnt_exist() {
     let file = "/unlikely/to/exist/again.h5";
-    std::env::set_var("MWA_BEAM_FILE", file);
+    unsafe { std::env::set_var("MWA_BEAM_FILE", file) };
     let result = FEEBeam::new_from_env();
     assert!(result.is_err());
     match result {
