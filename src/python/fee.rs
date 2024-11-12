@@ -28,7 +28,7 @@ impl FEEBeam {
     /// calculations. If the path to the beam HDF5 file is not given, then the
     /// `MWA_BEAM_FILE` environment variable is used.
     #[new]
-    #[pyo3(text_signature = "(hdf5_file)")]
+    #[pyo3(signature = (hdf5_file))]
     fn new(hdf5_file: Option<PyObject>) -> PyResult<Self> {
         let strct = match hdf5_file {
             Some(f) => {
@@ -64,7 +64,7 @@ impl FEEBeam {
     /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
     /// the first 16 are for X dipole elements, and the next 16 are for Y.
     #[pyo3(
-        text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad, iau_order)"
+        signature = (az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad=None, iau_order=None)
     )]
     #[allow(clippy::too_many_arguments)]
     fn calc_jones<'py>(
@@ -78,7 +78,7 @@ impl FEEBeam {
         norm_to_zenith: bool,
         latitude_rad: Option<f64>,
         iau_order: Option<bool>,
-    ) -> PyResult<&'py PyArray1<c64>> {
+    ) -> PyResult<Bound<'py, PyArray1<c64>>> {
         let jones = self.beam.calc_jones_pair(
             az_rad,
             za_rad,
@@ -93,7 +93,7 @@ impl FEEBeam {
             iau_order.unwrap_or(false),
         )?;
         let jones_py: Vec<c64> = jones.iter().map(|c| c64::new(c.re, c.im)).collect();
-        let np_array = PyArray1::from_vec(py, jones_py);
+        let np_array = PyArray1::from_vec_bound(py, jones_py);
         Ok(np_array)
     }
 
@@ -109,7 +109,7 @@ impl FEEBeam {
     /// elements; if 16 are given, then these map 1:1 with dipoles, otherwise
     /// the first 16 are for X dipole elements, and the next 16 are for Y.
     #[pyo3(
-        text_signature = "(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad, iau_order)"
+        signature = (az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad=None, iau_order=None)
     )]
     #[allow(clippy::too_many_arguments)]
     fn calc_jones_array<'py>(
@@ -123,7 +123,7 @@ impl FEEBeam {
         norm_to_zenith: bool,
         latitude_rad: Option<f64>,
         iau_order: Option<bool>,
-    ) -> PyResult<&'py PyArray2<c64>> {
+    ) -> PyResult<Bound<'py, PyArray2<c64>>> {
         let jones = self.beam.calc_jones_array_pair(
             &az_rad,
             &za_rad,
@@ -147,12 +147,12 @@ impl FEEBeam {
         // SAFETY: new_cap == old_cap * N, align_of::<C64>() == align_of::<Jones>()
         let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
         let a2 = Array2::from_shape_vec((old_len, 4), flat).unwrap();
-        Ok(a2.into_pyarray(py))
+        Ok(a2.into_pyarray_bound(py))
     }
 
     /// Get the available frequencies inside the HDF5 file.
-    fn get_fee_beam_freqs<'py>(&self, py: Python<'py>) -> &'py PyArray1<u32> {
-        self.beam.get_freqs().to_vec().into_pyarray(py)
+    fn get_fee_beam_freqs<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<u32>> {
+        self.beam.get_freqs().to_vec().into_pyarray_bound(py)
     }
 
     /// Given a frequency in Hz, get the closest available frequency inside the
@@ -172,7 +172,7 @@ impl FEEBeam {
     /// for an explanation).
     #[cfg(any(feature = "cuda", feature = "hip"))]
     #[pyo3(
-        text_signature = "(az_rad, za_rad, freqs_hz, delays_array, amps_array, norm_to_zenith, latitude_rad, iau_order)"
+        signature = (az_rad, za_rad, freqs_hz, delays_array, amps_array, norm_to_zenith, latitude_rad=None, iau_order=None)
     )]
     #[allow(clippy::too_many_arguments)]
     fn calc_jones_gpu<'py>(
@@ -186,7 +186,7 @@ impl FEEBeam {
         norm_to_zenith: bool,
         latitude_rad: Option<f64>,
         iau_order: Option<bool>,
-    ) -> PyResult<&'py PyArray4<GpuComplex>> {
+    ) -> PyResult<Bound<'py, PyArray4<GpuComplex>>> {
         // hyperbeam expects ints for the frequencies. Convert them to make sure
         // everything's OK.
         let freqs: Vec<u32> = freqs_hz.iter().map(|&f| f.round() as _).collect();
@@ -212,7 +212,7 @@ impl FEEBeam {
         // Use unsafe code to ensure that no useless copying is done!
         // https://users.rust-lang.org/t/sound-conversion-from-vec-num-complex-complex64-4-to-ndarray-array2-num-complex-complex64-without-copying/78973/2
         let old_dim = jones.dim();
-        let mut jones = std::mem::ManuallyDrop::new(jones.into_raw_vec());
+        let mut jones = std::mem::ManuallyDrop::new(jones.into_raw_vec_and_offset().0);
 
         let new_len = jones.len() * 4;
         let new_cap = jones.capacity() * 4;
@@ -220,6 +220,6 @@ impl FEEBeam {
         // SAFETY: new_cap == old_cap * N, align_of::<Complex>() == align_of::<Jones>()
         let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
         let a4 = Array4::from_shape_vec((old_dim.0, old_dim.1, old_dim.2, 4), flat).unwrap();
-        Ok(a4.into_pyarray(py))
+        Ok(a4.into_pyarray_bound(py))
     }
 }
