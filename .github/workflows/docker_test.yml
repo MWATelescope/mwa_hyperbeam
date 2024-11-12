@@ -24,21 +24,6 @@ jobs:
           tags: mwatelescope/hyperbeam:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-  check:
-    name: Docker Test and Release
-    needs: build
-    runs-on: ubuntu-latest
-    container: mwatelescope/hyperbeam:latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-      - run: /opt/cargo/bin/cargo check
-      - run: /opt/cargo/bin/cargo fmt --all -- --check
-      - run: /opt/cargo/bin/cargo clippy --all-targets --all-features -- -D warnings
-      - run: /opt/cargo/bin/cargo test --release
-      - run: /opt/cargo/bin/cargo test --no-default-features --release --features=cli
   push:
     needs: build # TODO: needs: check
     runs-on: ubuntu-latest
@@ -58,3 +43,18 @@ jobs:
           tags: mwatelescope/hyperbeam:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+  check:
+    name: Docker Test and Release
+    needs: build
+    runs-on: ubuntu-latest
+    container: mwatelescope/hyperbeam:latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - run: /opt/cargo/bin/cargo check
+      - run: /opt/cargo/bin/cargo fmt --all -- --check
+      - run: /opt/cargo/bin/cargo clippy --all-targets --all-features -- -D warnings
+      - run: /opt/cargo/bin/cargo test --release
+      - run: /opt/cargo/bin/cargo test --no-default-features --release --features=cli
