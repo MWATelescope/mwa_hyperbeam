@@ -8,9 +8,10 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.10.0] - 2024-11-12
 
-- update marlu 0.15.0 with:
-  - mwalib v1.8.2, with newer lazy_static, fitsio, fitsio-sys, msrv
-- msrv 1.65
+- msrv1.80
+- ⬆️ mwalib v1.8.2, marlu0.15.0 rubbl0.8 casacore3.5 ndarray0.16 pyo3 0.22 fitsio 0.21.6 lazy_static
+- fix cuda keyring issue, update ubuntu2204 in CI
+- use hdf5_metno
 
 ## [0.9.4] - 2024-08-20
 
