@@ -1,0 +1,2 @@
+set amdgpu precise-memory on
+run
