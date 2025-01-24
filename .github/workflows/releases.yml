@@ -17,7 +17,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-13, macos-14]
+        os:
+          - ubuntu-22.04
+          - macos-13
+          - macos-14
+          - ubuntu-22.04-arm
 
     steps:
     - name: Checkout sources
@@ -104,6 +108,7 @@ jobs:
             fi
             ;;
           arm64) export TARGETS="apple-m1" ;;
+          aarch64) export TARGETS="aarch64" ;;
           *) echo "unknown arch (uname -m) $ARCH"; exit 1 ;;
         esac
 
@@ -196,6 +201,7 @@ jobs:
           tar xvf *-darwin-apple-m1-python.tar.gz -C for_pypi/ --wildcards "*.whl"
           tar xvf *-darwin-x86-64-python.tar.gz -C for_pypi/ --wildcards "*.whl"
           tar xvf *-linux-x86-64-python.tar.gz -C for_pypi/ --wildcards "*.whl"
+          tar xvf *-linux-aarch64-python.tar.gz -C for_pypi/ --wildcards "*.whl"
 
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

@@ -2,10 +2,7 @@
 # cross-platform, cpu-only dockerfile for demoing MWA software stack
 # on amd64, arm64
 # ref: https://docs.docker.com/build/building/multi-platform/
-# ARG BASE_IMG="ubuntu:20.04"
-# HACK: newer python breaks on old ubuntu
-ARG BASE_IMG="python:3.11-bookworm"
-FROM ${BASE_IMG} as base
+FROM python:3.11-slim-bookworm AS base
 
 # Suppress perl locale errors
 ENV LC_ALL=C
@@ -54,26 +51,16 @@ RUN mkdir -m755 $RUSTUP_HOME $CARGO_HOME && ( \
     )
 
 # install python prerequisites
-# - newer pip needed for mwalib maturin install
+# - newer pip needed for maturin install
 # - other versions pinned to avoid issues with numpy==2
-ARG SSINS_BRANCH=master
-ARG MWAQA_BRANCH=dev
 RUN python -m pip install --no-cache-dir \
     importlib_metadata==8.2.0 \
     maturin[patchelf]==1.7.0 \
     pip==24.2 \
     ;
 
-ARG MWALIB_BRANCH=v1.5.0
-RUN git clone --depth 1 --branch=${MWALIB_BRANCH} https://github.com/MWATelescope/mwalib.git /mwalib && \
-    cd /mwalib && \
-    maturin build --release --features=python && \
-    python -m pip install $(ls -1 target/wheels/*.whl | tail -n 1) && \
-    cd / && \
-    rm -rf /mwalib ${CARGO_HOME}/registry
-
 ADD . /app
 WORKDIR /app
-RUN maturin build --release --features=python && \
+RUN maturin build --release --no-default-features --features=python && \
     python -m pip install $(ls -1 target/wheels/*.whl | tail -n 1) && \
     rm -rf ${CARGO_HOME}/registry
