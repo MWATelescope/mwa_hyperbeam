@@ -75,6 +75,9 @@ pub unsafe extern "C" fn hb_last_error_message(buffer: *mut c_char, length: c_in
         None => return 0,
     };
 
+    #[cfg(all(target_arch = "aarch64", target_os = "linux"))]
+    let buffer = slice::from_raw_parts_mut(buffer, length as usize);
+    #[cfg(not(all(target_arch = "aarch64", target_os = "linux")))]
     let buffer = slice::from_raw_parts_mut(buffer as *mut u8, length as usize);
 
     if last_error.len() >= buffer.len() {
