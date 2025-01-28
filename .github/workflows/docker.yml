@@ -72,12 +72,8 @@ jobs:
       - name: test docker image
         run: |
           docker run --rm ${{ env.REGISTRY_IMAGE }}@${{ steps.build.outputs.digest }} /bin/bash -c "\
-            cargo check; \
-            cargo fmt --all -- --check; \
-            cargo clippy --all-targets --all-features -- -D warnings; \
-            cargo test --release; \
-            cargo test --no-default-features --release --features=cli; \
-          " || exit 0 # ignore errors
+            curl http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5 && \
+            cargo test --release"
 
   merge:
     runs-on: ubuntu-latest
