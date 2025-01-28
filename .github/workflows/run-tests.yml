@@ -142,7 +142,7 @@ jobs:
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./examples/analytic.py
 
       - name: (ubuntu) install CUDA
-        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') }}
         run: |
           wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
@@ -151,7 +151,7 @@ jobs:
           echo PATH=${PATH}:/usr/local/cuda/bin >> $GITHUB_ENV
 
       - name: (ubuntu) CUDA smoke tests
-        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') }}
         run: |
           # Can't run the tests; there's no GPU
           cargo test --all --no-run --features=cuda
@@ -161,7 +161,7 @@ jobs:
           cargo test --all --no-run --features=python,cuda,gpu-single
 
       - name: (ubuntu) CUDA examples
-        if: ${{ startsWith(matrix.os, 'ubuntu') && matrix.rust.examples }}
+        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') && matrix.rust.examples }}
         run: |
           # Examples may fail because there's no GPU
           cargo build --features=cuda --example fee_cuda
