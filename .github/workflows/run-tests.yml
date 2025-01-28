@@ -161,7 +161,7 @@ jobs:
           cargo test --all --no-run --features=python,cuda,gpu-single
 
       - name: (ubuntu) CUDA examples
-        if: ${{ startsWith(matrix.os, 'ubuntu') && matrix.rust.examples }}
+        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') && matrix.rust.examples }}
         run: |
           # Examples may fail because there's no GPU
           cargo build --features=cuda --example fee_cuda

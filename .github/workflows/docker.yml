@@ -6,7 +6,7 @@ on: [push, pull_request]
 name: Docker Multiplatform
 
 env:
-  REGISTRY_IMAGE: ${{ github.repository_owner }}/hyperbeam
+  REGISTRY_IMAGE: mwatelescope/hyperbeam
 
 jobs:
   build:
