@@ -21,7 +21,7 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use marlu::{c64, constants::VEL_C, rayon, AzEl, Jones};
 use rayon::prelude::*;
 
-use crate::constants::{DELAY_STEP, MWA_DPL_SEP};
+use crate::constants::{DELAY_STEP, MWA_DPL_HGT, MWA_DPL_HGT_RTS, MWA_DPL_SEP};
 
 #[cfg(any(feature = "cuda", feature = "hip"))]
 use ndarray::prelude::*;
@@ -42,8 +42,8 @@ impl AnalyticType {
     /// type.
     pub fn get_default_dipole_height(self) -> f64 {
         match self {
-            AnalyticType::MwaPb => 0.278,
-            AnalyticType::Rts => 0.30,
+            AnalyticType::MwaPb => MWA_DPL_HGT,
+            AnalyticType::Rts => MWA_DPL_HGT_RTS,
         }
     }
 }

@@ -95,6 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         iau_order,
     )?;
 
+    #[allow(clippy::useless_conversion)]
     let diff = jones[(0, 0, 0)] - Jones::<GpuFloat>::from(jones_cpu);
 
     println!("Difference between first GPU and CPU Jones matrices");
