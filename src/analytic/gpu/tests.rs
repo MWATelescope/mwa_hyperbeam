@@ -47,9 +47,8 @@ fn test_analytic(
     {
         for (mut out, &freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_array_pair(
-                    &az,
-                    &za,
+                .calc_jones_array(
+                    (&az, &za),
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
@@ -172,9 +171,8 @@ fn test_cram() {
 
     // Compare with CPU.
     let cpu_results = beam
-        .calc_jones_pair(
-            az_rad[0],
-            za_rad[0],
+        .calc_jones(
+            (az_rad[0], za_rad[0]),
             freq_hz[0],
             delays.as_slice().unwrap(),
             amps.as_slice().unwrap(),

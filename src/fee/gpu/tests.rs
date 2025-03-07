@@ -7,6 +7,7 @@
 use approx::{assert_abs_diff_eq, assert_abs_diff_ne};
 use marlu::constants::MWA_LAT_RAD;
 use ndarray::prelude::*;
+use rayon::prelude::*;
 use serial_test::serial;
 
 use super::*;
@@ -55,9 +56,8 @@ fn test_gpu_calc_jones_no_norm() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_array_pair(
-                    &az,
-                    &za,
+                .calc_jones_array(
+                    (&az, &za),
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
@@ -127,9 +127,8 @@ fn test_gpu_calc_jones_w_norm() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_array_pair(
-                    &az,
-                    &za,
+                .calc_jones_array(
+                    (&az, &za),
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
@@ -199,9 +198,8 @@ fn test_gpu_calc_jones_w_norm_and_parallactic() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_array_pair(
-                    &az,
-                    &za,
+                .calc_jones_array(
+                    (&az, &za),
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
@@ -325,9 +323,8 @@ fn test_gpu_calc_jones_deduplication() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_array_pair(
-                    &az,
-                    &za,
+                .calc_jones_array(
+                    (&az, &za),
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
@@ -415,9 +412,8 @@ fn test_gpu_calc_jones_deduplication_w_norm() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             let cpu_results = beam
-                .calc_jones_array_pair(
-                    &az,
-                    &za,
+                .calc_jones_array(
+                    (&az, &za),
                     freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),
@@ -495,9 +491,8 @@ fn test_gpu_calc_jones_no_amps() {
     {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs.iter()) {
             let cpu_results = beam
-                .calc_jones_array_pair(
-                    &az,
-                    &za,
+                .calc_jones_array(
+                    (&az, &za),
                     *freq,
                     delays.as_slice().unwrap(),
                     amps.as_slice().unwrap(),

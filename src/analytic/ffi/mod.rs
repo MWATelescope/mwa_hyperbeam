@@ -146,9 +146,8 @@ pub unsafe extern "C" fn analytic_calc_jones(
     let amps_s = slice::from_raw_parts(amps, num_amps as usize);
 
     // Using the passed-in beam, get the beam response (Jones matrix).
-    match beam.calc_jones_pair(
-        az_rad,
-        za_rad,
+    match beam.calc_jones(
+        (az_rad, za_rad),
         freq_hz,
         delays_s,
         amps_s,
@@ -243,9 +242,8 @@ pub unsafe extern "C" fn analytic_calc_jones_array(
     let amps_s = slice::from_raw_parts(amps, num_amps as usize);
     let results_s = slice::from_raw_parts_mut(jones.cast(), num_azza as usize);
 
-    ffi_error!(beam.calc_jones_array_pair_inner(
-        az,
-        za,
+    ffi_error!(beam.calc_jones_array_inner(
+        (az, za),
         freq_hz,
         delays_s,
         amps_s,

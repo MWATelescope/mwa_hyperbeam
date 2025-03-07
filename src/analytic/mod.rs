@@ -21,7 +21,10 @@ use std::f64::consts::{FRAC_PI_2, TAU};
 use marlu::{c64, constants::VEL_C, rayon, AzEl, Jones};
 use rayon::prelude::*;
 
-use crate::constants::{DELAY_STEP, MWA_DPL_HGT, MWA_DPL_HGT_RTS, MWA_DPL_SEP};
+use crate::{
+    constants::{DELAY_STEP, MWA_DPL_HGT, MWA_DPL_HGT_RTS, MWA_DPL_SEP},
+    direction::HorizCoord,
+};
 
 #[cfg(any(feature = "cuda", feature = "hip"))]
 use ndarray::prelude::*;
@@ -135,53 +138,40 @@ impl AnalyticBeam {
     /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
     /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
     /// or 128 elements.
-    pub fn calc_jones(
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::f64::consts::FRAC_PI_2;
+    ///
+    /// use marlu::{AzEl, Jones, constants::MWA_LAT_RAD};
+    /// use mwa_hyperbeam::analytic::AnalyticBeam;
+    ///
+    /// let direction = AzEl::from_radians(0.4, 0.7);
+    /// let freq_hz = 150e6 as u32;
+    /// let delays = vec![0; 16];
+    /// let amps = vec![1.0; 16];
+    /// let latitude_rad = MWA_LAT_RAD;
+    /// let norm_to_zenith = true;
+    /// let beam = AnalyticBeam::new_rts();
+    /// let result = beam.calc_jones(direction, freq_hz, &delays, &amps, latitude_rad, norm_to_zenith).unwrap();
+    ///
+    /// // Floats can be used too.
+    /// let direction = (0.4, FRAC_PI_2 - 0.7);
+    /// let result2 = beam.calc_jones(direction, freq_hz, &delays, &amps, latitude_rad, norm_to_zenith).unwrap();
+    /// assert_eq!(result, result2);
+    /// ```
+    pub fn calc_jones<C: HorizCoord>(
         &self,
-        azel: AzEl,
+        direction: C,
         freq_hz: u32,
         delays: &[u32],
         amps: &[f64],
         latitude_rad: f64,
         norm_to_zenith: bool,
     ) -> Result<Jones<f64>, AnalyticBeamError> {
-        self.calc_jones_pair(
-            azel.az,
-            azel.za(),
-            freq_hz,
-            delays,
-            amps,
-            latitude_rad,
-            norm_to_zenith,
-        )
-    }
-
-    /// Calculate the beam-response Jones matrix for a given direction and
-    /// pointing.
-    ///
-    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
-    /// order; see
-    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `delays` *must* have `bowties_per_row * bowties_per_row` elements (which
-    /// was declared when `AnalyticBeam` was created), whereas `amps` can have
-    /// this number or double elements; if the former is given, then these map
-    /// 1:1 with bowties. If double are given, then the *smallest* of the two
-    /// amps corresponding to a bowtie's dipoles is used.
-    ///
-    /// e.g. A normal MWA tile has 4 bowties per row. `delays` must then have
-    /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
-    /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
-    /// or 128 elements.
-    #[allow(clippy::too_many_arguments)]
-    pub fn calc_jones_pair(
-        &self,
-        az_rad: f64,
-        za_rad: f64,
-        freq_hz: u32,
-        delays: &[u32],
-        amps: &[f64],
-        latitude_rad: f64,
-        norm_to_zenith: bool,
-    ) -> Result<Jones<f64>, AnalyticBeamError> {
+        let az_rad = direction.get_az();
+        let za_rad = direction.get_za();
         if za_rad > FRAC_PI_2 {
             return Err(AnalyticBeamError::BelowHorizon { za: za_rad });
         }
@@ -223,11 +213,11 @@ impl AnalyticBeam {
         Ok(jones)
     }
 
-    /// Calculate the beam-response Jones matrices for many directions
-    /// given a pointing and latitude. This is basically a wrapper around
-    /// `calc_jones` that efficiently calculates the Jones matrices in
-    /// parallel. The number of parallel threads used can be controlled by
-    /// setting `RAYON_NUM_THREADS`.
+    /// Calculate the beam-response Jones matrices for many directions given a
+    /// pointing and latitude. This is basically a wrapper around `calc_jones`
+    /// that efficiently calculates the Jones matrices in parallel. The number
+    /// of parallel threads used can be controlled by setting
+    /// `RAYON_NUM_THREADS`.
     ///
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
@@ -242,18 +232,48 @@ impl AnalyticBeam {
     /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
     /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
     /// or 128 elements.
-    pub fn calc_jones_array(
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::f64::consts::FRAC_PI_2;
+    ///
+    /// use marlu::{AzEl, Jones, constants::MWA_LAT_RAD};
+    /// use mwa_hyperbeam::analytic::AnalyticBeam;
+    ///
+    /// let directions = vec![AzEl::from_radians(0.4, 0.7), AzEl::from_radians(0.5, 0.8)];
+    /// let freq_hz = 150e6 as u32;
+    /// let delays = vec![0; 16];
+    /// let amps = vec![1.0; 16];
+    /// let latitude_rad = MWA_LAT_RAD;
+    /// let norm_to_zenith = true;
+    /// let beam = AnalyticBeam::new_rts();
+    /// let results = beam.calc_jones_array(directions, freq_hz, &delays, &amps, latitude_rad, norm_to_zenith).unwrap();
+    ///
+    /// // Floats can be used, but these need to be grouped by azimuth and ZA.
+    /// let azimuths = vec![0.4, 0.5];
+    /// let zenith_angles = vec![FRAC_PI_2 - 0.7, FRAC_PI_2 - 0.8];
+    /// let results2 = beam.calc_jones_array((&azimuths, &zenith_angles), freq_hz, &delays, &amps, latitude_rad, norm_to_zenith).unwrap();
+    /// assert_eq!(results, results2);
+    /// ```
+    pub fn calc_jones_array<C, I, I2>(
         &self,
-        azels: &[AzEl],
+        directions: I,
         freq_hz: u32,
         delays: &[u32],
         amps: &[f64],
         latitude_rad: f64,
         norm_to_zenith: bool,
-    ) -> Result<Vec<Jones<f64>>, AnalyticBeamError> {
-        let mut results = vec![Jones::default(); azels.len()];
+    ) -> Result<Vec<Jones<f64>>, AnalyticBeamError>
+    where
+        C: HorizCoord,
+        I: IntoParallelIterator<Iter = I2>,
+        I2: IndexedParallelIterator<Item = C>,
+    {
+        let directions = directions.into_par_iter();
+        let mut results = vec![Jones::default(); directions.len()];
         self.calc_jones_array_inner(
-            azels,
+            directions,
             freq_hz,
             delays,
             amps,
@@ -264,93 +284,10 @@ impl AnalyticBeam {
         Ok(results)
     }
 
-    /// Calculate the Jones matrices for many directions given a pointing and
-    /// latitude. This is the same as `calc_jones_array` but uses pre-allocated
-    /// memory.
-    ///
-    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
-    /// order; see
-    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `delays` *must* have `bowties_per_row * bowties_per_row` elements (which
-    /// was declared when `AnalyticBeam` was created), whereas `amps` can have
-    /// this number or double elements; if the former is given, then these map
-    /// 1:1 with bowties. If double are given, then the *smallest* of the two
-    /// amps corresponding to a bowtie's dipoles is used.
-    ///
-    /// e.g. A normal MWA tile has 4 bowties per row. `delays` must then have
-    /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
-    /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
-    /// or 128 elements.
-    #[allow(clippy::too_many_arguments)]
-    pub fn calc_jones_array_inner(
-        &self,
-        azels: &[AzEl],
-        freq_hz: u32,
-        delays: &[u32],
-        amps: &[f64],
-        latitude_rad: f64,
-        norm_to_zenith: bool,
-        results: &mut [Jones<f64>],
-    ) -> Result<(), AnalyticBeamError> {
-        for azel in azels {
-            let za = azel.za();
-            if za > FRAC_PI_2 {
-                return Err(AnalyticBeamError::BelowHorizon { za });
-            }
-        }
-        let num_bowties = usize::from(self.bowties_per_row * self.bowties_per_row);
-        if delays.len() != num_bowties {
-            return Err(AnalyticBeamError::IncorrectDelaysLength {
-                got: delays.len(),
-                expected: num_bowties,
-            });
-        }
-        if amps.len() != num_bowties && amps.len() != num_bowties * 2 {
-            return Err(AnalyticBeamError::IncorrectAmpsLength {
-                got: amps.len(),
-                expected1: num_bowties,
-                expected2: num_bowties * 2,
-            });
-        }
-
-        let amps = fix_amps(amps, delays);
-        let (amps, delays) = if matches!(self.beam_type, AnalyticType::Rts) {
-            reorder_to_rts(&amps, delays)
-        } else {
-            (amps.to_vec(), delay_ints_to_floats(delays))
-        };
-
-        let lambda_m = VEL_C / freq_hz as f64;
-        let (s_lat, c_lat) = latitude_rad.sin_cos();
-        azels
-            .par_iter()
-            .zip(results.par_iter_mut())
-            .try_for_each(|(&azel, result)| {
-                if azel.za() > FRAC_PI_2 {
-                    return Err(AnalyticBeamError::BelowHorizon { za: azel.za() });
-                }
-
-                let j = self.calc_jones_inner(
-                    azel.az,
-                    azel.za(),
-                    lambda_m,
-                    latitude_rad,
-                    s_lat,
-                    c_lat,
-                    &delays,
-                    &amps,
-                    norm_to_zenith,
-                );
-                *result = j;
-
-                Ok(())
-            })
-    }
-
     /// Calculate the beam-response Jones matrices for many directions given a
-    /// pointing. This is basically a wrapper around `calc_jones` that
-    /// efficiently calculates the Jones matrices in parallel. The number of
-    /// parallel threads used can be controlled by setting `RAYON_NUM_THREADS`.
+    /// pointing and latitude. This is the same as `calc_jones_array` but uses
+    /// pre-allocated memory. `results` should have a length equal to or greater
+    /// than `directions`.
     ///
     /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
     /// order; see
@@ -365,99 +302,51 @@ impl AnalyticBeam {
     /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
     /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
     /// or 128 elements.
-    #[allow(clippy::too_many_arguments)]
-    pub fn calc_jones_array_pair(
-        &self,
-        az_rad: &[f64],
-        za_rad: &[f64],
-        freq_hz: u32,
-        delays: &[u32],
-        amps: &[f64],
-        latitude_rad: f64,
-        norm_to_zenith: bool,
-    ) -> Result<Vec<Jones<f64>>, AnalyticBeamError> {
-        for &za in za_rad {
-            if za > FRAC_PI_2 {
-                return Err(AnalyticBeamError::BelowHorizon { za });
-            }
-        }
-        let num_bowties = usize::from(self.bowties_per_row * self.bowties_per_row);
-        if delays.len() != num_bowties {
-            return Err(AnalyticBeamError::IncorrectDelaysLength {
-                got: delays.len(),
-                expected: num_bowties,
-            });
-        }
-        if amps.len() != num_bowties && amps.len() != num_bowties * 2 {
-            return Err(AnalyticBeamError::IncorrectAmpsLength {
-                got: amps.len(),
-                expected1: num_bowties,
-                expected2: num_bowties * 2,
-            });
-        }
-
-        let amps = fix_amps(amps, delays);
-        let (amps, delays) = if matches!(self.beam_type, AnalyticType::Rts) {
-            reorder_to_rts(&amps, delays)
-        } else {
-            (amps.to_vec(), delay_ints_to_floats(delays))
-        };
-
-        let lambda_m = VEL_C / freq_hz as f64;
-        let (s_lat, c_lat) = latitude_rad.sin_cos();
-        let out = az_rad
-            .par_iter()
-            .zip(za_rad.par_iter())
-            .map(|(&az, &za)| {
-                self.calc_jones_inner(
-                    az,
-                    za,
-                    lambda_m,
-                    latitude_rad,
-                    s_lat,
-                    c_lat,
-                    &delays,
-                    &amps,
-                    norm_to_zenith,
-                )
-            })
-            .collect();
-        Ok(out)
-    }
-
-    /// Calculate the Jones matrices for many directions given a pointing. This
-    /// is the same as `calc_jones_array_pair` but uses pre-allocated memory.
     ///
-    /// `delays` and `amps` apply to each dipole in an MWA tile in the M&C
-    /// order; see
-    /// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
-    /// `delays` *must* have `bowties_per_row * bowties_per_row` elements (which
-    /// was declared when `AnalyticBeam` was created), whereas `amps` can have
-    /// this number or double elements; if the former is given, then these map
-    /// 1:1 with bowties. If double are given, then the *smallest* of the two
-    /// amps corresponding to a bowtie's dipoles is used.
+    /// # Examples
     ///
-    /// e.g. A normal MWA tile has 4 bowties per row. `delays` must then have
-    /// 16 elements, and `amps` can have 16 or 32 elements. A CRAM tile has 8
-    /// bowties per row; `delays` must have 64 elements, and `amps` can have 64
-    /// or 128 elements.
+    /// ```
+    /// use std::f64::consts::FRAC_PI_2;
+    ///
+    /// use marlu::{AzEl, Jones, constants::MWA_LAT_RAD};
+    /// use mwa_hyperbeam::analytic::AnalyticBeam;
+    ///
+    /// let directions = vec![AzEl::from_radians(0.4, 0.7), AzEl::from_radians(0.5, 0.8)];
+    /// let freq_hz = 150e6 as u32;
+    /// let delays = vec![0; 16];
+    /// let amps = vec![1.0; 16];
+    /// let latitude_rad = MWA_LAT_RAD;
+    /// let norm_to_zenith = true;
+    /// // Make the results buffer the right size, fill with default values which will be overwritten
+    /// let mut results = vec![Jones::default(); directions.len()];
+    /// assert_eq!(results[0][0].re, 0.0);
+    /// let beam = AnalyticBeam::new_rts();
+    /// beam.calc_jones_array_inner(&directions, freq_hz, &delays, &amps, latitude_rad, norm_to_zenith, &mut results).unwrap();
+    /// assert_ne!(results[0][0].re, 0.0);
+    ///
+    /// // Floats can be used, but these need to be grouped by azimuth and ZA.
+    /// let azimuths = vec![0.4, 0.5];
+    /// let zenith_angles = vec![FRAC_PI_2 - 0.7, FRAC_PI_2 - 0.8];
+    /// let mut results2 = vec![Jones::default(); directions.len()];
+    /// beam.calc_jones_array_inner((&azimuths, &zenith_angles), freq_hz, &delays, &amps, latitude_rad, norm_to_zenith, &mut results2).unwrap();
+    /// assert_eq!(results, results2);
+    /// ```
     #[allow(clippy::too_many_arguments)]
-    pub fn calc_jones_array_pair_inner(
+    pub fn calc_jones_array_inner<C, I, I2>(
         &self,
-        az_rad: &[f64],
-        za_rad: &[f64],
+        directions: I,
         freq_hz: u32,
         delays: &[u32],
         amps: &[f64],
         latitude_rad: f64,
         norm_to_zenith: bool,
         results: &mut [Jones<f64>],
-    ) -> Result<(), AnalyticBeamError> {
-        for &za in za_rad {
-            if za > FRAC_PI_2 {
-                return Err(AnalyticBeamError::BelowHorizon { za });
-            }
-        }
+    ) -> Result<(), AnalyticBeamError>
+    where
+        C: HorizCoord,
+        I: IntoParallelIterator<Iter = I2>,
+        I2: IndexedParallelIterator<Item = C>,
+    {
         let num_bowties = usize::from(self.bowties_per_row * self.bowties_per_row);
         if delays.len() != num_bowties {
             return Err(AnalyticBeamError::IncorrectDelaysLength {
@@ -482,18 +371,19 @@ impl AnalyticBeam {
 
         let lambda_m = VEL_C / freq_hz as f64;
         let (s_lat, c_lat) = latitude_rad.sin_cos();
-        az_rad
-            .par_iter()
-            .zip(za_rad.par_iter())
+        directions
+            .into_par_iter()
             .zip(results.par_iter_mut())
-            .try_for_each(|((&az, &za), result)| {
-                if za > FRAC_PI_2 {
-                    return Err(AnalyticBeamError::BelowHorizon { za });
+            .try_for_each(|(dir, result)| {
+                let az_rad = dir.get_az();
+                let za_rad = dir.get_za();
+                if za_rad > FRAC_PI_2 {
+                    return Err(AnalyticBeamError::BelowHorizon { za: za_rad });
                 }
 
                 let j = self.calc_jones_inner(
-                    az,
-                    za,
+                    az_rad,
+                    za_rad,
                     lambda_m,
                     latitude_rad,
                     s_lat,

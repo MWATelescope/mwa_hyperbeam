@@ -10,6 +10,7 @@ use self::ndarray::prelude::*;
 use num_complex::Complex64 as c64;
 use numpy::*;
 use pyo3::prelude::*;
+use rayon::prelude::*;
 
 use crate::fee::FEEBeam as FEEBeamRust;
 #[cfg(any(feature = "cuda", feature = "hip"))]
@@ -79,9 +80,8 @@ impl FEEBeam {
         latitude_rad: Option<f64>,
         iau_order: Option<bool>,
     ) -> PyResult<Bound<'py, PyArray1<c64>>> {
-        let jones = self.beam.calc_jones_pair(
-            az_rad,
-            za_rad,
+        let jones = self.beam.calc_jones(
+            (az_rad, za_rad),
             // hyperbeam expects an int for the frequency. By specifying that
             // Python should pass in a float, it also allows an int to be passed
             // in (!?). Convert the float here in Rust for usage in hyperbeam.
@@ -124,9 +124,8 @@ impl FEEBeam {
         latitude_rad: Option<f64>,
         iau_order: Option<bool>,
     ) -> PyResult<Bound<'py, PyArray2<c64>>> {
-        let jones = self.beam.calc_jones_array_pair(
-            &az_rad,
-            &za_rad,
+        let jones = self.beam.calc_jones_array(
+            (&az_rad, &za_rad),
             freq_hz.round() as _,
             &delays,
             &amps,

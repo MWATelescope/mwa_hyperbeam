@@ -6,6 +6,7 @@
 
 pub mod analytic;
 pub mod constants;
+mod direction;
 mod factorial;
 pub mod fee;
 mod ffi;

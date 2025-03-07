@@ -575,9 +575,8 @@ fn test_get_modes2() {
 #[serial]
 fn test_calc_jones_eng() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        45.0_f64.to_radians(),
-        10.0_f64.to_radians(),
+    let result = beam.calc_jones(
+        (45.0_f64.to_radians(), 10.0_f64.to_radians()),
         51200000,
         &[0; 16],
         &[1.0; 16],
@@ -601,9 +600,8 @@ fn test_calc_jones_eng() {
 #[serial]
 fn test_calc_jones_eng_2() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        70.0_f64.to_radians(),
-        10.0_f64.to_radians(),
+    let result = beam.calc_jones(
+        (70.0_f64.to_radians(), 10.0_f64.to_radians()),
         51200000,
         &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
         &[
@@ -629,8 +627,14 @@ fn test_calc_jones_eng_2() {
 #[serial]
 fn test_calc_jones_eng_norm() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true, None, false,
+    let result = beam.calc_jones(
+        (0.1_f64, 0.1_f64),
+        150000000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+        None,
+        false,
     );
     assert!(result.is_ok());
     let jones = result.unwrap();
@@ -648,9 +652,8 @@ fn test_calc_jones_eng_norm() {
 #[serial]
 fn test_calc_jones_eng_norm_2() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        0.1_f64,
-        0.1_f64,
+    let result = beam.calc_jones(
+        (0.1_f64, 0.1_f64),
         150000000,
         &[3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
         &[
@@ -676,9 +679,8 @@ fn test_calc_jones_eng_norm_2() {
 #[serial]
 fn test_calc_jones() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        45.0_f64.to_radians(),
-        10.0_f64.to_radians(),
+    let result = beam.calc_jones(
+        (45.0_f64.to_radians(), 10.0_f64.to_radians()),
         51200000,
         &[0; 16],
         &[1.0; 16],
@@ -702,9 +704,8 @@ fn test_calc_jones() {
 #[serial]
 fn test_calc_jones_norm() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        0.1_f64,
-        0.1_f64,
+    let result = beam.calc_jones(
+        (0.1_f64, 0.1_f64),
         150000000,
         &[0; 16],
         &[1.0; 16],
@@ -742,9 +743,8 @@ fn test_calc_jones_norm() {
 #[serial]
 fn test_calc_jones_pa() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        0.1_f64,
-        0.1_f64,
+    let result = beam.calc_jones(
+        (0.1_f64, 0.1_f64),
         150000000,
         &[0; 16],
         &[1.0; 16],
@@ -755,8 +755,14 @@ fn test_calc_jones_pa() {
     assert!(result.is_ok());
     let pa = result.unwrap();
 
-    let result = beam.calc_jones_pair(
-        0.1_f64, 0.1_f64, 150000000, &[0; 16], &[1.0; 16], true, None, false,
+    let result = beam.calc_jones(
+        (0.1_f64, 0.1_f64),
+        150000000,
+        &[0; 16],
+        &[1.0; 16],
+        true,
+        None,
+        false,
     );
     assert!(result.is_ok());
     let not_pa = result.unwrap();
@@ -768,9 +774,8 @@ fn test_calc_jones_pa() {
 #[serial]
 fn test_calc_jones_iau() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        0.1_f64,
-        0.1_f64,
+    let result = beam.calc_jones(
+        (0.1_f64, 0.1_f64),
         150000000,
         &[0; 16],
         &[1.0; 16],
@@ -781,9 +786,8 @@ fn test_calc_jones_iau() {
     assert!(result.is_ok());
     let j_iau = result.unwrap();
 
-    let result = beam.calc_jones_pair(
-        0.1_f64,
-        0.1_f64,
+    let result = beam.calc_jones(
+        (0.1_f64, 0.1_f64),
         150000000,
         &[0; 16],
         &[1.0; 16],
@@ -808,9 +812,10 @@ fn test_calc_jones_iau() {
 #[serial]
 fn test_calc_jones_array() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        45.0_f64.to_radians(),
-        10.0_f64.to_radians(),
+    let az = 45.0_f64.to_radians();
+    let za = 10.0_f64.to_radians();
+    let result = beam.calc_jones(
+        (az, za),
         51200000,
         &[0; 16],
         &[1.0; 16],
@@ -821,9 +826,8 @@ fn test_calc_jones_array() {
     assert!(result.is_ok());
     let jones = result.unwrap();
 
-    let result = beam.calc_jones_array_pair(
-        &[45.0_f64.to_radians()],
-        &[10.0_f64.to_radians()],
+    let result = beam.calc_jones_array(
+        (&[az], &[za]),
         51200000,
         &[0; 16],
         &[1.0; 16],
@@ -837,10 +841,9 @@ fn test_calc_jones_array() {
     assert_eq!(jones_array.len(), 1);
     assert_eq!(jones, jones_array[0]);
 
-    // Ensure that FEEBeam::calc_jones_array is the same as
-    // FEEBeam::calc_jones_array_pair.
+    // Ensure that using `AzEl` gives the same results as above.
     let result = beam.calc_jones_array(
-        &[AzEl::from_degrees(45.0, 80.0)],
+        [AzEl::from_radians(az, FRAC_PI_2 - za)],
         51200000,
         &[0; 16],
         &[1.0; 16],
@@ -858,9 +861,8 @@ fn test_calc_jones_array() {
 #[serial]
 fn test_empty_cache() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        45.0_f64.to_radians(),
-        10.0_f64.to_radians(),
+    let result = beam.calc_jones(
+        (45.0_f64.to_radians(), 10.0_f64.to_radians()),
         51200000,
         &[0; 16],
         &[1.0; 16],
@@ -893,9 +895,8 @@ fn test_get_freqs() {
 #[serial]
 fn test_cache_is_used() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-    let result = beam.calc_jones_pair(
-        45.0_f64.to_radians(),
-        10.0_f64.to_radians(),
+    let result = beam.calc_jones(
+        (45.0_f64.to_radians(), 10.0_f64.to_radians()),
         51200000,
         &[0; 16],
         &[1.0; 16],
@@ -906,9 +907,8 @@ fn test_cache_is_used() {
     assert!(result.is_ok());
     result.unwrap();
 
-    let result = beam.calc_jones_pair(
-        45.0_f64.to_radians(),
-        10.0_f64.to_radians(),
+    let result = beam.calc_jones(
+        (45.0_f64.to_radians(), 10.0_f64.to_radians()),
         51200000,
         &[0; 16],
         &[1.0; 16],
