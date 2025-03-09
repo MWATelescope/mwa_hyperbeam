@@ -16,12 +16,16 @@ mod types;
 mod python;
 
 // Re-exports.
+pub use analytic::AnalyticBeam;
+pub use fee::FEEBeam;
 cfg_if::cfg_if! {
     if #[cfg(any(feature = "cuda", feature = "hip"))] {
         mod gpu;
         /// The float type used in GPU code. This depends on how `hyperbeam` was
         /// compiled (used cargo feature "gpu-single" or not).
         pub use gpu::{GpuFloat, GpuComplex};
+        pub use analytic::AnalyticBeamGpu;
+        pub use fee::FEEBeamGpu;
     }
 }
 
