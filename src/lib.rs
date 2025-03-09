@@ -19,7 +19,7 @@ mod python;
 cfg_if::cfg_if! {
     if #[cfg(any(feature = "cuda", feature = "hip"))] {
         mod gpu;
-        /// The float type use in GPU code. This depends on how `hyperbeam` was
+        /// The float type used in GPU code. This depends on how `hyperbeam` was
         /// compiled (used cargo feature "gpu-single" or not).
         pub use gpu::{GpuFloat, GpuComplex};
     }

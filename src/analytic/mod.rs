@@ -48,7 +48,8 @@ impl AnalyticType {
     }
 }
 
-/// The main struct to be used for calculating analytic pointings.
+/// The struct used to calculate beam-response Jones matrices for the analytic
+/// beam implementation.
 pub struct AnalyticBeam {
     /// The height of the MWA dipoles we're simulating \[metres\].
     ///

@@ -2,8 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! Code to implement the MWA Fully Embedded Element (FEE) beam, a.k.a. "the
-//! 2016 beam".
+//! Code for the MWA Fully Embedded Element (FEE) beam, a.k.a. "the 2016 beam".
 
 mod error;
 mod ffi;
@@ -37,7 +36,8 @@ use crate::{
     types::{CacheKey, Pol},
 };
 
-/// The main struct to be used for calculating Jones matrices.
+/// The struct used to calculate beam-response Jones matrices for the Fully
+/// Embedded Element (FEE) beam, a.k.a. "the 2016 beam".
 #[allow(clippy::upper_case_acronyms)]
 pub struct FEEBeam {
     /// The [`hdf5_metno::File`] struct associated with the opened HDF5 file. It is
