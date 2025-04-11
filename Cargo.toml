@@ -1,6 +1,6 @@
 [package]
 name = "mwa_hyperbeam"
-version = "0.10.1"
+version = "0.10.2"
 authors = [
     "Christopher H. Jordan <christopherjordan87@gmail.com>",
     "Jack L. B. Line <jack.line@curtin.edu.au>",
@@ -48,7 +48,7 @@ codegen-units = 1 # Set this to 1 in Cargo.toml to allow for maximum size reduct
 [dependencies]
 cfg-if = "1.0.0"
 hdf5-metno = "0.9.2"
-marlu = { version = "0.15.0", default-features = false } # don't forget dev-dependencies
+marlu = { version = "0.16.1", default-features = false } # don't forget dev-dependencies
 ndarray = "0.16.0"
 num-complex = "0.4.1"
 panic-message = "0.3.0"
@@ -71,7 +71,7 @@ numpy = { version = "0.22.1", optional = true }
 [dev-dependencies]
 approx = { version = "0.5.0", features = ["num-complex"] }
 criterion = "0.5.1"
-marlu = { version = "0.15.0", default-features = false, features = ["approx"] }
+marlu = { version = "0.16.1", default-features = false, features = ["approx"] }
 serial_test = "2.0.0"
 
 ndarray = { version = "0.16.0", features = ["approx"] }
@@ -104,3 +104,5 @@ required-features = ["hip"]
 
 [patch.crates-io]
 # marlu = { path = "../Marlu" }
+url = { git = "https://github.com/servo/rust-url", tag = "v2.5.2" }
+half = { git = "https://github.com/VoidStarKat/half-rs", tag="v2.2.1" }
