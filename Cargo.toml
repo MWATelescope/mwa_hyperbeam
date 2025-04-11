@@ -104,3 +104,4 @@ required-features = ["hip"]
 
 [patch.crates-io]
 # marlu = { path = "../Marlu" }
+url = { git = "https://github.com/servo/rust-url", tag = "v2.5.2" }
