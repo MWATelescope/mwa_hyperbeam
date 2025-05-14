@@ -5,7 +5,7 @@
 //! General FFI code for error handling.
 //!
 //! Most of this is derived from
-//! <https://michael-f-bryan.github.io/rust-ffi-guide/errors/return_types.html
+//! <https://michael-f-bryan.github.io/rust-ffi-guide/errors/return_types.html>
 
 use std::{
     cell::RefCell,
