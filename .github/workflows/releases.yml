@@ -108,7 +108,7 @@ jobs:
             fi
             ;;
           arm64) export TARGETS="apple-m1" ;;
-          aarch64) export TARGETS="aarch64" ;;
+          aarch64) export TARGETS="generic" ;;
           *) echo "unknown arch (uname -m) $ARCH"; exit 1 ;;
         esac
 
