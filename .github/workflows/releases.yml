@@ -1,11 +1,14 @@
 ---
 name: Release
 
-# Do this on every tagged commit
+# Build and test on all pushes and pull requests, but only publish on tagged commits
 on:
   push:
+    branches:
+      - '**'
     tags:
       - "v*"
+  pull_request:
 
 env:
   CARGO_TERM_COLOR: always
@@ -89,8 +92,8 @@ jobs:
 
         # Because we've compiled HDF5 and ERFA into hyperbeam products, we
         # legally must distribute their licenses with the products.
-        curl https://raw.githubusercontent.com/HDFGroup/hdf5/develop/COPYING -o COPYING-hdf5
-        curl https://raw.githubusercontent.com/liberfa/erfa/master/LICENSE -o LICENSE-erfa
+        curl -L https://raw.githubusercontent.com/HDFGroup/hdf5/develop/COPYING -o COPYING-hdf5
+        curl -L https://raw.githubusercontent.com/liberfa/erfa/master/LICENSE -o LICENSE-erfa
 
         export TAG="$(git describe --tags)"
         export VER="v$(grep version Cargo.toml -m1 | cut -d' ' -f3 | tr -d '"')"
@@ -148,10 +151,48 @@ jobs:
         path: "*.tar.gz"
         if-no-files-found: error
 
+    - name: Test Python wheels
+      run: |
+        # Download the HDF5 file
+        curl -L http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5
+        
+        # Test each wheel
+        for whl in *.whl; do
+          echo "Testing wheel: $whl"
+          python -m venv test_venv
+          . test_venv/bin/activate
+          pip install --upgrade pip
+          pip install numpy "$whl"
+          
+          # Test that calc_jones returns non-zero values
+          python -c "
+import numpy as np
+from mwa_hyperbeam import FEEBeam
+
+beam = FEEBeam('mwa_full_embedded_element_pattern.h5')
+J = beam.calc_jones_array(
+    np.array([0.0]),
+    np.array([0.0]),
+    181e6,
+    [0]*16,
+    [1]*16,
+    True
+)
+result = float(abs(J[0,0])**2)
+print(f'Result: {result}')
+assert result > 0.0, f'Expected non-zero result, got {result}'
+print('✓ Test passed: calc_jones returned non-zero value')
+"
+          
+          deactivate
+          rm -rf test_venv
+        done
+
   create-rust-release:
     name: Publish to crates.io
     runs-on: ubuntu-latest
     needs: [build-release]
+    if: startsWith(github.ref, 'refs/tags/v')
     environment: CI
     steps:
       - name: Checkout sources
@@ -177,6 +218,7 @@ jobs:
     name: Create a new github and pypi release
     runs-on: ubuntu-latest
     needs: [create-rust-release]
+    if: startsWith(github.ref, 'refs/tags/v')
     environment: CI
     steps:
       - name: Download all artifacts

@@ -74,7 +74,7 @@ jobs:
           ! grep -i gpu include/mwa_hyperbeam.h
 
       - name: Get the HDF5 file
-        run: curl http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5
+        run: curl -L http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5
 
       # Taken from https://github.com/dtolnay/thiserror/blob/a2d1ed1ccfc2a5dbb2a8fb45d4f938175a28bc86/.github/workflows/ci.yml
       - name: Enable type layout randomization
