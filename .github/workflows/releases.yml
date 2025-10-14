@@ -155,34 +155,34 @@ jobs:
       run: |
         # Download the HDF5 file
         curl -L http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5
-        
+
         # Test each wheel with the matching Python version
         for whl in *.whl; do
           echo "Testing wheel: $whl"
-          
+
           # Extract Python version from wheel name (e.g., cp310 -> 3.10)
           if [[ $whl =~ cp([0-9])([0-9]+) ]]; then
             py_major="${BASH_REMATCH[1]}"
             py_minor="${BASH_REMATCH[2]}"
             py_version="${py_major}.${py_minor}"
-            
+
             # Check if this Python version is available
             if ! command -v "python${py_version}" &> /dev/null; then
               echo "Python ${py_version} not available, skipping wheel test"
               continue
             fi
-            
+
             echo "Using Python ${py_version} for wheel $whl"
             "python${py_version}" -m venv test_venv
             . test_venv/bin/activate
             pip install --upgrade pip
             pip install numpy "$whl"
-            
+
             # Test that calc_jones returns non-zero values
             cat > test_wheel.py << 'PYTEST'
         import numpy as np
         from mwa_hyperbeam import FEEBeam
-        
+
         beam = FEEBeam('mwa_full_embedded_element_pattern.h5')
         J = beam.calc_jones_array(
             np.array([0.0]),
@@ -197,10 +197,10 @@ jobs:
         assert result > 0.0, f'Expected non-zero result, got {result}'
         print('✓ Test passed: calc_jones returned non-zero value')
         PYTEST
-            
+
             python test_wheel.py
             rm test_wheel.py
-            
+
             deactivate
             rm -rf test_venv
           else
@@ -263,7 +263,7 @@ jobs:
           tar xvf *-darwin-apple-m1-python.tar.gz -C for_pypi/ --wildcards "*.whl"
           tar xvf *-darwin-x86-64-python.tar.gz -C for_pypi/ --wildcards "*.whl"
           tar xvf *-linux-x86-64-python.tar.gz -C for_pypi/ --wildcards "*.whl"
-          tar xvf *-linux-aarch64-python.tar.gz -C for_pypi/ --wildcards "*.whl"
+          tar xvf *-linux-generic-python.tar.gz -C for_pypi/ --wildcards "*.whl"
 
       - name: Publish package to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
