@@ -6,10 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.3] - 2025-10-14
+
+### Fixed
+
+- fix #18: aarch64 wheels now return correct values instead of zeros. The build was using an invalid target-cpu value ("aarch64") which caused incorrect code generation. Changed to use "generic" which is the correct default target-cpu for aarch64 builds.
+
 ## [0.10.2] - 2025-04-11
 
 - ⬆️ mwalib v1.8.7, marlu v0.16.1
-
 
 ## [0.10.1] - 2025-01-28
 

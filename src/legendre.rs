@@ -160,7 +160,7 @@ pub(crate) fn p1sin(n_max: u8, theta: f64) -> (Vec<f64>, Vec<f64>) {
         let ind_stop = n * n + 2 * n;
         for i in ind_start..ind_stop {
             let index = i - ind_start;
-            let j = if index < n { n - index } else { index - n };
+            let j = n.abs_diff(index);
             p1sin_out[i] = pm_sin[j];
             p1_out[i] = pm1[j];
         }
