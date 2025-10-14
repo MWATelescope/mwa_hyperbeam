@@ -165,24 +165,27 @@ jobs:
           pip install numpy "$whl"
           
           # Test that calc_jones returns non-zero values
-          python -c "
-import numpy as np
-from mwa_hyperbeam import FEEBeam
-
-beam = FEEBeam('mwa_full_embedded_element_pattern.h5')
-J = beam.calc_jones_array(
-    np.array([0.0]),
-    np.array([0.0]),
-    181e6,
-    [0]*16,
-    [1]*16,
-    True
-)
-result = float(abs(J[0,0])**2)
-print(f'Result: {result}')
-assert result > 0.0, f'Expected non-zero result, got {result}'
-print('✓ Test passed: calc_jones returned non-zero value')
-"
+          cat > test_wheel.py << 'EOF'
+        import numpy as np
+        from mwa_hyperbeam import FEEBeam
+        
+        beam = FEEBeam('mwa_full_embedded_element_pattern.h5')
+        J = beam.calc_jones_array(
+            np.array([0.0]),
+            np.array([0.0]),
+            181e6,
+            [0]*16,
+            [1]*16,
+            True
+        )
+        result = float(abs(J[0,0])**2)
+        print(f'Result: {result}')
+        assert result > 0.0, f'Expected non-zero result, got {result}'
+        print('✓ Test passed: calc_jones returned non-zero value')
+        EOF
+          
+          python test_wheel.py
+          rm test_wheel.py
           
           deactivate
           rm -rf test_venv
