@@ -222,37 +222,39 @@ maturin develop --release -b pyo3 --features=python,hdf5-static --strip
 
 ## Comparing with other FEE beam codes
 
-Below is a table comparing other implementations of the FEE beam code. All
-benchmarks were done with unique azimuth and zenith angle directions, and all
-on the same system. The CPU is a Ryzen 9 3900X, which has 12 cores and SMT (24
-threads). The CUDA benchmarks uses an NVIDIA GeForce RTX 2070. All benchmarks
-were done in serial, unless indicated by "parallel". Python times were taken
-by running `time.time()` before and after the calculations. Memory usage is
-measured by running `time -v` on the command (not the `time` associated with
-your shell; this is usually at `/usr/bin/time`).
+A high-level summary is below. Further details and info on how these results
+were obtained can be found [here](./comparisons).
 
-| Code             | Number of directions | Duration | Max. memory usage |
-|:-----------------|---------------------:|---------:|------------------:|
-| [mwa_pb](https://github.com/MWATelescope/mwa_pb) | 500     | 98.8 ms  | 134.6 MiB |
-|                                                  | 100000  | 13.4 s   | 5.29 GiB  |
-|                                                  | 1000000 | 139.8 s  | 51.6 GiB  |
-| mwa-reduce (C++)                                 | 500     | 115.2 ms | 48.9 MiB  |
-|                                                  | 10000   | 2.417 s  | 6.02 GiB  |
-| mwa_hyperbeam                                    | 500     | 10.0 ms  | 9.75 MiB  |
-|                                                  | 100000  | 1.82 s   | 11.3 MiB  |
-|                                                  | 1000000 | 18.1 s   | 25.0 MiB  |
-| mwa_hyperbeam (parallel)                         | 1000000 | 1.55 s   | 88.8 MiB  |
-| mwa_hyperbeam (via python)                       | 500     | 20.5 ms  | 44.2 MiB  |
-|                                                  | 100000  | 3.70 s   | 45.4 MiB  |
-|                                                  | 1000000 | 37.2 s   | 59.0 MiB  |
-| mwa_hyperbeam (via python, parallel)             | 1000000 | 2.49 s   | 246.6 MiB |
-| mwa_hyperbeam (CUDA, single precision)           | 1000000 | 450 ms   | 253.8 MiB |
-|                                                  | 1e8     | 3.08 s   | 14.26 GiB |
+| Package | Config | Number of directions | Duration | Max. memory usage |
+|:--------|:-------|---------------------:|---------:|------------------:|
+| [mwa_pb](https://github.com/MWATelescope/mwa_pb) | serial           | 1       | 14.85 ms | 153 MiB  |
+|                                                  | serial           | 1,000   | 130.1 ms | 201 MiB  |
+|                                                  | serial           | 300,000 | 37.94 s  | 14.4 GiB |
+| [pyuvdata](https://github.com/RadioAstronomySoftwareGroup/pyuvdata) | serial | 32,760 | 7.446 s | 653 MiB |
+|                                                  | serial           | 130,320 | 11.85 s  | 1.92 GiB |
+| [EveryBeam](https://git.astron.nl/RD/EveryBeam)  | serial           | 1       | 114 µs   | 61.7 MiB |
+|                                                  | serial           | 1,000   | 103.9 ms | 61.9 MiB |
+|                                                  | serial           | 300,000 | 31.16 s  | 71.1 MiB |
+| mwa_hyperbeam                                    | serial           | 1       | 32.54 µs | 11.1 MiB |
+|                                                  | serial           | 1,000   | 29.02 ms | 13.3 MiB |
+|                                                  | parallel         | 1,000   | 4.598 ms | 13.5 MiB |
+|                                                  | serial           | 300,000 | 8.610 s  | 33.9 MiB |
+|                                                  | parallel         | 300,000 | 596.1 ms | 34.6 MiB |
+|                                                  | CUDA             | 300,000 | 63.70 ms | 134 MiB  |
+|                                                  | CUDA             | 999,999 | 164.4 ms | 195 MiB  |
 
-Not sure what's up with the C++ code. Maybe I'm calling `CalcJonesArray` wrong,
-but it uses a huge amount of memory. In any case, `hyperbeam` seems to be
-roughly 10x faster. If you know how to compare with `Everybeam`, please let me
-know.
+|                                           | mwa_pb             | pyuvdata           | EveryBeam | mwa_hyperbeam      |
+|-------------------------------------------|:------------------:|:------------------:|:---------:|:------------------:|
+| Can be run in parallel?                   | :x:                | :x:                | :x:       | :white_check_mark: |
+| Parallactic-angle correction?             | :x:                | :x:                | :x:       | :white_check_mark: |
+| GPU (CUDA/HIP) support?                   | :x:                | :x:                | :x:       | :white_check_mark: |
+| Supports MWA analytic beam?               | :white_check_mark: | :x:                | :x:       | :white_check_mark: |
+| Supports per-dipole gains?                | :white_check_mark: | :white_check_mark: | :x:       | :white_check_mark: |
+| Python interface?                         | :white_check_mark: | :white_check_mark: | :x:*      | :white_check_mark: |
+| Can be called from other languages via C? | :x:                | :x:                | :x:       | :white_check_mark: |
+| Supports MWA CRAM tile?                   | :x:                | :x:                | :x:       | :white_check_mark: |
+
+*: `EveryBeam` has a Python interface, but it does not support the MWA beam.
 
 ## Troubleshooting
 
