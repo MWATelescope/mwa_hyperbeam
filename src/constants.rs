@@ -17,4 +17,10 @@ pub(crate) const J_POWER_TABLE: [c64; 4] = [
 ];
 
 /// MWA dipole separation \[metres\]
-pub(crate) const MWA_DPL_SEP: f64 = 1.100;
+pub const MWA_DPL_SEP: f64 = 1.100;
+
+/// MWA dipole height (according to mwa_pb) \[metres\]
+pub const MWA_DPL_HGT: f64 = 0.278;
+
+/// MWA dipole height (according to the RTS) \[metres\]
+pub const MWA_DPL_HGT_RTS: f64 = 0.30;
