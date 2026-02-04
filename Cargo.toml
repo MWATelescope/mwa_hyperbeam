@@ -9,7 +9,7 @@ authors = [
     "Sammy McSweeney <sammy.mcsweeney@gmail.com>",
 ]
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.85"
 license = "MPL-2.0"
 readme = "README.md"
 description = "Primary beam code for the Murchison Widefield Array (MWA) radio telescope."
@@ -104,5 +104,6 @@ required-features = ["hip"]
 
 [patch.crates-io]
 # marlu = { path = "../Marlu" }
+marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "msrv1.85" }
 url = { git = "https://github.com/servo/rust-url", tag = "v2.5.2" }
 half = { git = "https://github.com/VoidStarKat/half-rs", tag="v2.2.1" }
