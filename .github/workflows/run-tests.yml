@@ -26,8 +26,8 @@ jobs:
       matrix:
         os:
           - ubuntu-22.04
-          - macos-13
-          - macos-14
+          - macos-15
+          - macos-15-intel
           - ubuntu-22.04-arm
         rust:
           - ver: nightly
@@ -36,7 +36,7 @@ jobs:
             examples: false
           - ver: stable
             examples: true
-          - ver: "1.80.0" # MSRV
+          - ver: "1.85.0" # MSRV
             examples: false
 
     steps:
