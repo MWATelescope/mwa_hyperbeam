@@ -135,9 +135,10 @@ mod gpu {
             fn parse_and_validate_compute(c: &str, var: &str) -> Vec<u16> {
                 let mut out = vec![];
                 for compute in c.trim().split(',') {
-                    // Check that there's only two numeric characters.
-                    if compute.len() != 2 {
-                        panic!("When parsing {var}, found '{compute}', which is not a two-digit number!")
+                    // Check that there are only two or three numeric characters
+                    // (e.g. 86 for Ampere, 120 for Blackwell).
+                    if compute.len() < 2 || compute.len() > 3 {
+                        panic!("When parsing {var}, found '{compute}', which is not a two- or three-digit number!")
                     }
 
                     match compute.parse() {
