@@ -11,7 +11,8 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changes
 
 - msrv 1.85
-- ⬆️ mwalib v2.0.0  marlu v0.17.0 pyo3 0.29 numpy 0.29 criterion 0.7 cbindgen 0.29 
+- ⬆️ marlu v0.17.0 pyo3 0.27 numpy 0.27 criterion 0.7 cbindgen 0.29 
+- fix cuda compute architecture to allow for 2 or 3 digits
 
 ## [0.10.4] - 2025-10-14
 
