@@ -87,11 +87,12 @@ fn main() {
 
             cbindgen::Builder::new()
                 .with_config({
-                    let mut config = cbindgen::Config::default();
-                    config.cpp_compat = true;
-                    config.pragma_once = true;
-                    config.export = export;
-                    config
+                    cbindgen::Config {
+                        cpp_compat: true,
+                        pragma_once: true,
+                        export,
+                        ..Default::default()
+                    }
                 })
                 .with_crate(crate_dir)
                 .with_language(cbindgen::Language::C)
