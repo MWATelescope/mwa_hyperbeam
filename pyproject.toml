@@ -1,6 +1,6 @@
 [project]
 name = "mwa_hyperbeam"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 dependencies = ["numpy"]
 dynamic = ["version"]
 
