@@ -49,6 +49,7 @@ jobs:
         if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
           brew install automake autoconf pkg-config hdf5
+          echo "HDF5_DIR=$(brew --prefix hdf5)" >> $GITHUB_ENV
       - name: (ubuntu) install dependencies
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
@@ -73,7 +74,7 @@ jobs:
 
       - name: Cache MWA beam file
         id: cache-beam
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: mwa_full_embedded_element_pattern.h5
           key: mwa-beam-file-v1
