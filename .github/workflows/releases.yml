@@ -35,7 +35,7 @@ jobs:
       - name: (macos) install dependencies
         if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
-          brew install automake autoconf pkg-config hdf5@1.10
+          brew install automake autoconf pkg-config hdf5
       - name: (ubuntu) install dependencies
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |

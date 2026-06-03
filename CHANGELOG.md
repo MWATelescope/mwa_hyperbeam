@@ -13,7 +13,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - msrv 1.85
 - ⬆️ marlu v0.17.0 pyo3 0.28 numpy 0.28 criterion 0.7 cbindgen 0.29 
 - fix cuda compute architecture to allow for 2 or 3 digits
-- CI: removed Python 3.8 and 3.9 support as they are EOL; fixed curl so it fails with a non-zero exit code; FEE beam download url is now https.
+- CI: removed Python 3.8 and 3.9 support as they are EOL; fixed curl so it fails with a non-zero exit code; FEE beam download url is now https; upgraded Docker actions, added docker login retry, removed pinned version of hdf5 for macos.
 
 ## [0.10.4] - 2025-10-14
 

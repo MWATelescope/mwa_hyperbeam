@@ -14,7 +14,7 @@ fn main() {
     for beam_file in std::env::args().skip(1) {
         // If this threw an error, it was during initialisation.
         if let Err(e) = test_file(&beam_file) {
-            println!("File '{}' failed to create an FEEBeam: {}", &beam_file, e);
+            println!("File '{}' failed to create an FEEBeam: {}", beam_file, e);
         }
     }
 }
