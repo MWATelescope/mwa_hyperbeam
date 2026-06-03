@@ -5,9 +5,9 @@ name: Generate Coverage report
 on:
   push:
     tags-ignore:
-      - '**'
+      - "**"
     branches:
-      - '**'
+      - "**"
   pull_request:
 
 env:
@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -38,7 +38,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt -y update
-          sudo apt -y install libhdf5-dev
+          sudo apt -y install libhdf5-dev gpg
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov

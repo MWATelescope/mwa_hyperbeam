@@ -49,8 +49,8 @@ codegen-units = 1 # Set this to 1 in Cargo.toml to allow for maximum size reduct
 [dependencies]
 cfg-if = "1.0.0"
 hdf5-metno = "0.12"
-#marlu = { version = "0.17.0", default-features = false } # don't forget dev-dependencies
-marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "mwalib2", default-features = false }
+marlu = { version = "0.17.0", default-features = false } # don't forget dev-dependencies
+#marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "mwalib2", default-features = false }
 ndarray = "0.16.1"
 num-complex = "0.4.1"
 panic-message = "0.3.0"
@@ -67,14 +67,14 @@ cuda-runtime-sys = { version = "0.3.0-alpha.1", optional = true }
 
 hip-sys = { version = "0.1.0", optional = true }
 
-pyo3 = { version = "0.27", features = ["extension-module"], optional = true }
-numpy = { version = "0.27", optional = true }
+pyo3 = { version = "0.28", features = ["extension-module"], optional = true }
+numpy = { version = "0.28", optional = true }
 
 [dev-dependencies]
 approx = { version = "0.5.0", features = ["num-complex"] }
 criterion = "0.7"
-#marlu = { version = "0.17.0", default-features = false, features = ["approx"] }
-marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "mwalib2", default-features = false, features = ["approx"] }
+marlu = { version = "0.17.0", default-features = false, features = ["approx"] }
+#marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "mwalib2", default-features = false, features = ["approx"] }
 serial_test = "3.4.0"
 
 ndarray = { version = "0.16.1", features = ["approx"] }

@@ -6,12 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.11.0] - 2026-02-10
+## [0.11.0] - 2026-06-03
 
 ### Changes
 
 - msrv 1.85
-- ⬆️ marlu v0.17.0 pyo3 0.27 numpy 0.27 criterion 0.7 cbindgen 0.29 
+- ⬆️ marlu v0.17.0 pyo3 0.28 numpy 0.28 criterion 0.7 cbindgen 0.29 
 - fix cuda compute architecture to allow for 2 or 3 digits
 
 ## [0.10.4] - 2025-10-14
@@ -39,7 +39,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - msrv1.80
 - ⬆️ mwalib v1.8.2, marlu0.15.0 rubbl0.8 casacore3.5 ndarray0.16 pyo3 0.22 fitsio 0.21.6 lazy_static
-- fix cuda keyring issue, update ubuntu2204 in CI
+- fix cuda keyring issue, update ubuntu2404 in CI
 - use hdf5_metno
 
 ## [0.9.4] - 2024-08-20

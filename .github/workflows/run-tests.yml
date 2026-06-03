@@ -5,9 +5,9 @@ name: Cross-platform tests
 on:
   push:
     tags-ignore:
-      - '**'
+      - "**"
     branches:
-      - '**'
+      - "**"
   pull_request:
 
 env:
@@ -25,10 +25,10 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-22.04
-          - macos-13
-          - macos-14
-          - ubuntu-22.04-arm
+          - ubuntu-24.04
+          - macos-15-intel
+          - macos-15
+          - ubuntu-24.04-arm
         rust:
           - ver: nightly
             examples: false
@@ -36,12 +36,12 @@ jobs:
             examples: false
           - ver: stable
             examples: true
-          - ver: "1.80.0" # MSRV
+          - ver: "1.85.0" # MSRV
             examples: false
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -144,7 +144,7 @@ jobs:
       - name: (ubuntu) install CUDA
         if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') }}
         run: |
-          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt -y update
           sudo apt -y install cuda-nvcc-12-6 --no-install-recommends
