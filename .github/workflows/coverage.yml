@@ -28,12 +28,7 @@ jobs:
           fetch-depth: 0
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: minimal
-          override: true
-          components: llvm-tools-preview
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
         run: |

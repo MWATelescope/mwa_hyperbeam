@@ -56,11 +56,8 @@ jobs:
           sudo apt -y install libhdf5-dev gcc pkg-config python3{,-pip,-venv} curl wget git jq
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@${{matrix.rust.ver}}
         with:
-          toolchain: ${{matrix.rust.ver}}
-          profile: minimal
-          override: true
           components: rustfmt, clippy
 
       - name: Run cargo check, fmt, clippy
