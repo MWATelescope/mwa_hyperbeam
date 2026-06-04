@@ -49,6 +49,7 @@ jobs:
         if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
           brew install automake autoconf pkg-config hdf5
+          echo "HDF5_DIR=$(brew --prefix hdf5)" >> $GITHUB_ENV
 
       - name: (ubuntu) install dependencies
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
@@ -83,6 +84,7 @@ jobs:
         if: steps.cache-beam.outputs.cache-hit != 'true'
         run: |
           curl -fL \
+            -H "User-Agent: Mozilla/5.0" \
             --retry 5 \
             --retry-delay 10 \
             --retry-all-errors \
