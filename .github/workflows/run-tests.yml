@@ -161,7 +161,7 @@ jobs:
           wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt -y update
-          sudo apt -y install cuda-nvcc-12-6 --no-install-recommends
+          sudo apt -y install cuda-nvcc-12-9 --no-install-recommends
           echo PATH=${PATH}:/usr/local/cuda/bin >> $GITHUB_ENV
 
       - name: (ubuntu) CUDA smoke tests
