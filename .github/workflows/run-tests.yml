@@ -107,8 +107,11 @@ jobs:
       - name: Run tests (dynamic)
         run: cargo test
 
+      # hdf5-metno-sys will try and use the OS library if it sees a HDF5_DIR env variable and its valid
       - name: Run tests (static)
-        run: cargo test --features=all-static
+        run: |
+          unset HDF5_DIR
+          cargo test --features=all-static
 
       - name: Setup example environment
         if: ${{ matrix.rust.examples }} # only run examples on stable
