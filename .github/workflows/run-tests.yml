@@ -48,7 +48,7 @@ jobs:
       - name: (macos) install dependencies
         if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
-          brew install automake autoconf pkg-config
+          brew install automake autoconf pkg-config gcc
 
       - name: (macos) install hdf5 2.0.0 (>2.0.0 is not supported by hdf5-metno-sys 0.11.2. 0.11.3 needs higher MSRV than 1.85...)
         if: ${{ startsWith(matrix.os, 'macos') }}
@@ -114,16 +114,16 @@ jobs:
           cargo test --features=all-static
 
       - name: Setup example environment
-        if: ${{ matrix.rust.examples }} # only run examples on stable
         run: |
           echo LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${PWD}/target/debug/ >> $GITHUB_ENV
-          which gcc || true
-          which clang || true
 
           if [ "$RUNNER_OS" == "Linux" ]; then
             echo CC=gcc >> $GITHUB_ENV
           else
-            echo CC=clang >> $GITHUB_ENV
+            # pick newest installed gcc
+            GCC_BIN=$(ls $(brew --prefix)/bin/gcc-* | sort | tail -n1)
+            echo "Using $GCC_BIN"
+            echo CC=$GCC_BIN >> $GITHUB_ENV
           fi
 
       - name: Run Rust example
