@@ -118,12 +118,12 @@ jobs:
         run: |
           echo LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${PWD}/target/debug/ >> $GITHUB_ENV
           which gcc || true
-          which gcc-12 || true
-          which gcc-13 || true
+          which clang || true
+
           if [ "$RUNNER_OS" == "Linux" ]; then
             echo CC=gcc >> $GITHUB_ENV
           else
-            echo CC=gcc-12 >> $GITHUB_ENV
+            echo CC=clang >> $GITHUB_ENV
           fi
 
       - name: Run Rust example
