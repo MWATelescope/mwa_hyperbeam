@@ -35,8 +35,16 @@ jobs:
       - name: (macos) install dependencies
         if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
-          brew install automake autoconf pkg-config hdf5
-          echo "HDF5_DIR=$(brew --prefix hdf5)" >> $GITHUB_ENV
+          brew install automake autoconf pkg-config
+
+      - name: (macos) install hdf5 2.1.0 (>2.1.0 is not supported by hdf5-metno-sys 1.8.2. 1.8.3 needs higher MSRV than 1.85...)
+        if: ${{ startsWith(matrix.os, 'macos') }}
+        run: |
+          brew tap-new local/hdf5
+          brew extract --version 2.1.0 hdf5 local/hdf5
+          brew install local/hdf5/hdf5@2.1.0
+          echo "HDF5_DIR=$(brew --prefix local/hdf5/hdf5@2.1.0)" >> $GITHUB_ENV
+
       - name: (ubuntu) install dependencies
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
