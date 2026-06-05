@@ -123,6 +123,46 @@ mod gpu {
         }
     }
 
+    /// Returns the minimum (major, minor) nvcc version required to compile for
+    /// a given SM target. Used to filter the default target list so that SMs
+    /// unsupported by the installed toolkit are skipped gracefully rather than
+    /// producing a cryptic nvcc error or a silent runtime failure.
+    #[cfg(feature = "cuda")]
+    fn min_nvcc_version_for_sm(sm: u16) -> (u32, u32) {
+        match sm {
+            0..=61 => (8, 0),   // Kepler / Maxwell / Pascal (sm_60, sm_61)
+            62..=75 => (10, 0), // Volta (sm_70, sm_72), Turing (sm_75)
+            76..=85 => (11, 0), // Ampere A100 (sm_80)
+            86 => (11, 1),      // Ampere RTX 30-series (sm_86)
+            87 => (11, 4),      // Ampere Jetson Orin (sm_87)
+            88..=90 => (11, 8), // Ada Lovelace (sm_89), Hopper (sm_90)
+            _ => (12, 8),       // Blackwell (sm_100, sm_110, sm_120) and beyond
+        }
+    }
+
+    /// Queries the installed nvcc for its (major, minor) version, or returns
+    /// None if nvcc is not found or the output cannot be parsed.
+    #[cfg(feature = "cuda")]
+    fn get_nvcc_version() -> Option<(u32, u32)> {
+        let output = std::process::Command::new("nvcc")
+            .arg("--version")
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&output.stdout);
+        // Version line: "Cuda compilation tools, release 12.9, V12.9.86"
+        for line in text.lines() {
+            if let Some(idx) = line.find("release ") {
+                let rest = &line[idx + 8..];
+                let ver = rest.split(',').next()?.trim();
+                let mut parts = ver.splitn(2, '.');
+                let major: u32 = parts.next()?.parse().ok()?;
+                let minor: u32 = parts.next()?.parse().ok()?;
+                return Some((major, minor));
+            }
+        }
+        None
+    }
+
     pub(super) fn build_and_link() {
         use std::env;
 
@@ -130,8 +170,12 @@ mod gpu {
 
         #[cfg(feature = "cuda")]
         let mut gpu_target = {
-            const DEFAULT_CUDA_ARCHES: &[u16] = &[60, 70, 80];
-            const DEFAULT_CUDA_SMS: &[u16] = &[60, 61, 70, 75, 80, 86];
+            // Single list of SM targets. Each becomes a matching
+            // arch=compute_X,code=sm_X pair — one cubin per GPU family. A PTX
+            // fallback for the highest target covers future GPUs via JIT
+            // compilation.
+            const DEFAULT_CUDA_TARGETS: &[u16] =
+                &[60, 61, 70, 75, 80, 86, 87, 89, 90, 100, 110, 120];
 
             fn parse_and_validate_compute(c: &str, var: &str) -> Vec<u16> {
                 let mut out = vec![];
@@ -141,7 +185,6 @@ mod gpu {
                     if compute.len() < 2 || compute.len() > 3 {
                         panic!("When parsing {var}, found '{compute}', which is not a two- or three-digit number!")
                     }
-
                     match compute.parse() {
                         Ok(p) => out.push(p),
                         Err(_) => {
@@ -152,28 +195,63 @@ mod gpu {
                 out
             }
 
-            // Attempt to read HYPERBEAM_CUDA_COMPUTE. HYPERDRIVE_CUDA_COMPUTE can
-            // be used instead, too.
+            // Attempt to read HYPERBEAM_CUDA_COMPUTE. HYPERDRIVE_CUDA_COMPUTE
+            // can be used instead, too.
             println!("cargo:rerun-if-env-changed=HYPERBEAM_CUDA_COMPUTE");
             println!("cargo:rerun-if-env-changed=HYPERDRIVE_CUDA_COMPUTE");
-            let (arches, sms): (Vec<u16>, Vec<u16>) = match (
+            let targets: Vec<u16> = match (
                 env::var("HYPERBEAM_CUDA_COMPUTE"),
                 env::var("HYPERDRIVE_CUDA_COMPUTE"),
             ) {
-                // When a user-supplied variable exists, use it as the CUDA arch and
-                // compute level.
+                // When a user-supplied variable exists, use it as the CUDA
+                // target.
                 (Ok(c), _) | (Err(_), Ok(c)) => {
-                    let compute = parse_and_validate_compute(&c, "HYPERBEAM_CUDA_COMPUTE");
-                    let sms = compute.clone();
-                    (compute, sms)
+                    parse_and_validate_compute(&c, "HYPERBEAM_CUDA_COMPUTE")
                 }
                 (Err(_), Err(_)) => {
-                    // Print out all of the default arches and computes as a
-                    // warning.
-                    println!("cargo:warning=No HYPERBEAM_CUDA_COMPUTE; Passing arch=compute_{DEFAULT_CUDA_ARCHES:?} and code=sm_{DEFAULT_CUDA_SMS:?} to nvcc");
-                    (DEFAULT_CUDA_ARCHES.to_vec(), DEFAULT_CUDA_SMS.to_vec())
+                    println!("cargo:warning=No HYPERBEAM_CUDA_COMPUTE; targeting sm_{DEFAULT_CUDA_TARGETS:?} to nvcc");
+                    DEFAULT_CUDA_TARGETS.to_vec()
                 }
             };
+
+            // Gate targets against the installed nvcc version, skipping any
+            // that require a newer toolkit than is present. Panics if nothing
+            // survives — a clear message here is better than a cryptic nvcc
+            // error or a silent "named symbol not found" at runtime.
+            let nvcc_ver = get_nvcc_version().unwrap_or_else(|| {
+                println!("cargo:warning=Could not determine nvcc version; skipping SM compatibility gating");
+                (u32::MAX, u32::MAX)
+            });
+            println!(
+                "cargo:warning=Detected nvcc version {}.{}",
+                nvcc_ver.0, nvcc_ver.1
+            );
+
+            let targets: Vec<u16> = targets
+                .into_iter()
+                .filter(|&sm| {
+                    let min = min_nvcc_version_for_sm(sm);
+                    if nvcc_ver < min {
+                        println!(
+                            "cargo:warning=Skipping sm={sm}: requires nvcc >= {}.{} \
+                             (have {}.{})",
+                            min.0, min.1, nvcc_ver.0, nvcc_ver.1
+                        );
+                        false
+                    } else {
+                        true
+                    }
+                })
+                .collect();
+
+            if targets.is_empty() {
+                panic!(
+                    "No CUDA targets remain after nvcc version gating (nvcc {}.{}). \
+                     Either set HYPERBEAM_CUDA_COMPUTE to a supported value or \
+                     upgrade your CUDA toolkit.",
+                    nvcc_ver.0, nvcc_ver.1
+                );
+            }
 
             let mut cuda_target = cc::Build::new();
             cuda_target
@@ -184,6 +262,7 @@ mod gpu {
                 .file("src/fee/gpu/fee.cu")
                 .include("src/analytic/gpu/")
                 .file("src/analytic/gpu/analytic.cu");
+
             // If $CXX is not set but $CUDA_PATH is, search for
             // $CUDA_PATH/bin/g++ and if it exists, set that as $CXX.
             if env::var_os("CXX").is_none() {
@@ -197,16 +276,17 @@ mod gpu {
                     }
                 }
             }
-            // Loop over each arch and sm
-            for arch in arches {
-                for &sm in &sms {
-                    if sm < arch {
-                        continue;
-                    }
 
-                    cuda_target.flag("-gencode");
-                    cuda_target.flag(&format!("arch=compute_{arch},code=sm_{sm}"));
-                }
+            // One matching-pair cubin per target SM.
+            for &sm in &targets {
+                cuda_target.flag("-gencode");
+                cuda_target.flag(&format!("arch=compute_{sm},code=sm_{sm}"));
+            }
+
+            // PTX fallback for the highest target: JIT-compilable on future GPUs.
+            if let Some(&max) = targets.iter().max() {
+                cuda_target.flag("-gencode");
+                cuda_target.flag(&format!("arch=compute_{max},code=compute_{max}"));
             }
 
             if crate::infer_static("cuda") {

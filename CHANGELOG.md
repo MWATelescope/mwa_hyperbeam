@@ -10,8 +10,9 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changes
 
-- msrv 1.85
+- msrv 1.85.0
 - ⬆️ marlu v0.17.0 pyo3 0.28 numpy 0.28 criterion 0.7 cbindgen 0.29 
+- when building with CUDA, hyperbeam will now limit the compute capabilities and sm's based on the version of nvcc detected. Also implemented fallback for newer sm's and compute capabilities.
 - fix cuda compute architecture to allow for 2 or 3 digits
 - CI: removed Python 3.8 and 3.9 support as they are EOL, added Python 3.13;
 - CI: Added testing for macos-26 and macos-26-intel;

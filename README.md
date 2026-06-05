@@ -123,11 +123,11 @@ their respective licenses are also distributed.
 
   `https://www.rust-lang.org/tools/install`
 
-  The Rust compiler must be at least version 1.65.0:
+  The Rust compiler must be at least version 1.85.0:
 
   ```bash
   $ rustc -V
-  rustc 1.65.0 (897e37553 2022-11-02)
+  rustc 1.85.0 (4d91de4e4 2025-02-17)
   ```
 
 - [hdf5](https://www.hdfgroup.org/hdf5)
