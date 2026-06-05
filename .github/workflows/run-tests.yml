@@ -120,8 +120,8 @@ jobs:
           if [ "$RUNNER_OS" == "Linux" ]; then
             echo CC=gcc >> $GITHUB_ENV
           else
-            # pick newest installed gcc
-            GCC_BIN=$(ls $(brew --prefix)/bin/gcc-* | sort | tail -n1)
+            # pick newest installed gcc (use [0-9]* to avoid gcc-ar-N, gcc-nm-N, gcc-ranlib-N)
+            GCC_BIN=$(ls $(brew --prefix)/bin/gcc-[0-9]* | sort -V | tail -n1)
             echo "Using $GCC_BIN"
             echo CC=$GCC_BIN >> $GITHUB_ENV
           fi
