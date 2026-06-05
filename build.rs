@@ -123,44 +123,30 @@ mod gpu {
         }
     }
 
-    /// Returns the minimum (major, minor) nvcc version required to compile for
-    /// a given SM target. Used to filter the default target list so that SMs
-    /// unsupported by the installed toolkit are skipped gracefully rather than
-    /// producing a cryptic nvcc error or a silent runtime failure.
+    /// Queries nvcc for its supported SM targets by parsing `nvcc --help`.
+    /// Returns None if nvcc is not found or produces no recognisable output.
     #[cfg(feature = "cuda")]
-    fn min_nvcc_version_for_sm(sm: u16) -> (u32, u32) {
-        match sm {
-            0..=61 => (8, 0),   // Kepler / Maxwell / Pascal (sm_60, sm_61)
-            62..=75 => (10, 0), // Volta (sm_70, sm_72), Turing (sm_75)
-            76..=85 => (11, 0), // Ampere A100 (sm_80)
-            86 => (11, 1),      // Ampere RTX 30-series (sm_86)
-            87 => (11, 4),      // Ampere Jetson Orin (sm_87)
-            88..=90 => (11, 8), // Ada Lovelace (sm_89), Hopper (sm_90)
-            _ => (12, 8),       // Blackwell (sm_100, sm_110, sm_120) and beyond
-        }
-    }
-
-    /// Queries the installed nvcc for its (major, minor) version, or returns
-    /// None if nvcc is not found or the output cannot be parsed.
-    #[cfg(feature = "cuda")]
-    fn get_nvcc_version() -> Option<(u32, u32)> {
+    fn get_nvcc_supported_sms() -> Option<std::collections::HashSet<u16>> {
         let output = std::process::Command::new("nvcc")
-            .arg("--version")
+            .arg("--help")
             .output()
             .ok()?;
         let text = String::from_utf8_lossy(&output.stdout);
-        // Version line: "Cuda compilation tools, release 12.9, V12.9.86"
-        for line in text.lines() {
-            if let Some(idx) = line.find("release ") {
-                let rest = &line[idx + 8..];
-                let ver = rest.split(',').next()?.trim();
-                let mut parts = ver.splitn(2, '.');
-                let major: u32 = parts.next()?.parse().ok()?;
-                let minor: u32 = parts.next()?.parse().ok()?;
-                return Some((major, minor));
+        let mut sms = std::collections::HashSet::new();
+        for word in text.split_whitespace() {
+            // Strip surrounding punctuation: 'sm_86', -> sm_86
+            let word = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_');
+            if let Some(num) = word.strip_prefix("sm_") {
+                if let Ok(sm) = num.parse::<u16>() {
+                    sms.insert(sm);
+                }
             }
         }
-        None
+        if sms.is_empty() {
+            None
+        } else {
+            Some(sms)
+        }
     }
 
     pub(super) fn build_and_link() {
@@ -170,13 +156,6 @@ mod gpu {
 
         #[cfg(feature = "cuda")]
         let mut gpu_target = {
-            // Single list of SM targets. Each becomes a matching
-            // arch=compute_X,code=sm_X pair — one cubin per GPU family. A PTX
-            // fallback for the highest target covers future GPUs via JIT
-            // compilation.
-            const DEFAULT_CUDA_TARGETS: &[u16] =
-                &[60, 61, 70, 75, 80, 86, 87, 89, 90, 100, 110, 120];
-
             fn parse_and_validate_compute(c: &str, var: &str) -> Vec<u16> {
                 let mut out = vec![];
                 for compute in c.trim().split(',') {
@@ -199,57 +178,52 @@ mod gpu {
             // can be used instead, too.
             println!("cargo:rerun-if-env-changed=HYPERBEAM_CUDA_COMPUTE");
             println!("cargo:rerun-if-env-changed=HYPERDRIVE_CUDA_COMPUTE");
+
+            let nvcc_sms = get_nvcc_supported_sms();
+
             let targets: Vec<u16> = match (
                 env::var("HYPERBEAM_CUDA_COMPUTE"),
                 env::var("HYPERDRIVE_CUDA_COMPUTE"),
             ) {
-                // When a user-supplied variable exists, use it as the CUDA
-                // target.
+                // When a user-supplied variable exists, validate its values
+                // against what the installed nvcc actually supports.
                 (Ok(c), _) | (Err(_), Ok(c)) => {
-                    parse_and_validate_compute(&c, "HYPERBEAM_CUDA_COMPUTE")
+                    let requested = parse_and_validate_compute(&c, "HYPERBEAM_CUDA_COMPUTE");
+                    if let Some(ref supported) = nvcc_sms {
+                        requested
+                            .into_iter()
+                            .filter(|&sm| {
+                                if supported.contains(&sm) {
+                                    true
+                                } else {
+                                    println!("cargo:warning=Skipping sm={sm}: not supported by installed nvcc");
+                                    false
+                                }
+                            })
+                            .collect()
+                    } else {
+                        requested
+                    }
                 }
+                // By default, target everything the installed nvcc supports.
                 (Err(_), Err(_)) => {
-                    println!("cargo:warning=No HYPERBEAM_CUDA_COMPUTE; targeting sm_{DEFAULT_CUDA_TARGETS:?} to nvcc");
-                    DEFAULT_CUDA_TARGETS.to_vec()
+                    let mut sms = nvcc_sms
+                        .expect(
+                            "Could not query nvcc for supported SMs; \
+                         install nvcc or set HYPERBEAM_CUDA_COMPUTE",
+                        )
+                        .into_iter()
+                        .collect::<Vec<_>>();
+                    sms.sort_unstable();
+                    println!("cargo:warning=No HYPERBEAM_CUDA_COMPUTE; targeting nvcc-supported sm_{sms:?}");
+                    sms
                 }
             };
 
-            // Gate targets against the installed nvcc version, skipping any
-            // that require a newer toolkit than is present. Panics if nothing
-            // survives — a clear message here is better than a cryptic nvcc
-            // error or a silent "named symbol not found" at runtime.
-            let nvcc_ver = get_nvcc_version().unwrap_or_else(|| {
-                println!("cargo:warning=Could not determine nvcc version; skipping SM compatibility gating");
-                (u32::MAX, u32::MAX)
-            });
-            println!(
-                "cargo:warning=Detected nvcc version {}.{}",
-                nvcc_ver.0, nvcc_ver.1
-            );
-
-            let targets: Vec<u16> = targets
-                .into_iter()
-                .filter(|&sm| {
-                    let min = min_nvcc_version_for_sm(sm);
-                    if nvcc_ver < min {
-                        println!(
-                            "cargo:warning=Skipping sm={sm}: requires nvcc >= {}.{} \
-                             (have {}.{})",
-                            min.0, min.1, nvcc_ver.0, nvcc_ver.1
-                        );
-                        false
-                    } else {
-                        true
-                    }
-                })
-                .collect();
-
             if targets.is_empty() {
                 panic!(
-                    "No CUDA targets remain after nvcc version gating (nvcc {}.{}). \
-                     Either set HYPERBEAM_CUDA_COMPUTE to a supported value or \
-                     upgrade your CUDA toolkit.",
-                    nvcc_ver.0, nvcc_ver.1
+                    "No CUDA targets remain. \
+                     Check HYPERBEAM_CUDA_COMPUTE or your nvcc installation."
                 );
             }
 
@@ -382,14 +356,10 @@ mod gpu {
                 env::var("HYPERBEAM_HIP_ARCH"),
                 env::var("HYPERDRIVE_HIP_ARCH"),
             ) {
-                // When a user-supplied variable exists, use it as the CUDA arch and
-                // compute level.
                 (Ok(c), _) | (Err(_), Ok(c)) => {
                     vec![c]
                 }
                 _ => {
-                    // Print out all of the default arches and computes as a
-                    // warning.
                     println!("cargo:warning=No offload arch found, try HYPERBEAM_HIP_ARCH");
                     vec![]
                 }

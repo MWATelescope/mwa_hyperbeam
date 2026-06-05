@@ -109,7 +109,7 @@ required-features = ["hip"]
 # ndarray gets a patch here to ensure hdf5-metno pulls in the same version as we use in Marlu etc (0.16.1)
 ndarray = { git = "https://github.com/rust-ndarray/ndarray", tag = "0.16.1" }
 # soft linking this during testing of the turducken
-marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "mwalib2" }
+#marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "mwalib2" }
 #marlu = { path = "../Marlu" }
 #url = { git = "https://github.com/servo/rust-url", tag = "v2.5.2" }
 #half = { git = "https://github.com/VoidStarKat/half-rs", tag="v2.2.1" }

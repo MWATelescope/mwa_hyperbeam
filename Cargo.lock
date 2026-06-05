@@ -2208,8 +2208,3 @@ name = "zmij"
 version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b8848ee67ecc8aedbaf3e4122217aff892639231befc6a1b58d29fff4c2cabaa"
-
-[[patch.unused]]
-name = "marlu"
-version = "0.17.0"
-source = "git+https://github.com/MWATelescope/Marlu?branch=mwalib2#810fc08ea9a2dffdabc420ebf8b86486bd433d9b"
