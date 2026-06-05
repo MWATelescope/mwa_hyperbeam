@@ -71,6 +71,12 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Add Python 3.13
+        uses: actions/setup-python@v6
+        continue-on-error: true
+        with:
+          python-version: "3.13"
+
       - name: install maturin
         run: |
           python -m pip install --upgrade pip
