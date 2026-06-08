@@ -34,9 +34,13 @@ cfg_if::cfg_if! {
     if #[cfg(feature = "gpu-single")] {
         pub type GpuFloat = f32;
         pub type GpuComplex = num_complex::Complex32;
+        // CFFI-compatible type alias (concrete type instead of GpuFloat)
+        pub type CffiFloat = f32;
     } else {
         pub type GpuFloat = f64;
         pub type GpuComplex = num_complex::Complex64;
+        // CFFI-compatible type alias (concrete type instead of GpuFloat)
+        pub type CffiFloat = f64;
     }
 }
 

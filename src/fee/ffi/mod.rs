@@ -21,6 +21,12 @@ cfg_if::cfg_if! {
 
         use super::FEEBeamGpu;
         use crate::gpu::{DevicePointer, GpuFloat};
+
+        // CFFI-compatible type - use concrete type instead of GpuFloat alias
+        #[cfg(feature = "gpu-single")]
+        type CffiGpuFloat = f32;
+        #[cfg(not(feature = "gpu-single"))]
+        type CffiGpuFloat = f64;
     }
 }
 
@@ -331,15 +337,18 @@ pub unsafe extern "C" fn fee_calc_jones_array(
     };
 
     let beam = &*fee_beam;
-    let az = slice::from_raw_parts(az_rad, num_azza as usize);
-    let za = slice::from_raw_parts(za_rad, num_azza as usize);
+    let az_raw = slice::from_raw_parts(az_rad, num_azza as usize);
+    let za_raw = slice::from_raw_parts(za_rad, num_azza as usize);
+    // Convert CffiGpuFloat to f64 for CPU function
+    let az: Vec<f64> = az_raw.iter().map(|&x| x as f64).collect();
+    let za: Vec<f64> = za_raw.iter().map(|&x| x as f64).collect();
     let delays_s = slice::from_raw_parts(delays, 16);
     let amps_s = slice::from_raw_parts(amps, num_amps as usize);
     let results_s = slice::from_raw_parts_mut(jones.cast(), num_azza as usize);
 
     ffi_error!(beam.calc_jones_array_pair_inner(
-        az,
-        za,
+        &az,
+        &za,
         freq_hz,
         delays_s,
         amps_s,
@@ -509,11 +518,11 @@ pub unsafe extern "C" fn new_gpu_fee_beam(
 pub unsafe extern "C" fn fee_calc_jones_gpu(
     gpu_fee_beam: *mut FEEBeamGpu,
     num_azza: u32,
-    az_rad: *const GpuFloat,
-    za_rad: *const GpuFloat,
+    az_rad: *const f64,
+    za_rad: *const f64,
     latitude_rad: *const f64,
     iau_order: u8,
-    jones: *mut GpuFloat,
+    jones: *mut f64,
 ) -> i32 {
     let iau_bool = match iau_order {
         0 => false,
@@ -579,11 +588,11 @@ pub unsafe extern "C" fn fee_calc_jones_gpu(
 pub unsafe extern "C" fn fee_calc_jones_gpu_device(
     gpu_fee_beam: *mut FEEBeamGpu,
     num_azza: i32,
-    az_rad: *const GpuFloat,
-    za_rad: *const GpuFloat,
+    az_rad: *const f64,
+    za_rad: *const f64,
     latitude_rad: *const f64,
     iau_order: u8,
-    d_jones: *mut GpuFloat,
+    d_jones: *mut f64,
 ) -> i32 {
     let iau_bool = match iau_order {
         0 => false,
@@ -652,11 +661,11 @@ pub unsafe extern "C" fn fee_calc_jones_gpu_device(
 pub unsafe extern "C" fn fee_calc_jones_gpu_device_inner(
     gpu_fee_beam: *mut FEEBeamGpu,
     num_azza: i32,
-    d_az_rad: *const GpuFloat,
-    d_za_rad: *const GpuFloat,
-    d_latitude_rad: *const GpuFloat,
+    d_az_rad: *const f64,
+    d_za_rad: *const f64,
+    d_latitude_rad: *const f64,
     iau_order: u8,
-    d_jones: *mut GpuFloat,
+    d_jones: *mut f64,
 ) -> i32 {
     let iau_bool = match iau_order {
         0 => false,

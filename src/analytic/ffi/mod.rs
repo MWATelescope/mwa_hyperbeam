@@ -19,6 +19,22 @@ cfg_if::cfg_if! {
 
         use super::AnalyticBeamGpu;
         use crate::gpu::{DevicePointer, GpuFloat};
+
+        // CFFI-compatible type - use concrete type instead of GpuFloat alias
+        #[cfg(feature = "gpu-single")]
+        type CffiGpuFloat = f32;
+        #[cfg(not(feature = "gpu-single"))]
+        type CffiGpuFloat = f64;
+
+        // Macro to generate FFI functions with correct types
+        macro_rules! cffi_gpu_float {
+            () => {
+                #[cfg(feature = "gpu-single")]
+                { f32 }
+                #[cfg(not(feature = "gpu-single"))]
+                { f64 }
+            };
+        }
     }
 }
 
@@ -152,7 +168,7 @@ pub unsafe extern "C" fn analytic_calc_jones(
         freq_hz,
         delays_s,
         amps_s,
-        latitude_rad,
+        latitude_rad,  // Already f64
         norm_bool,
     ) {
         Ok(j) => {
@@ -249,7 +265,7 @@ pub unsafe extern "C" fn analytic_calc_jones_array(
         freq_hz,
         delays_s,
         amps_s,
-        latitude_rad,
+        latitude_rad,  // Already f64
         norm_bool,
         results_s
     ));
@@ -350,13 +366,13 @@ pub unsafe extern "C" fn new_gpu_analytic_beam(
 pub unsafe extern "C" fn analytic_calc_jones_gpu(
     gpu_analytic_beam: *mut AnalyticBeamGpu,
     num_azza: u32,
-    az_rad: *const GpuFloat,
-    za_rad: *const GpuFloat,
+    az_rad: *const f64,
+    za_rad: *const f64,
     num_freqs: u32,
     freqs_hz: *const u32,
-    latitude_rad: GpuFloat,
+    latitude_rad: f64,
     norm_to_zenith: u8,
-    jones: *mut GpuFloat,
+    jones: *mut f64,
 ) -> i32 {
     let num_azza_usize = match num_azza.try_into() {
         Ok(n) => n,
@@ -429,13 +445,13 @@ pub unsafe extern "C" fn analytic_calc_jones_gpu(
 pub unsafe extern "C" fn analytic_calc_jones_gpu_device(
     gpu_analytic_beam: *mut AnalyticBeamGpu,
     num_azza: i32,
-    az_rad: *const GpuFloat,
-    za_rad: *const GpuFloat,
+    az_rad: *const f64,
+    za_rad: *const f64,
     num_freqs: i32,
     freqs_hz: *const u32,
-    latitude_rad: GpuFloat,
+    latitude_rad: f64,
     norm_to_zenith: u8,
-    d_jones: *mut GpuFloat,
+    d_jones: *mut f64,
 ) -> i32 {
     let num_azza_usize = if num_azza < 0 {
         update_last_error("num_azza was less than 0; it must be positive".to_string());
@@ -521,13 +537,13 @@ pub unsafe extern "C" fn analytic_calc_jones_gpu_device(
 pub unsafe extern "C" fn analytic_calc_jones_gpu_device_inner(
     gpu_analytic_beam: *mut AnalyticBeamGpu,
     num_azza: i32,
-    d_az_rad: *const GpuFloat,
-    d_za_rad: *const GpuFloat,
+    d_az_rad: *const f64,
+    d_za_rad: *const f64,
     num_freqs: i32,
     d_freqs_hz: *const u32,
-    latitude_rad: GpuFloat,
+    latitude_rad: f64,
     norm_to_zenith: u8,
-    d_jones: *mut GpuFloat,
+    d_jones: *mut f64,
 ) -> i32 {
     if num_azza < 0 {
         update_last_error("num_azza was less than 0; it must be positive".to_string());

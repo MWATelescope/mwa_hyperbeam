@@ -99,6 +99,18 @@ fn main() {
                 .generate()
                 .expect("Unable to generate bindings")
                 .write_to_file("include/mwa_hyperbeam.h");
+
+            // Fix CFFI issue: Replace GpuFloat with actual type in the generated header
+            let header_path = "include/mwa_hyperbeam.h";
+            let header_content =
+                std::fs::read_to_string(header_path).expect("Failed to read generated header");
+
+            // Replace all GpuFloat with the actual type for CFFI compatibility
+            let fixed_content = header_content.replace("GpuFloat", c_type);
+
+            std::fs::write(header_path, fixed_content).expect("Failed to write fixed header");
+
+            println!("cargo:rerun-if-changed=include/mwa_hyperbeam.h");
         }
     }
 }
