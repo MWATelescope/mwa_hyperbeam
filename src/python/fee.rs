@@ -29,16 +29,11 @@ impl FEEBeam {
     /// `MWA_BEAM_FILE` environment variable is used.
     #[new]
     #[pyo3(signature = (hdf5_file))]
-    fn new(hdf5_file: Option<PyObject>) -> PyResult<Self> {
+    fn new(hdf5_file: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
         let strct = match hdf5_file {
             Some(f) => {
-                let result = Python::with_gil(|py| {
-                    let f: PathBuf = f
-                        .extract(py)
-                        .expect("can convert python string to rust path");
-                    FEEBeamRust::new(f)
-                });
-                result?
+                let f: PathBuf = f.extract().expect("can convert python string to rust path");
+                FEEBeamRust::new(f)?
             }
             None => FEEBeamRust::new_from_env()?,
         };
@@ -93,7 +88,7 @@ impl FEEBeam {
             iau_order.unwrap_or(false),
         )?;
         let jones_py: Vec<c64> = jones.iter().map(|c| c64::new(c.re, c.im)).collect();
-        let np_array = PyArray1::from_vec_bound(py, jones_py);
+        let np_array = PyArray1::from_vec(py, jones_py);
         Ok(np_array)
     }
 
@@ -147,12 +142,12 @@ impl FEEBeam {
         // SAFETY: new_cap == old_cap * N, align_of::<C64>() == align_of::<Jones>()
         let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
         let a2 = Array2::from_shape_vec((old_len, 4), flat).unwrap();
-        Ok(a2.into_pyarray_bound(py))
+        Ok(a2.into_pyarray(py))
     }
 
     /// Get the available frequencies inside the HDF5 file.
     fn get_fee_beam_freqs<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<u32>> {
-        self.beam.get_freqs().to_vec().into_pyarray_bound(py)
+        self.beam.get_freqs().to_vec().into_pyarray(py)
     }
 
     /// Given a frequency in Hz, get the closest available frequency inside the
@@ -220,6 +215,6 @@ impl FEEBeam {
         // SAFETY: new_cap == old_cap * N, align_of::<Complex>() == align_of::<Jones>()
         let flat = unsafe { Vec::from_raw_parts(new_ptr, new_len, new_cap) };
         let a4 = Array4::from_shape_vec((old_dim.0, old_dim.1, old_dim.2, 4), flat).unwrap();
-        Ok(a4.into_pyarray_bound(py))
+        Ok(a4.into_pyarray(py))
     }
 }

@@ -16,11 +16,12 @@ use crate::fee::{FEEBeamError, InitFEEBeamError};
 /// A Python module interfacing with the hyperbeam code written in Rust. This
 /// module depends on and will import numpy.
 #[pymodule]
-fn mwa_hyperbeam(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    py.import_bound("numpy")?;
+fn mwa_hyperbeam(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let py = m.py();
+    py.import("numpy")?;
     m.add_class::<fee::FEEBeam>()?;
     m.add_class::<analytic::AnalyticBeam>()?;
-    m.add("HyperbeamError", py.get_type_bound::<HyperbeamError>())?;
+    m.add("HyperbeamError", py.get_type::<HyperbeamError>())?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
     Ok(())

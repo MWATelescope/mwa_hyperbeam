@@ -1,9 +1,11 @@
 [project]
 name = "mwa_hyperbeam"
-repository = "https://github.com/MWATelescope/mwa_hyperbeam"
-requires-python = ">=3.7"
+requires-python = ">=3.10"
 dependencies = ["numpy"]
 dynamic = ["version"]
+
+[project.urls]
+"Homepage" = "https://github.com/MWATelescope/mwa_hyperbeam"
 
 [build-system]
 requires = ["setuptools", "maturin>=1.0,<2.0"]

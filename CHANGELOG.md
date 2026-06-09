@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-06-05
+
+### Changes
+
+- msrv 1.85.0
+- ⬆️ marlu v0.17.0 pyo3 0.28 numpy 0.28 criterion 0.7 cbindgen 0.29 
+- when building with CUDA, hyperbeam will now limit the compute capabilities and sm's based on the version of nvcc detected. Also implemented fallback for newer sm's and compute capabilities.
+- fix cuda compute architecture to allow for 2 or 3 digits
+- CI: removed Python 3.8 and 3.9 support as they are EOL, added Python 3.13;
+- CI: Added testing for macos-26 and macos-26-intel;
+- CI: fixed curl so it fails with a non-zero exit code, also uses github caching; 
+- CI: FEE beam download url is now https; 
+- CI: upgraded Docker actions, added docker login retry
+- CI: updated pinned version of hdf5 for macos
+
 ## [0.10.4] - 2025-10-14
 
 ### Changes
@@ -31,7 +46,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 - msrv1.80
 - ⬆️ mwalib v1.8.2, marlu0.15.0 rubbl0.8 casacore3.5 ndarray0.16 pyo3 0.22 fitsio 0.21.6 lazy_static
-- fix cuda keyring issue, update ubuntu2204 in CI
+- fix cuda keyring issue, update ubuntu2404 in CI
 - use hdf5_metno
 
 ## [0.9.4] - 2024-08-20

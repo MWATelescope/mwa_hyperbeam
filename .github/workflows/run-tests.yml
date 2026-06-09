@@ -5,9 +5,9 @@ name: Cross-platform tests
 on:
   push:
     tags-ignore:
-      - '**'
+      - "**"
     branches:
-      - '**'
+      - "**"
   pull_request:
 
 env:
@@ -25,10 +25,12 @@ jobs:
       fail-fast: false
       matrix:
         os:
-          - ubuntu-22.04
-          - macos-13
-          - macos-14
-          - ubuntu-22.04-arm
+          - ubuntu-24.04
+          - ubuntu-24.04-arm
+          - macos-15-intel
+          - macos-15
+          - macos-26-intel
+          - macos-26
         rust:
           - ver: nightly
             examples: false
@@ -36,19 +38,28 @@ jobs:
             examples: false
           - ver: stable
             examples: true
-          - ver: "1.80.0" # MSRV
+          - ver: "1.85.0" # MSRV
             examples: false
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: (macos) install dependencies
         if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
-          brew install automake autoconf pkg-config hdf5@1.10
+          brew install automake autoconf pkg-config gcc
+
+      - name: (macos) install hdf5 2.0.0 (>2.0.0 is not supported by hdf5-metno-sys 0.11.2. 0.11.3 needs higher MSRV than 1.85...)
+        if: ${{ startsWith(matrix.os, 'macos') }}
+        run: |
+          brew tap-new local/hdf5
+          brew extract --version 2.0.0 hdf5 local/hdf5
+          brew install local/hdf5/hdf5@2.0.0
+          echo "HDF5_DIR=$(brew --prefix local/hdf5/hdf5@2.0.0)" >> $GITHUB_ENV
+
       - name: (ubuntu) install dependencies
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
@@ -56,11 +67,9 @@ jobs:
           sudo apt -y install libhdf5-dev gcc pkg-config python3{,-pip,-venv} curl wget git jq
 
       - name: Install stable toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{matrix.rust.ver}}
-          profile: minimal
-          override: true
           components: rustfmt, clippy
 
       - name: Run cargo check, fmt, clippy
@@ -73,8 +82,24 @@ jobs:
         run: |
           ! grep -i gpu include/mwa_hyperbeam.h
 
-      - name: Get the HDF5 file
-        run: curl -L http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 -o mwa_full_embedded_element_pattern.h5
+      - name: Cache MWA beam file
+        id: cache-beam
+        uses: actions/cache@v5
+        with:
+          path: mwa_full_embedded_element_pattern.h5
+          key: mwa-beam-file-v1
+
+      - name: Download MWA beam file if cache was a miss
+        if: steps.cache-beam.outputs.cache-hit != 'true'
+        run: |
+          curl -fL \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --retry 5 \
+            --retry-delay 10 \
+            --retry-all-errors \
+            --retry-max-time 120 \
+            https://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 \
+            -o mwa_full_embedded_element_pattern.h5
 
       # Taken from https://github.com/dtolnay/thiserror/blob/a2d1ed1ccfc2a5dbb2a8fb45d4f938175a28bc86/.github/workflows/ci.yml
       - name: Enable type layout randomization
@@ -84,20 +109,23 @@ jobs:
       - name: Run tests (dynamic)
         run: cargo test
 
+      # hdf5-metno-sys will try and use the OS library if it sees a HDF5_DIR env variable and its valid
       - name: Run tests (static)
-        run: cargo test --features=all-static
+        run: |
+          unset HDF5_DIR
+          cargo test --features=all-static
 
       - name: Setup example environment
-        if: ${{ matrix.rust.examples }} # only run examples on stable
         run: |
           echo LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${PWD}/target/debug/ >> $GITHUB_ENV
-          which gcc || true
-          which gcc-12 || true
-          which gcc-13 || true
+
           if [ "$RUNNER_OS" == "Linux" ]; then
             echo CC=gcc >> $GITHUB_ENV
           else
-            echo CC=gcc-12 >> $GITHUB_ENV
+            # pick newest installed gcc (use [0-9]* to avoid gcc-ar-N, gcc-nm-N, gcc-ranlib-N)
+            GCC_BIN=$(ls $(brew --prefix)/bin/gcc-[0-9]* | sort -V | tail -n1)
+            echo "Using $GCC_BIN"
+            echo CC=$GCC_BIN >> $GITHUB_ENV
           fi
 
       - name: Run Rust example
@@ -144,10 +172,10 @@ jobs:
       - name: (ubuntu) install CUDA
         if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') }}
         run: |
-          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt -y update
-          sudo apt -y install cuda-nvcc-12-6 --no-install-recommends
+          sudo apt -y install cuda-nvcc-12-9 --no-install-recommends
           echo PATH=${PATH}:/usr/local/cuda/bin >> $GITHUB_ENV
 
       - name: (ubuntu) CUDA smoke tests
