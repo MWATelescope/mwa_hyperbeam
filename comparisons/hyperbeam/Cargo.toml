@@ -1,0 +1,18 @@
+[package]
+name = "hyperbeam"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+cuda = ["mwa_hyperbeam/cuda"]
+hip = ["mwa_hyperbeam/hip"]
+gpu-single = ["mwa_hyperbeam/gpu-single"]
+
+[[bin]]
+name = "hyperbeam-cuda"
+required-features = ["cuda"]
+
+[dependencies]
+mwa_hyperbeam = "0.7.0"
+ndarray = "0.15.6"
