@@ -59,8 +59,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set up the directions to test. The type depends on the GPU precision.
     let mut azels = Vec::with_capacity(num_directions);
     for i in 0..num_directions {
-        let az = 0.4 + 0.3 * PI * (i / num_directions) as f64;
-        let za = 0.3 + 0.4 * FRAC_PI_2 * (i / num_directions) as f64;
+        let az = 0.4 + 0.3 * PI * i as f64 / num_directions as f64;
+        let za = 0.3 + 0.4 * FRAC_PI_2 * i as f64 / num_directions as f64;
         azels.push(AzEl::from_radians(az, FRAC_PI_2 - za));
     }
 
@@ -95,6 +95,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         iau_order,
     )?;
 
+    #[allow(clippy::useless_conversion)]
     let diff = jones[(0, 0, 0)] - Jones::<GpuFloat>::from(jones_cpu);
 
     println!("Difference between first GPU and CPU Jones matrices");

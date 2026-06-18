@@ -361,9 +361,8 @@ fn test_calc_jones_gpu_via_ffi() {
         for (mut out, freq) in out.outer_iter_mut().zip(freqs) {
             unsafe {
                 let cpu_results = (*beam)
-                    .calc_jones_array_pair(
-                        &az,
-                        &za,
+                    .calc_jones_array(
+                        (&az, &za),
                         freq,
                         delays.as_slice().unwrap(),
                         amps.as_slice().unwrap(),

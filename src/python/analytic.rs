@@ -68,9 +68,8 @@ impl AnalyticBeam {
         latitude_rad: f64,
         norm_to_zenith: Option<bool>,
     ) -> PyResult<Bound<'py, PyArray1<c64>>> {
-        let jones = self.beam.calc_jones_pair(
-            az_rad,
-            za_rad,
+        let jones = self.beam.calc_jones(
+            (az_rad, za_rad),
             // hyperbeam expects an int for the frequency. By specifying that
             // Python should pass in a float, it also allows an int to be passed
             // in (!?). Convert the float here in Rust for usage in hyperbeam.
@@ -106,9 +105,8 @@ impl AnalyticBeam {
         latitude_rad: f64,
         norm_to_zenith: Option<bool>,
     ) -> PyResult<Bound<'py, PyArray2<c64>>> {
-        let jones = self.beam.calc_jones_array_pair(
-            &az_rad,
-            &za_rad,
+        let jones = self.beam.calc_jones_array(
+            (&az_rad, &za_rad),
             freq_hz.round() as _,
             &delays,
             &amps,

@@ -227,9 +227,8 @@ macro_rules! test_analytic {
             norm_to_zenith,
             expected,
         } = $args;
-        let result = $beam.calc_jones_pair(
-            az_rad,
-            za_rad,
+        let result = $beam.calc_jones(
+            (az_rad, za_rad),
             freq_hz,
             &delays,
             &amps,
@@ -278,9 +277,8 @@ fn mwa_pb_5() {
 #[test]
 fn mwa_pb_single_matches_array() {
     let beam = AnalyticBeam::new();
-    let result = beam.calc_jones_pair(
-        4.724779027649792,
-        0.3230075857,
+    let result = beam.calc_jones(
+        (4.724779027649792, 0.3230075857),
         200e6 as _,
         &[0, 2, 4, 6, 0, 1, 2, 3, 10, 12, 14, 16, 0, 4, 8, 12],
         &[1.0; 16],
@@ -290,9 +288,8 @@ fn mwa_pb_single_matches_array() {
     assert!(result.is_ok());
     let result = result.unwrap();
 
-    let result_a = beam.calc_jones_array_pair(
-        &[4.724779027649792],
-        &[0.3230075857],
+    let result_a = beam.calc_jones_array(
+        (&[4.724779027649792], &[0.3230075857]),
         200e6 as _,
         &[0, 2, 4, 6, 0, 1, 2, 3, 10, 12, 14, 16, 0, 4, 8, 12],
         &[1.0; 16],
@@ -339,9 +336,8 @@ fn rts_5() {
 #[test]
 fn rts_single_matches_array() {
     let beam = AnalyticBeam::new_rts();
-    let result = beam.calc_jones_pair(
-        4.724779027649792,
-        0.3230075857,
+    let result = beam.calc_jones(
+        (4.724779027649792, 0.3230075857),
         200e6 as _,
         &[0, 2, 4, 6, 0, 1, 2, 3, 10, 12, 14, 16, 0, 4, 8, 12],
         &[1.0; 16],
@@ -351,9 +347,8 @@ fn rts_single_matches_array() {
     assert!(result.is_ok());
     let result = result.unwrap();
 
-    let result_a = beam.calc_jones_array_pair(
-        &[4.724779027649792],
-        &[0.3230075857],
+    let result_a = beam.calc_jones_array(
+        (&[4.724779027649792], &[0.3230075857]),
         200e6 as _,
         &[0, 2, 4, 6, 0, 1, 2, 3, 10, 12, 14, 16, 0, 4, 8, 12],
         &[1.0; 16],
@@ -430,9 +425,8 @@ fn test_cram() {
     let norm_to_zenith = true;
 
     let beam = AnalyticBeam::new_custom(AnalyticType::MwaPb, 0.3, 8);
-    let result = beam.calc_jones_pair(
-        az_rad,
-        za_rad,
+    let result = beam.calc_jones(
+        (az_rad, za_rad),
         freq_hz,
         &delays,
         &amps,

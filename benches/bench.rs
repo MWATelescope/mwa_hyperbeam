@@ -35,9 +35,8 @@ fn fee(c: &mut Criterion) {
         let iau_order = true;
         b.iter(|| {
             let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
-            beam.calc_jones_pair(
-                az,
-                za,
+            beam.calc_jones(
+                (az, za),
                 freq,
                 &delays,
                 &amps,
@@ -60,9 +59,8 @@ fn fee(c: &mut Criterion) {
         let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         b.iter(|| {
-            beam.calc_jones_pair(
-                az,
-                za,
+            beam.calc_jones(
+                (az, za),
                 freq,
                 &delays,
                 &amps,
@@ -86,9 +84,8 @@ fn fee(c: &mut Criterion) {
         let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones_pair(
-            az,
-            za,
+        beam.calc_jones(
+            (az, za),
             freq,
             &delays,
             &amps,
@@ -98,9 +95,8 @@ fn fee(c: &mut Criterion) {
         )
         .unwrap();
         b.iter(|| {
-            beam.calc_jones_pair(
-                az,
-                za,
+            beam.calc_jones(
+                (az, za),
                 freq,
                 &delays,
                 &amps,
@@ -128,9 +124,8 @@ fn fee(c: &mut Criterion) {
         let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones_pair(
-            az[0],
-            za[0],
+        beam.calc_jones(
+            (az[0], za[0]),
             freq,
             &delays,
             &amps,
@@ -140,9 +135,8 @@ fn fee(c: &mut Criterion) {
         )
         .unwrap();
         b.iter(|| {
-            beam.calc_jones_array_pair(
-                &az,
-                &za,
+            beam.calc_jones_array(
+                (&az, &za),
                 freq,
                 &delays,
                 &amps,
@@ -172,9 +166,8 @@ fn fee(c: &mut Criterion) {
         let iau_order = true;
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones_pair(
-            az[0],
-            za[0],
+        beam.calc_jones(
+            (az[0], za[0]),
             freq,
             &delays,
             &amps,
@@ -187,9 +180,8 @@ fn fee(c: &mut Criterion) {
             az.par_iter()
                 .zip(za.par_iter())
                 .map(|(&a, &z)| {
-                    beam.calc_jones_pair(
-                        a,
-                        z,
+                    beam.calc_jones(
+                        (a, z),
                         freq,
                         &delays,
                         &amps,
@@ -253,9 +245,8 @@ fn fee(c: &mut Criterion) {
     c.bench_function("calc_jones_array 100000 dirs", |b| {
         let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
         // Prime the cache.
-        beam.calc_jones_pair(
-            az_double[0],
-            za_double[0],
+        beam.calc_jones(
+            (az_double[0], za_double[0]),
             freqs[0],
             delays.as_slice().unwrap(),
             amps.as_slice().unwrap(),
@@ -265,9 +256,8 @@ fn fee(c: &mut Criterion) {
         )
         .unwrap();
         b.iter(|| {
-            beam.calc_jones_array_pair(
-                &az_double,
-                &za_double,
+            beam.calc_jones_array(
+                (&az_double, &za_double),
                 freqs[0],
                 delays.as_slice().unwrap(),
                 amps.as_slice().unwrap(),
