@@ -6,11 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.11.1] - 2026-09-01
+## [0.11.1] - 2026-09-03
 
 ### Changes
 
+- ⬆️ Updated MSRV to 1.88.0
 - ⬆️ Updated marlu to v0.18.1
+- ⬆️ Updated other dependencies
 
 ## [0.11.0] - 2026-06-05
 
