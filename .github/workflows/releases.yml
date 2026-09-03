@@ -41,8 +41,8 @@ jobs:
         if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
           brew tap-new local/hdf5
-          brew extract --version 2.0.0 hdf5 local/hdf5
-          brew install local/hdf5/hdf5@2.0.0
+          brew extract hdf5 local/hdf5
+          brew install local/hdf5/hdf5
 
       - name: (ubuntu) install dependencies
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
