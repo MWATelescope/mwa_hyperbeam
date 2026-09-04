@@ -1,6 +1,6 @@
 [package]
 name = "mwa_hyperbeam"
-version = "0.11.1"
+version = "0.12.0"
 authors = [
     "Christopher H. Jordan <christopherjordan87@gmail.com>",
     "Jack L. B. Line <jack.line@curtin.edu.au>",
@@ -49,7 +49,7 @@ codegen-units = 1 # Set this to 1 in Cargo.toml to allow for maximum size reduct
 [dependencies]
 cfg-if = "1.0.0"
 hdf5-metno = "0.14"
-marlu = { version = "0.18.1", default-features = false } # don't forget dev-dependencies
+marlu = { version = "0.19.0", default-features = false } # don't forget dev-dependencies
 ndarray = "0.16.1"
 num-complex = "0.4.1"
 panic-message = "0.3.0"
@@ -72,7 +72,7 @@ numpy = { version = "0.29", optional = true }
 [dev-dependencies]
 approx = { version = "0.5.0", features = ["num-complex"] }
 criterion = "0.8"
-marlu = { version = "0.18.1", default-features = false, features = ["approx"] }
+marlu = { version = "0.19.0", default-features = false, features = ["approx"] }
 serial_test = "3.4.0"
 
 ndarray = { version = "0.16.1", features = ["approx"] }
@@ -107,7 +107,7 @@ required-features = ["hip"]
 # ndarray gets a patch here to ensure hdf5-metno pulls in the same version as we use in Marlu etc (0.16.1)
 ndarray = { git = "https://github.com/rust-ndarray/ndarray", tag = "0.16.1" }
 # soft linking this during testing of the turducken
-marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "20260901_deps" }
+#marlu = { git = "https://github.com/MWATelescope/Marlu", branch = "20260901_deps" }
 #marlu = { path = "../Marlu" }
 #url = { git = "https://github.com/servo/rust-url", tag = "v2.5.2" }
 #half = { git = "https://github.com/VoidStarKat/half-rs", tag="v2.2.1" }

@@ -253,13 +253,13 @@ mod gpu {
             // One matching-pair cubin per target SM.
             for &sm in &targets {
                 cuda_target.flag("-gencode");
-                cuda_target.flag(&format!("arch=compute_{sm},code=sm_{sm}"));
+                cuda_target.flag(format!("arch=compute_{sm},code=sm_{sm}"));
             }
 
             // PTX fallback for the highest target: JIT-compilable on future GPUs.
             if let Some(&max) = targets.iter().max() {
                 cuda_target.flag("-gencode");
-                cuda_target.flag(&format!("arch=compute_{max},code=compute_{max}"));
+                cuda_target.flag(format!("arch=compute_{max},code=compute_{max}"));
             }
 
             if crate::infer_static("cuda") {
