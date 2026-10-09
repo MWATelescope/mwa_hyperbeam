@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+
+- The GPU analytic beam code now gives a zero response for directions below
+  the horizon, where it previously gave a non-zero, meaningless response (the
+  CPU code errors for these directions).
+
 ## [0.11.0] - 2026-06-05
 
 ### Changes

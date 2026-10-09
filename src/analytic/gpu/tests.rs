@@ -189,3 +189,55 @@ fn test_cram() {
     #[cfg(feature = "gpu-single")]
     assert_abs_diff_eq!(gpu_results[(0, 0, 0)], cpu_results, epsilon = 1e-6);
 }
+
+/// Directions below the horizon get a zero response (the CPU code errors for
+/// them instead), and they don't disturb the responses of other directions.
+#[test]
+fn test_gpu_below_horizon_is_zero() {
+    let delays = array![
+        [3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ];
+    let amps = array![
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        [1.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    ];
+    let freqs = [150e6 as u32, 200e6 as _];
+    let above: Vec<GpuFloat> = vec![0.1, 1.2, 0.8];
+    let below: Vec<GpuFloat> = vec![1.6, 3.0];
+    let az: Vec<GpuFloat> = vec![0.3, 1.0, -2.0, 2.5, 0.5];
+    let za: Vec<GpuFloat> = vec![above[0], below[0], above[1], above[2], below[1]];
+    let az_above: Vec<GpuFloat> = vec![az[0], az[2], az[3]];
+
+    for beam in [AnalyticBeam::new(), AnalyticBeam::new_rts()] {
+        for norm_to_zenith in [false, true] {
+            let gpu_beam = unsafe { beam.gpu_prepare(delays.view(), amps.view()).unwrap() };
+            let jones = gpu_beam
+                .calc_jones_pair(&az, &za, &freqs, MWA_LAT_RAD as GpuFloat, norm_to_zenith)
+                .unwrap();
+            let expected = gpu_beam
+                .calc_jones_pair(
+                    &az_above,
+                    &above,
+                    &freqs,
+                    MWA_LAT_RAD as GpuFloat,
+                    norm_to_zenith,
+                )
+                .unwrap();
+            assert_eq!(jones.dim(), (2, freqs.len(), za.len()));
+
+            for i_below in [1, 4] {
+                for j in jones.slice(s![.., .., i_below]) {
+                    assert_eq!(*j, Jones::default());
+                }
+            }
+            for (i_above, i_dir) in [0, 2, 3].into_iter().enumerate() {
+                assert_eq!(
+                    jones.slice(s![.., .., i_dir]),
+                    expected.slice(s![.., .., i_above])
+                );
+            }
+            assert!(expected.iter().any(|j| (0..4).any(|i| j[i].norm() > 0.1)));
+        }
+    }
+}
