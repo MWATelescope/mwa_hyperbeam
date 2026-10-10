@@ -9,11 +9,12 @@ on:
       - main
   pull_request:
 
-# A new push to the same branch cancels the still-running jobs of the previous
-# push.
+# A new push to a pull request cancels the still-running jobs of the previous
+# push. Runs on main are never cancelled: a release needs a completed, green
+# run for the commit being tagged, and merges can land in quick succession.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
