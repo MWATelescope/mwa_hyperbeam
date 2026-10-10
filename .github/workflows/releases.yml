@@ -1,14 +1,26 @@
 ---
 name: Release
 
-# Build and test on all pushes and pull requests, but only publish on tagged commits
+# Build and publish on tagged commits. The test matrix already compiles on all
+# of these runners, so the release build is only rehearsed on pull requests
+# that touch something release-specific.
 on:
   push:
-    branches:
-      - "**"
     tags:
       - "v*"
+  workflow_dispatch:
   pull_request:
+    paths:
+      - .github/workflows/releases.yml
+      - .github/workflows/releases-readme.md
+      - Cargo.toml
+      - Cargo.lock
+      - pyproject.toml
+      - build.rs
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
