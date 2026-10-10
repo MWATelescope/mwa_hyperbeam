@@ -57,8 +57,15 @@ jobs:
             https://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 \
             -o mwa_full_embedded_element_pattern.h5
 
+      # Only the library's unit tests are instrumented. With --workspace,
+      # cargo-llvm-cov also hands llvm-cov the cdylib and the test binary of
+      # the verify-beam-file bin, both of which contain never-run copies of the
+      # #[no_mangle] FFI functions; llvm-cov merges same-named function records
+      # across objects and the FFI functions' coverage is lost or kept
+      # depending on toolchain and hashing luck. Neither extra object has any
+      # tests of its own.
       - name: Generate code coverage
-        run: cargo llvm-cov --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --lib --lcov --output-path lcov.info
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
