@@ -6,13 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [0.11.1] - 2026-10-10
 
 ### Fixed
 
 - The GPU analytic beam code now gives a zero response for directions below
   the horizon, where it previously gave a non-zero, meaningless response (the
   CPU code errors for these directions).
+- `cargo clippy --features=cuda` / `--features=hip` with `-D warnings` failed
+  on current stable because of lints in the build script and the GPU examples.
+
+### Changes
+
+- CI: each PR commit is tested once rather than twice, release tarballs are
+  only built on tags, and the test matrix is stable on all platforms with MSRV
+  and nightly on Ubuntu only. fmt and clippy run in their own job, which also
+  lints the CUDA and Python builds.
+- CI: coverage is measured from the library unit tests only, which stops the
+  FFI functions' coverage being lost when llvm-cov merged the cdylib's symbol
+  copies.
 
 ## [0.11.0] - 2026-06-05
 
