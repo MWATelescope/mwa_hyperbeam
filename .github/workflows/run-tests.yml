@@ -1,14 +1,19 @@
 ---
 name: Cross-platform tests
 
-# Do this on every push that isn't tagged
+# Run on pushes to main and on pull requests. Triggering on both "push to any
+# branch" and "pull_request" ran everything twice for every PR commit.
 on:
   push:
-    tags-ignore:
-      - "**"
     branches:
-      - "**"
+      - main
   pull_request:
+
+# A new push to the same branch cancels the still-running jobs of the previous
+# push.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
@@ -18,6 +23,52 @@ env:
   MWA_BEAM_FILE: mwa_full_embedded_element_pattern.h5
 
 jobs:
+  # fmt and clippy once, on one runner, rather than in every matrix cell. This
+  # is also where the GPU code is linted: there is no GPU to run it on, but
+  # clippy only needs nvcc to build it.
+  lint:
+    name: fmt and clippy
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          sudo apt -y update
+          sudo apt -y install libhdf5-dev gcc pkg-config python3
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: No GPU references in CPU-only header
+        run: |
+          ! grep -i gpu include/mwa_hyperbeam.h
+
+      - name: cargo clippy (python)
+        run: cargo clippy --all-targets --features=python -- -D warnings
+
+      - name: Install CUDA
+        run: |
+          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
+          sudo dpkg -i cuda-keyring_1.1-1_all.deb
+          sudo apt -y update
+          sudo apt -y install cuda-nvcc-12-9 --no-install-recommends
+          echo PATH=${PATH}:/usr/local/cuda/bin >> $GITHUB_ENV
+
+      - name: cargo clippy (cuda)
+        run: |
+          cargo clippy --all-targets --features=cuda -- -D warnings
+          cargo clippy --all-targets --features=cuda,gpu-single -- -D warnings
+
   test:
     name: Test ${{matrix.os}} Rust ${{matrix.rust.ver}} ex ${{matrix.rust.examples}}
     runs-on: ${{matrix.os}}
@@ -66,21 +117,10 @@ jobs:
           sudo apt -y update
           sudo apt -y install libhdf5-dev gcc pkg-config python3{,-pip,-venv} curl wget git jq
 
-      - name: Install stable toolchain
+      - name: Install toolchain
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{matrix.rust.ver}}
-          components: rustfmt, clippy
-
-      - name: Run cargo check, fmt, clippy
-        run: |
-          cargo check --all
-          cargo fmt --all -- --check
-          cargo clippy --all -- -D warnings
-
-      - name: No GPU references in CPU-only header
-        run: |
-          ! grep -i gpu include/mwa_hyperbeam.h
 
       - name: Cache MWA beam file
         id: cache-beam
