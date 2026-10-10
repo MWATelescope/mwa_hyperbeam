@@ -35,6 +35,25 @@ __global__ void analytic_kernel(const ANALYTIC_TYPE at, const FLOAT dipole_heigh
         const FLOAT az = azs[i_direction];
         const FLOAT za = zas[i_direction];
 
+        // The ground plane blocks directions below the horizon, so their
+        // response is zero. (The CPU code returns an error for these
+        // directions; a kernel can't, and without this check the ground-plane
+        // term below gives a non-zero, meaningless response.)
+        if (za > M_PI_2) {
+            const JONES zero = JONES{
+                .j00 = MAKE_COMPLEX(0.0, 0.0),
+                .j01 = MAKE_COMPLEX(0.0, 0.0),
+                .j10 = MAKE_COMPLEX(0.0, 0.0),
+                .j11 = MAKE_COMPLEX(0.0, 0.0),
+            };
+            for (int i_tile = 0; i_tile < num_tiles; i_tile++) {
+                for (int i_freq = 0; i_freq < num_freqs; i_freq++) {
+                    results[((num_directions * num_freqs * i_tile) + num_directions * i_freq) + i_direction] = zero;
+                }
+            }
+            continue;
+        }
+
         FLOAT s_az, c_az, s_za, c_za;
         SINCOS(az, &s_az, &c_az);
         SINCOS(za, &s_za, &c_za);
