@@ -70,10 +70,13 @@ jobs:
           cargo clippy --all-targets --features=cuda,gpu-single -- -D warnings
 
   test:
-    name: Test ${{matrix.os}} Rust ${{matrix.rust.ver}} ex ${{matrix.rust.examples}}
+    name: Test ${{matrix.os}} Rust ${{matrix.rust}}
     runs-on: ${{matrix.os}}
     strategy:
       fail-fast: false
+      # Stable on every platform; the MSRV and nightly (type layout
+      # randomization) checks are about the Rust toolchain rather than the
+      # platform, so they run on one runner. Examples only run on stable.
       matrix:
         os:
           - ubuntu-24.04
@@ -83,14 +86,12 @@ jobs:
           - macos-26-intel
           - macos-26
         rust:
-          - ver: nightly
-            examples: false
-          - ver: beta
-            examples: false
-          - ver: stable
-            examples: true
-          - ver: "1.85.0" # MSRV
-            examples: false
+          - stable
+        include:
+          - os: ubuntu-24.04
+            rust: "1.85.0" # MSRV
+          - os: ubuntu-24.04
+            rust: nightly
 
     steps:
       - name: Checkout sources
@@ -120,7 +121,7 @@ jobs:
       - name: Install toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: ${{matrix.rust.ver}}
+          toolchain: ${{matrix.rust}}
 
       - name: Cache MWA beam file
         id: cache-beam
@@ -144,7 +145,7 @@ jobs:
       # Taken from https://github.com/dtolnay/thiserror/blob/a2d1ed1ccfc2a5dbb2a8fb45d4f938175a28bc86/.github/workflows/ci.yml
       - name: Enable type layout randomization
         run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout >> $GITHUB_ENV
-        if: ${{ matrix.rust.ver == 'nightly' }}
+        if: ${{ matrix.rust == 'nightly' }}
 
       - name: Run tests (dynamic)
         run: cargo test
@@ -169,11 +170,11 @@ jobs:
           fi
 
       - name: Run Rust example
-        if: ${{ matrix.rust.examples }} # only run examples on stable
+        if: ${{ matrix.rust == 'stable' }} # only run examples on stable
         run: cargo run --example fee 10
 
       - name: Run C examples
-        if: ${{ matrix.rust.examples }} # only run examples on stable
+        if: ${{ matrix.rust == 'stable' }} # only run examples on stable
         run: |
           cargo build
           echo "*** Compiling C examples ***"
@@ -198,7 +199,7 @@ jobs:
         run: cargo test --features=python
 
       - name: Run Python example
-        if: ${{ matrix.rust.examples }} # only run examples on stable
+        if: ${{ matrix.rust == 'stable' }} # only run examples on stable
         run: |
           python3 -m venv venv
           . ./venv/bin/activate
@@ -210,7 +211,7 @@ jobs:
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./examples/analytic.py
 
       - name: (ubuntu) install CUDA
-        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') }}
+        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') && matrix.rust != 'nightly' }}
         run: |
           wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
@@ -219,7 +220,7 @@ jobs:
           echo PATH=${PATH}:/usr/local/cuda/bin >> $GITHUB_ENV
 
       - name: (ubuntu) CUDA smoke tests
-        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') }}
+        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') && matrix.rust != 'nightly' }}
         run: |
           # Can't run the tests; there's no GPU
           cargo test --all --no-run --features=cuda
@@ -229,7 +230,7 @@ jobs:
           cargo test --all --no-run --features=python,cuda,gpu-single
 
       - name: (ubuntu) CUDA examples
-        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') && matrix.rust.examples }}
+        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') && matrix.rust == 'stable' }}
         run: |
           # Examples may fail because there's no GPU
           cargo build --features=cuda --example fee_cuda
