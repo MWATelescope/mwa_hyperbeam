@@ -95,6 +95,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         iau_order,
     )?;
 
+    // Without the "gpu-single" feature, `GpuFloat` is `f64` and this
+    // conversion is a no-op, which clippy would otherwise flag.
     #[allow(clippy::useless_conversion)]
     let diff = jones[(0, 0, 0)] - Jones::<GpuFloat>::from(jones_cpu);
 
