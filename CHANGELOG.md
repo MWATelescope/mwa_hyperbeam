@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-10-14
+
+### Changes
+
+- ⬆️ marlu v0.18.0. The re-exported `AzEl` and `Jones` are now Marlu 0.18's,
+  so callers passing Marlu 0.17 types need to update Marlu or convert at the
+  boundary. This matches Birli 0.20, so hyperbeam and Birli can share one
+  Marlu.
+
 ## [0.11.1] - 2026-10-10
 
 ### Fixed
