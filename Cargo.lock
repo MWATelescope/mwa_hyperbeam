@@ -896,9 +896,8 @@ checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
 name = "marlu"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ca480a71a2d5537fca6b4f721032b3b81e667fc1ec1ede66b797149fd02125f"
+version = "0.19.0"
+source = "git+https://github.com/MWATelescope/Marlu?branch=mswrite-bulk#f6d2874c1888c5b324f41fc1bd8abd66680c3274"
 dependencies = [
  "approx",
  "built",
@@ -938,7 +937,7 @@ checksum = "6b947ae49db0d222b1dbc6b113ce7248a3fc3a6ca21b696717bfc000ba4484d8"
 
 [[package]]
 name = "mwa_hyperbeam"
-version = "0.12.0"
+version = "0.13.0"
 dependencies = [
  "approx",
  "cbindgen",
