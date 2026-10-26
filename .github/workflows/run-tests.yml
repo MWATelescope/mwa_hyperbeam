@@ -70,6 +70,44 @@ jobs:
           cargo clippy --all-targets --features=cuda -- -D warnings
           cargo clippy --all-targets --features=cuda,gpu-single -- -D warnings
 
+  # Compile the HIP code against ROCm 7, whose headers make warpSize
+  # device-only. There's no GPU, so the tests and examples are only built. Pawsey
+  # uses ROCm 7.0.1, but that has no image on Docker Hub; 7.0.2 is the closest.
+  hip:
+    name: HIP (ROCm 7.0.2) build
+    runs-on: ubuntu-24.04
+    container: rocm/dev-ubuntu-24.04:7.0.2
+    env:
+      HIP_PATH: /opt/rocm
+      # MI250X
+      HYPERBEAM_HIP_ARCH: gfx90a
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          apt -y update
+          apt -y install libhdf5-dev pkg-config git
+          df -h /
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: HIP smoke tests
+        run: |
+          # Can't run the tests; there's no GPU
+          cargo test --all --no-run --features=hip
+          cargo test --all --no-run --features=hip,gpu-single
+
+      - run: df -h /
+        if: always()
+
   test:
     name: Test ${{matrix.os}} Rust ${{matrix.rust}}
     runs-on: ${{matrix.os}}
