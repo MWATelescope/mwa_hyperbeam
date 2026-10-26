@@ -149,7 +149,7 @@ extern "C" const char *gpu_analytic_calc_jones(const ANALYTIC_TYPE at, const FLO
                                                const int num_tiles, const FLOAT latitude_rad,
                                                const uint8_t norm_to_zenith, const uint8_t bowties_per_row, void *d_results) {
     dim3 gridDim, blockDim;
-    blockDim.x = warpSize;
+    blockDim.x = gpu_warp_size();
     gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
     analytic_kernel<<<gridDim, blockDim>>>(at, dipole_height_m, d_azs, d_zas, num_directions, d_freqs_hz, num_freqs,
                                            d_delays, d_amps, num_tiles, latitude_rad, (bool)norm_to_zenith, bowties_per_row,

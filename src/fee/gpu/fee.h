@@ -452,9 +452,10 @@ extern "C"
             return error;
         }
 
+        const int warp_size = gpu_warp_size();
         dim3 gridDim, blockDim;
-        blockDim.x = num_directions < warpSize ? num_directions : warpSize;
-        gridDim.x = num_directions < warpSize ? 1 : (num_directions - 1) / blockDim.x + 1;
+        blockDim.x = num_directions < warp_size ? num_directions : warp_size;
+        gridDim.x = num_directions < warp_size ? 1 : (num_directions - 1) / blockDim.x + 1;
         gridDim.y = num_coeffs;
         fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (JONES *)d_norm_jones, d_latitude_rad,
                                           iau_order, (JONES *)d_results);

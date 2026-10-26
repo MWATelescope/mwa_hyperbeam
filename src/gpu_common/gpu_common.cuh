@@ -63,7 +63,6 @@
 #define gpuDeviceSynchronize  cudaDeviceSynchronize
 #define gpuError_t            cudaError_t
 #define gpuSuccess            cudaSuccess
-#define warpSize              32
 
 #ifdef SINGLE
 #define CADD         cuCaddf
@@ -212,6 +211,25 @@ inline static __device__ FLOAT get_parallactic_angle(HADec hadec, FLOAT latitude
     sqsz = c_phi * s_ha;
     cqsz = s_phi * c_dec - c_phi * s_dec * c_ha;
     return ((sqsz != 0.0 || cqsz != 0.0) ? ATAN2(sqsz, cqsz) : 0.0);
+}
+
+/**
+ * The warp (wavefront) size of the current device, for choosing launch sizes
+ * in host code. `warpSize` can't be used here: CUDA only provides it in device
+ * code, and since ROCm 7 HIP's `warpSize` is device-only too. AMD devices use
+ * either 32 or 64, so ask HIP rather than assuming.
+ */
+inline static int gpu_warp_size() {
+#if __HIPCC__
+    int device, warp_size;
+    if (hipGetDevice(&device) != hipSuccess ||
+        hipDeviceGetAttribute(&warp_size, hipDeviceAttributeWarpSize, device) != hipSuccess) {
+        return 64;
+    }
+    return warp_size;
+#else
+    return 32;
+#endif
 }
 
 #endif // BINDGEN
