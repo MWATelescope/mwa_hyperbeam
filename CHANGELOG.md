@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.1] - 2026-10-26
+
+### Fixed
+
+- HIP builds with ROCm 7. ROCm 7 made `warpSize` device-only, so the host code
+  that picks kernel launch sizes failed to compile ("reference to __device__
+  function 'operator int' in __host__ function"). The host code now asks the
+  device for its warp size.
+
 ## [0.13.0] - 2026-10-15
 
 ### Changes
