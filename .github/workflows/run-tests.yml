@@ -79,7 +79,7 @@ jobs:
     container: rocm/dev-ubuntu-24.04:7.0.2
     env:
       HIP_PATH: /opt/rocm
-      # Setonix's MI250X
+      # MI250X
       HYPERBEAM_HIP_ARCH: gfx90a
     steps:
       - name: Checkout sources
