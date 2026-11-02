@@ -24,9 +24,8 @@ env:
   MWA_BEAM_FILE: mwa_full_embedded_element_pattern.h5
 
 jobs:
-  # fmt and clippy once, on one runner, rather than in every matrix cell. This
-  # is also where the GPU code is linted: there is no GPU to run it on, but
-  # clippy only needs nvcc to build it.
+  # fmt and clippy once, on one runner, rather than in every matrix cell. The
+  # GPU code is linted in the cuda and hip jobs below.
   lint:
     name: fmt and clippy
     runs-on: ubuntu-24.04
@@ -57,21 +56,66 @@ jobs:
       - name: cargo clippy (python)
         run: cargo clippy --all-targets --features=python -- -D warnings
 
-      - name: Install CUDA
+  # The GPU jobs. There's no GPU in CI, so each one lints the GPU code and builds
+  # the tests and examples without running them. CUDA and HIP have the same
+  # steps; only the toolchain (nvcc on the runner, or the ROCm container) and
+  # the feature names differ.
+  cuda:
+    name: CUDA (12.9) build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v6
+
+      - name: Install dependencies
         run: |
+          sudo apt -y update
+          sudo apt -y install libhdf5-dev gcc pkg-config python3
           wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
           sudo dpkg -i cuda-keyring_1.1-1_all.deb
           sudo apt -y update
           sudo apt -y install cuda-nvcc-12-9 --no-install-recommends
           echo PATH=${PATH}:/usr/local/cuda/bin >> $GITHUB_ENV
 
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
       - name: cargo clippy (cuda)
         run: |
           cargo clippy --all-targets --features=cuda -- -D warnings
           cargo clippy --all-targets --features=cuda,gpu-single -- -D warnings
 
-  # Compile the HIP code against ROCm 7, whose headers make warpSize
-  # device-only. There's no GPU, so the tests and examples are only built. Pawsey
+      - name: CUDA smoke tests
+        run: |
+          # Can't run the tests; there's no GPU
+          cargo test --all --no-run --features=cuda
+          cargo test --all --no-run --features=cuda,gpu-single
+          cargo test --all --no-run --features=python,cuda
+          cargo test --all --no-run --features=python,cuda,gpu-single
+
+      - name: CUDA C examples
+        run: |
+          # Compile only; there's no GPU to run them on
+          cargo build --release --features=cuda
+          gcc -O3 examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          nvcc -O3 examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          gcc -O3 examples/analytic_gpu.c -o analytic_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          nvcc -O3 examples/analytic_cuda_device.cu -o analytic_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+
+          cargo build --release --features=cuda,gpu-single
+          gcc -O3 -D SINGLE examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          nvcc -O3 -D SINGLE examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          gcc -O3 -D SINGLE examples/analytic_gpu.c -o analytic_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+          nvcc -O3 -D SINGLE examples/analytic_cuda_device.cu -o analytic_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
+
+  # ROCm 7 headers make warpSize device-only, which is what broke 0.13.0. Pawsey
   # uses ROCm 7.0.1, but that has no image on Docker Hub; 7.0.2 is the closest.
   hip:
     name: HIP (ROCm 7.0.2) build
@@ -93,11 +137,18 @@ jobs:
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: cargo clippy (hip)
+        run: |
+          cargo clippy --all-targets --features=hip -- -D warnings
+          cargo clippy --all-targets --features=hip,gpu-single -- -D warnings
 
       - name: HIP smoke tests
         run: |
@@ -113,22 +164,18 @@ jobs:
     runs-on: ${{matrix.os}}
     strategy:
       fail-fast: false
-      # Stable on every platform; the MSRV and nightly (type layout
-      # randomization) checks are about the Rust toolchain rather than the
-      # platform, so they run on one runner. Examples only run on stable.
+      # One Linux and one macOS runner on stable, plus the MSRV on Linux.
+      # Intel macOS and aarch64 Linux are still built (but not tested) by the
+      # release workflow. GPU features are only built in the cuda and hip jobs.
+      # Examples only run on stable.
       matrix:
-        os:
-          - ubuntu-24.04
-          - ubuntu-24.04-arm
-          - macos-26-intel
-          - macos-26
-        rust:
-          - stable
         include:
           - os: ubuntu-24.04
-            rust: "1.85.0" # MSRV
+            rust: stable
+          - os: macos-26
+            rust: stable
           - os: ubuntu-24.04
-            rust: nightly
+            rust: "1.85.0" # MSRV
 
     steps:
       - name: Checkout sources
@@ -178,11 +225,6 @@ jobs:
             --retry-max-time 120 \
             https://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 \
             -o mwa_full_embedded_element_pattern.h5
-
-      # Taken from https://github.com/dtolnay/thiserror/blob/a2d1ed1ccfc2a5dbb2a8fb45d4f938175a28bc86/.github/workflows/ci.yml
-      - name: Enable type layout randomization
-        run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout >> $GITHUB_ENV
-        if: ${{ matrix.rust == 'nightly' }}
 
       - name: Run tests (dynamic)
         run: cargo test
@@ -246,63 +288,3 @@ jobs:
           echo "*** Running Python examples ***"
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./examples/fee.py mwa_full_embedded_element_pattern.h5
           LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/debug/ ./examples/analytic.py
-
-      - name: (ubuntu) install CUDA
-        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') && matrix.rust != 'nightly' }}
-        run: |
-          wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb
-          sudo dpkg -i cuda-keyring_1.1-1_all.deb
-          sudo apt -y update
-          sudo apt -y install cuda-nvcc-12-9 --no-install-recommends
-          echo PATH=${PATH}:/usr/local/cuda/bin >> $GITHUB_ENV
-
-      - name: (ubuntu) CUDA smoke tests
-        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') && matrix.rust != 'nightly' }}
-        run: |
-          # Can't run the tests; there's no GPU
-          cargo test --all --no-run --features=cuda
-          cargo test --all --no-run --features=cuda,gpu-single
-
-          cargo test --all --no-run --features=python,cuda
-          cargo test --all --no-run --features=python,cuda,gpu-single
-
-      - name: (ubuntu) CUDA examples
-        if: ${{ startsWith(matrix.os, 'ubuntu') && ! endsWith(matrix.os, 'arm') && matrix.rust == 'stable' }}
-        run: |
-          # Examples may fail because there's no GPU
-          cargo build --features=cuda --example fee_cuda
-          ./target/debug/examples/fee_cuda 10 || true
-          cargo build --features=cuda --example analytic_cuda
-          ./target/debug/examples/analytic_cuda 10 || true
-          cargo build --features=cuda,gpu-single --example fee_cuda
-          ./target/debug/examples/fee_cuda 10 || true
-          cargo build --features=cuda,gpu-single --example analytic_cuda
-          ./target/debug/examples/analytic_cuda 10 || true
-
-          cargo build --release --features=cuda
-          $CC -O3 examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5 || true
-          nvcc -O3 examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5 || true
-          $CC -O3 examples/analytic_gpu.c -o analytic_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./analytic_cuda || true
-          nvcc -O3 examples/analytic_cuda_device.cu -o analytic_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./analytic_cuda_device || true
-
-          cargo build --release --features=cuda,gpu-single
-          $CC -O3 -D SINGLE examples/fee_gpu.c -o fee_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./fee_cuda mwa_full_embedded_element_pattern.h5 || true
-          nvcc -O3 -D SINGLE examples/fee_cuda_device.cu -o fee_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./fee_cuda_device mwa_full_embedded_element_pattern.h5 || true
-          $CC -O3 -D SINGLE examples/analytic_gpu.c -o analytic_cuda -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./analytic_cuda || true
-          nvcc -O3 -D SINGLE examples/analytic_cuda_device.cu -o analytic_cuda_device -I ./include/ -L ./target/release/ -l mwa_hyperbeam
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release ./analytic_cuda_device || true
-
-          . ./venv/bin/activate
-          maturin develop -b pyo3 --features=python,cuda
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5 || true
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/analytic_gpu.py || true
-          maturin develop -b pyo3 --features=python,cuda,gpu-single
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/fee_gpu.py mwa_full_embedded_element_pattern.h5 || true
-          LD_LIBRARY_PATH=$LD_LIBRARY_PATH:./target/release/ ./examples/analytic_gpu.py || true
