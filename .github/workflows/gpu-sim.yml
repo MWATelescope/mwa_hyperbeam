@@ -1,0 +1,81 @@
+name: GPU Simulator
+
+# Optional, non-required check. The hosted runners have no GPU, so this builds
+# the HIP code for gfx942, in double and in single precision, and runs the test
+# suite (including the GPU tests that the `hip` job in run-tests.yml only
+# compiles) on a simulated AMD Instinct MI300X
+# (https://github.com/pantheongpu/pantheonsim). A simulator cannot reproduce
+# hardware-specific behavior or timing, so it complements real-GPU testing and
+# does not replace it.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - "src/**"
+      - "build.rs"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/gpu-sim.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # build.rs passes this to hipcc as --offload-arch (gfx942 is MI300X).
+  HYPERBEAM_HIP_ARCH: gfx942
+  HIP_PATH: /opt/rocm
+  MWA_BEAM_FILE: mwa_full_embedded_element_pattern.h5
+
+jobs:
+  hip-tests:
+    name: ${{ matrix.features }} (ROCm 7.0 and simulated MI300X)
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        features: [ "hip", "hip,gpu-single" ]
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+
+      - name: Set up the simulated GPU and ROCm
+        uses: pantheongpu/setup-pantheonsim@656f502ef4782d94d34d8ddd368e333960609639 # v0.1.8
+        with:
+          gpu: amd/mi300x
+          cuda-toolkit: none
+          rocm: "7.0"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libhdf5-dev pkg-config
+
+      # Same download as the cross-platform tests job in run-tests.yml (the
+      # server wants a browser User-Agent).
+      - name: Download MWA beam file
+        run: |
+          curl -fL \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            --retry 5 \
+            --retry-delay 10 \
+            --retry-all-errors \
+            --retry-max-time 120 \
+            https://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5 \
+            -o mwa_full_embedded_element_pattern.h5
+
+      # Compile with the host toolchain first; only the tests run under vgpu.
+      - name: Build
+        run: cargo test --release --no-run --features=${{ matrix.features }}
+
+      - name: Test
+        run: vgpu run cargo test --release --features=${{ matrix.features }}
