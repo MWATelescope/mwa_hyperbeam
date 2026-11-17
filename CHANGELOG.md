@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] - 2026-11-17
+
+### Changes
+
+- ⬆️ marlu v0.20.0 (hifitime 4). The re-exported `AzEl` and `Jones`
+  are now Marlu 0.20's, so callers passing Marlu 0.19 types need to update
+  Marlu or convert at the boundary.
+- ⬆️ MSRV 1.88 (needed by Marlu 0.20).
+- hdf5-metno is no longer pinned to 0.12.3, and hdf5-metno-sys 0.11.4 is used,
+  which supports HDF5 up to 2.1.0.
+
 ## [0.13.1] - 2026-10-26
 
 ### Fixed
