@@ -175,7 +175,7 @@ jobs:
           - os: macos-26
             rust: stable
           - os: ubuntu-24.04
-            rust: "1.85.0" # MSRV
+            rust: "1.88.0" # MSRV
 
     steps:
       - name: Checkout sources
@@ -188,9 +188,12 @@ jobs:
         run: |
           brew install automake autoconf pkg-config gcc
 
-      - name: (macos) install hdf5 2.0.0 (>2.0.0 is not supported by hdf5-metno-sys 0.11.2. 0.11.3 needs higher MSRV than 1.85...)
+      - name: (macos) install hdf5 2.0.0 (pinned so a new Homebrew hdf5 cannot outrun hdf5-metno-sys)
         if: ${{ startsWith(matrix.os, 'macos') }}
         run: |
+          # brew extract reads the formula history from homebrew/core, which
+          # Homebrew no longer taps by default (it installs from its API).
+          brew tap --force homebrew/core
           brew tap-new local/hdf5
           brew extract --version 2.0.0 hdf5 local/hdf5
           brew install local/hdf5/hdf5@2.0.0
