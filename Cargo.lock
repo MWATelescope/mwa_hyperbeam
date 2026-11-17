@@ -711,6 +711,8 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 [[package]]
 name = "marlu"
 version = "0.20.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f75f34f68541d5dcdf453e80291d95d1962fa607326ba9ccc90e0fd4f82f486b"
 dependencies = [
  "approx",
  "built",
