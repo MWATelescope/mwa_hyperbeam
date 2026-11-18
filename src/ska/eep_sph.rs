@@ -139,8 +139,11 @@ impl SkaLowEepSph {
                     expected: "expected 3 x N".to_string(),
                 });
             }
-            let modes: Array2<i64> = modes.read_2d()?;
-            let file_l_max = modes[(2, modes_shape[1] - 1)].max(0) as usize;
+            // Read raw buffers (row major) rather than with hdf5's ndarray
+            // support, so that downstream crates don't need hdf5's ndarray to
+            // be the same version as ours.
+            let modes: Vec<i64> = modes.read_raw()?;
+            let file_l_max = modes[2 * modes_shape[1] + modes_shape[1] - 1].max(0) as usize;
 
             let coeffs = h5.dataset("coefficients")?;
             let shape = coeffs.shape();
@@ -247,10 +250,14 @@ impl SkaLowEepSph {
             let _guard = self.hdf5_lock.lock().unwrap_or_else(|e| e.into_inner());
             let h5 = hdf5_metno::File::open(&file.path)?;
             let ds = h5.dataset("coefficients")?;
-            let coeffs: Array3<c64> = ds.read_slice(s![.., ..num_coeffs(l_max), ..])?;
+            let shape = ds.shape();
+            let raw: Vec<c64> = ds.read_raw()?;
+            let all = ArrayView3::from_shape((shape[0], shape[1], shape[2]), &raw)
+                .expect("the dataset's shape was checked when the file was opened");
             // EveryBeam's preparation script zeroes NaNs; do the same in case
             // files were made some other way.
-            coeffs.mapv(|c| if c.is_nan() { c64::default() } else { c })
+            all.slice(s![.., ..num_coeffs(l_max), ..])
+                .mapv(|c| if c.is_nan() { c64::default() } else { c })
         };
         let coeffs = Arc::new(coeffs);
         self.cache.write().insert(file_index, Arc::clone(&coeffs));
