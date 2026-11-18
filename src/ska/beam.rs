@@ -131,6 +131,35 @@ impl SkaLowBeam {
         })
     }
 
+    /// The frequencies at which the model is defined \[Hz\], ascending: the
+    /// frequencies of an EEP grid (`ska-low-eep-grid`, which is linearly
+    /// interpolated between them) or of the FEKO coefficient files
+    /// (`ska-low-eep-sph`, which uses the closest one). `None` for
+    /// `ska-low-analytic`, which is defined at any frequency.
+    pub fn get_freqs(&self) -> Option<Vec<f64>> {
+        match &self.inner {
+            SkaLowBeamInner::Analytic(_) => None,
+            SkaLowBeamInner::EepGrid(b) => Some(b.get_freqs().to_vec()),
+            SkaLowBeamInner::EepSph(b) => Some(b.get_freqs()),
+        }
+    }
+
+    /// The frequency that will actually be used for `freq_hz`: the closest
+    /// coefficient-file frequency for `ska-low-eep-sph`, otherwise `freq_hz`.
+    pub fn find_closest_freq(&self, freq_hz: f64) -> f64 {
+        match &self.inner {
+            SkaLowBeamInner::EepSph(b) => b.find_closest_freq(freq_hz),
+            _ => freq_hz,
+        }
+    }
+
+    /// Remove any cached data (FEKO coefficients for `ska-low-eep-sph`).
+    pub fn empty_cache(&self) {
+        if let SkaLowBeamInner::EepSph(b) = &self.inner {
+            b.empty_cache();
+        }
+    }
+
     /// Which model this is.
     pub fn model(&self) -> SkaLowModel {
         match &self.inner {
