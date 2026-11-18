@@ -21,6 +21,11 @@ Versioning](https://semver.org/spec/v2.0.0.html).
     beams), as EveryBeam does for OSKAR telescopes, including each station's
     rigid rotation about the local vertical (`SkaStation::with_rotation`;
     `rotation_from_p_axis` converts a station's `COORDINATE_AXES` p axis).
+    Stations can also have their own local frame
+    (`SkaStation::with_local_frame`, and `local_frames` for GPU stations), so
+    that directions given in an array-centre frame are converted to each
+    station's horizon, as EveryBeam does for stations far from the array
+    centre.
     Array factors use a vectorised sin/cos (`ska::fastmath`, ~1 ulp), about
     twice as fast as calling libm per element.
   - `SkaLowBeam`, a runtime-selected model, which is also exposed via the C

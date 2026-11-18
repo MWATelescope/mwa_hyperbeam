@@ -35,6 +35,7 @@ extern "C" {
         d_positions: *const f32,
         d_weights: *const f32,
         d_rotations: *const f32,
+        d_frames: *const f32,
         pointing_az: f32,
         pointing_za: f32,
         d_latitude_rad: *const f32,

@@ -66,6 +66,10 @@ typedef struct SkaGpuModel {
 /// `pointing_za`). If `d_rotations` is not NULL, it gives each tile's rotation
 /// about the local vertical [radians, the angle of its X dipoles from East
 /// towards North]; elements are then evaluated at phi - rotation. If
+/// `d_frames` is not NULL, it gives each tile's local frame (9 values per
+/// tile, row major: the rows are the tile's East, North and Up unit vectors in
+/// the frame of the directions; see `SkaStation::with_local_frame`), and the
+/// directions, pointing and latitude are converted to it. If
 /// `d_latitude_rad` is not NULL, the parallactic-angle correction is applied.
 ///
 /// Directions outside the model's domain (e.g. outside an EEP grid) give zero
@@ -74,8 +78,8 @@ const char *gpu_ska_calc_jones(const SkaGpuModel *model, const FLOAT *d_azs, con
                                const int num_directions, const FLOAT *d_freqs_hz, const int num_freqs,
                                const int num_tiles, const int *d_element_ids, const int num_station_elements,
                                const FLOAT *d_positions, const FLOAT *d_weights, const FLOAT *d_rotations,
-                               const FLOAT pointing_az, const FLOAT pointing_za, const FLOAT *d_latitude_rad,
-                               const int iau_order, void *d_results);
+                               const FLOAT *d_frames, const FLOAT pointing_az, const FLOAT pointing_za,
+                               const FLOAT *d_latitude_rad, const int iau_order, void *d_results);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -391,11 +395,35 @@ inline __device__ void ska_apply_pa_correction(JONES *jm, FLOAT pa, int iau_orde
     }
 }
 
+// Convert a direction (az, za) to a tile's local frame `m` (row major; see
+// to_local in src/ska/station.rs). `l` receives the local unit vector.
+inline __device__ void ska_to_local(const FLOAT *m, FLOAT az, FLOAT za, FLOAT *local_az, FLOAT *local_za,
+                                    FLOAT l[3]) {
+    FLOAT s_az, c_az, s_za, c_za;
+    SINCOS(az, &s_az, &c_az);
+    SINCOS(za, &s_za, &c_za);
+    const FLOAT v[3] = {s_za * s_az, s_za * c_az, c_za};
+    for (int r = 0; r < 3; r++)
+        l[r] = m[3 * r] * v[0] + m[3 * r + 1] * v[1] + m[3 * r + 2] * v[2];
+    const FLOAT horizontal = SQRT(l[0] * l[0] + l[1] * l[1]);
+    if (horizontal > (FLOAT)1e-12) {
+        *local_az = ATAN2(l[0], l[1]);
+    } else {
+        // At the local zenith, keep the given azimuth's direction (it still
+        // defines the polarisation basis).
+        const FLOAT h0 = m[0] * s_az + m[1] * c_az;
+        const FLOAT h1 = m[3] * s_az + m[4] * c_az;
+        *local_az = ATAN2(h0, h1);
+    }
+    *local_za = ATAN2(horizontal, l[2]);
+}
+
 __global__ void ska_kernel(const SkaGpuModel model, const FLOAT *azs, const FLOAT *zas, const int num_directions,
                            const FLOAT *freqs_hz, const int num_freqs, const int num_tiles, const int *element_ids,
                            const int num_station_elements, const FLOAT *positions, const FLOAT *weights,
-                           const FLOAT *rotations, const FLOAT pointing_az, const FLOAT pointing_za,
-                           const FLOAT *latitude_rad, const int iau_order, JONES *results) {
+                           const FLOAT *rotations, const FLOAT *frames, const FLOAT pointing_az,
+                           const FLOAT pointing_za, const FLOAT *latitude_rad, const int iau_order,
+                           JONES *results) {
     for (int i_dir = blockIdx.x * blockDim.x + threadIdx.x; i_dir < num_directions;
          i_dir += gridDim.x * blockDim.x) {
         const FLOAT az = azs[i_dir];
@@ -436,19 +464,45 @@ __global__ void ska_kernel(const SkaGpuModel model, const FLOAT *azs, const FLOA
             for (int i_tile = 0; i_tile < num_tiles; i_tile++) {
                 JONES j = ska_zero_jones();
                 int ok = 1;
+                // The direction, pointing and parallactic angle in the tile's
+                // local frame (if it has one).
+                FLOAT tile_za = za;
+                FLOAT tile_base_phi = phi;
+                FLOAT tile_ds[3] = {ds[0], ds[1], ds[2]};
+                FLOAT tile_pa = pa;
+                if (frames != NULL) {
+                    const FLOAT *m = frames + (size_t)9 * i_tile;
+                    FLOAT l_az, l_za, l[3], p_az, p_za, p[3];
+                    ska_to_local(m, az, za, &l_az, &l_za, l);
+                    ska_to_local(m, pointing_az, pointing_za, &p_az, &p_za, p);
+                    tile_za = l_za;
+                    tile_base_phi = M_PI_2 - l_az;
+                    for (int r = 0; r < 3; r++)
+                        tile_ds[r] = p[r] - l[r];
+                    if (latitude_rad != NULL) {
+                        // The celestial pole in the local frame.
+                        FLOAT pole_az, pole_za, pole[3];
+                        ska_to_local(m, 0.0, M_PI_2 - *latitude_rad, &pole_az, &pole_za, pole);
+                        FLOAT s_daz, c_daz, s_lza, c_lza, s_plat, c_plat;
+                        SINCOS(l_az - pole_az, &s_daz, &c_daz);
+                        SINCOS(l_za, &s_lza, &c_lza);
+                        SINCOS(M_PI_2 - pole_za, &s_plat, &c_plat);
+                        tile_pa = ATAN2(-s_daz * c_plat, s_plat * s_lza - c_plat * c_lza * c_daz);
+                    }
+                }
                 // The direction's phi in the tile's (rotated) frame.
                 const FLOAT rotation = rotations != NULL ? rotations[i_tile] : 0.0;
-                const FLOAT tile_phi = phi - rotation;
+                const FLOAT tile_phi = tile_base_phi - rotation;
                 JONES shared_element = unrotated_element;
                 int shared_ok = unrotated_ok;
-                if (model.model != SKA_EEP_SPH && rotation != 0.0) {
-                    shared_ok = ska_element_response(&model, i_freq, freq, 0, za, tile_phi, &shared_element);
+                if (model.model != SKA_EEP_SPH && (rotation != 0.0 || frames != NULL)) {
+                    shared_ok = ska_element_response(&model, i_freq, freq, 0, tile_za, tile_phi, &shared_element);
                 }
                 if (positions == NULL) {
                     // Single element.
                     if (model.model == SKA_EEP_SPH) {
                         const int element_id = element_ids != NULL ? element_ids[i_tile] : 0;
-                        j = ska_sph_response(&model, i_freq, element_id, za, tile_phi);
+                        j = ska_sph_response(&model, i_freq, element_id, tile_za, tile_phi);
                     } else {
                         ok = shared_ok;
                         j = shared_element;
@@ -464,11 +518,12 @@ __global__ void ska_kernel(const SkaGpuModel model, const FLOAT *azs, const FLOA
                         if (w[e] == 0.0)
                             continue;
                         FLOAT s_ph, c_ph;
-                        SINCOS(k * (ds[0] * pos[3 * e] + ds[1] * pos[3 * e + 1] + ds[2] * pos[3 * e + 2]), &s_ph,
-                               &c_ph);
+                        SINCOS(k * (tile_ds[0] * pos[3 * e] + tile_ds[1] * pos[3 * e + 1] +
+                                    tile_ds[2] * pos[3 * e + 2]),
+                               &s_ph, &c_ph);
                         const COMPLEX phasor = MAKE_COMPLEX(c_ph * w[e], s_ph * w[e]);
                         if (model.model == SKA_EEP_SPH) {
-                            const JONES el = ska_sph_response(&model, i_freq, e, za, tile_phi);
+                            const JONES el = ska_sph_response(&model, i_freq, e, tile_za, tile_phi);
                             ska_add_scaled(&j, &el, phasor);
                         } else {
                             af += phasor;
@@ -493,7 +548,7 @@ __global__ void ska_kernel(const SkaGpuModel model, const FLOAT *azs, const FLOA
                     j.j01 = ska_neg(j.j01);
                     j.j11 = ska_neg(j.j11);
                     if (latitude_rad != NULL)
-                        ska_apply_pa_correction(&j, pa, iau_order);
+                        ska_apply_pa_correction(&j, tile_pa, iau_order);
                 }
                 results[((size_t)i_tile * num_freqs + i_freq) * num_directions + i_dir] = j;
             }

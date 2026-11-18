@@ -7,7 +7,8 @@
 use marlu::{c64, constants::VEL_C, AzEl, Jones};
 
 use super::{
-    az_to_phi, everybeam_to_hyperbeam, fastmath, par_map_jones, SkaBeamError, SkaElementResponse,
+    az_to_phi, everybeam_to_hyperbeam_with_pa, fastmath, par_map_jones, parallactic_angle,
+    SkaBeamError, SkaElementResponse,
 };
 
 /// An SKA-Low station: an element-response model, the positions of the
@@ -44,6 +45,15 @@ use super::{
 /// still the theta and azimuth components on the sky, and the rows are the
 /// station's (rotated) X and Y dipoles.
 ///
+/// # Local frames
+///
+/// The stations of a large array don't share a horizon: an SKA-Low station
+/// 40 km from the array centre has a local vertical about 0.36 degrees from
+/// the centre's. By default, directions, pointings and latitudes are taken to
+/// be in the station's own frame. With [`SkaStation::with_local_frame`],
+/// they are instead given in a common (array) frame and converted to the
+/// station's frame, as EveryBeam does with each station's ITRF frame.
+///
 /// [`SkaLowEepGrid`]: super::SkaLowEepGrid
 /// [`SkaLowAnalytic`]: super::SkaLowAnalytic
 pub struct SkaStation<E: SkaElementResponse> {
@@ -51,6 +61,7 @@ pub struct SkaStation<E: SkaElementResponse> {
     positions_enu: Vec<[f64; 3]>,
     weights: Vec<f64>,
     rotation_rad: f64,
+    local_frame: Option<[[f64; 3]; 3]>,
     // The positions as separate East, North and Up arrays, for the
     // vectorised array-factor code.
     xs: Vec<f64>,
@@ -67,6 +78,52 @@ pub struct SkaStation<E: SkaElementResponse> {
 /// first. Any vertical component of `p` is ignored.
 pub fn rotation_from_p_axis(p_enu: [f64; 3]) -> f64 {
     p_enu[1].atan2(p_enu[0])
+}
+
+/// Convert a direction (azimuth, zenith angle) in an array frame to a
+/// station's local frame (see [`SkaStation::with_local_frame`]).
+#[inline]
+pub(crate) fn to_local(m: &[[f64; 3]; 3], az_rad: f64, za_rad: f64) -> (f64, f64) {
+    let mul = |v: [f64; 3]| {
+        [
+            m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+            m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+            m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+        ]
+    };
+    let l = mul(enu_unit_vector(az_rad, za_rad));
+    let horizontal = l[0].hypot(l[1]);
+    // At the local zenith, the azimuth is arbitrary but it still defines the
+    // theta and phi polarisation basis; use the direction of the given
+    // azimuth in the local frame.
+    let az = if horizontal > 1e-12 {
+        l[0].atan2(l[1])
+    } else {
+        let (s, c) = az_rad.sin_cos();
+        let h = mul([s, c, 0.0]);
+        h[0].atan2(h[1])
+    };
+    (az, horizontal.atan2(l[2]))
+}
+
+/// The parallactic angle of a direction (azimuth, zenith angle) given in a
+/// station's local frame, where `latitude_rad` is the latitude of the array
+/// frame. The celestial pole, at azimuth 0 and elevation `latitude_rad` in the
+/// array frame, is converted to the station's frame, where it is at some
+/// latitude and (in general, slightly non-zero) azimuth.
+#[inline]
+pub(crate) fn local_parallactic_angle(
+    m: &[[f64; 3]; 3],
+    az_rad: f64,
+    za_rad: f64,
+    latitude_rad: f64,
+) -> f64 {
+    let (pole_az, pole_za) = to_local(m, 0.0, std::f64::consts::FRAC_PI_2 - latitude_rad);
+    parallactic_angle(
+        az_rad - pole_az,
+        za_rad,
+        std::f64::consts::FRAC_PI_2 - pole_za,
+    )
 }
 
 /// Unit vector (East, North, Up) for an azimuth and zenith angle.
@@ -120,6 +177,7 @@ impl<E: SkaElementResponse> SkaStation<E> {
             positions_enu,
             weights,
             rotation_rad: 0.0,
+            local_frame: None,
             xs,
             ys,
             zs,
@@ -133,6 +191,24 @@ impl<E: SkaElementResponse> SkaStation<E> {
     pub fn with_rotation(mut self, rotation_rad: f64) -> SkaStation<E> {
         self.rotation_rad = rotation_rad;
         self
+    }
+
+    /// Give the station its own local frame (see the
+    /// [type-level documentation](SkaStation#local-frames)). The rows of
+    /// `enu_to_local` are the station's local East, North and Up unit vectors,
+    /// expressed in the (array) East, North, Up frame in which directions,
+    /// pointings and latitudes will be given; i.e. a direction `v` in the
+    /// array frame is `enu_to_local * v` in the station's frame. The
+    /// station's rotation is relative to its local East.
+    pub fn with_local_frame(mut self, enu_to_local: [[f64; 3]; 3]) -> SkaStation<E> {
+        self.local_frame = Some(enu_to_local);
+        self
+    }
+
+    /// The station's local frame, if it has one (see
+    /// [`with_local_frame`](Self::with_local_frame)).
+    pub fn local_frame(&self) -> Option<[[f64; 3]; 3]> {
+        self.local_frame
     }
 
     /// The station's rotation (the angle of its X dipoles from East towards
@@ -157,7 +233,9 @@ impl<E: SkaElementResponse> SkaStation<E> {
     }
 
     /// The (scalar) array factor of the station, normalised by the sum of the
-    /// weights (so it is 1 in the pointing direction).
+    /// weights (so it is 1 in the pointing direction). The direction and
+    /// pointing are in the station's own frame (any
+    /// [local frame](Self::with_local_frame) is not applied).
     pub fn array_factor(
         &self,
         az_rad: f64,
@@ -189,7 +267,8 @@ impl<E: SkaElementResponse> SkaStation<E> {
 
     /// The station response in EveryBeam's convention (`[[X_theta, X_phi],
     /// [Y_theta, Y_phi]]`), for a direction (azimuth North through East,
-    /// zenith angle) and pointing.
+    /// zenith angle) and pointing in the station's own frame (any
+    /// [local frame](Self::with_local_frame) is not applied).
     pub fn station_response(
         &self,
         az_rad: f64,
@@ -245,14 +324,23 @@ impl<E: SkaElementResponse> SkaStation<E> {
         latitude_rad: Option<f64>,
         iau_order: bool,
     ) -> Result<Jones<f64>, SkaBeamError> {
-        let j = self.station_response(az_rad, za_rad, freq_hz, pointing_az_rad, pointing_za_rad)?;
-        Ok(everybeam_to_hyperbeam(
-            j,
-            az_rad,
-            za_rad,
-            latitude_rad,
-            iau_order,
-        ))
+        let (az, za, paz, pza, pa) = match self.local_frame {
+            None => (
+                az_rad,
+                za_rad,
+                pointing_az_rad,
+                pointing_za_rad,
+                latitude_rad.map(|lat| parallactic_angle(az_rad, za_rad, lat)),
+            ),
+            Some(m) => {
+                let (az, za) = to_local(&m, az_rad, za_rad);
+                let (paz, pza) = to_local(&m, pointing_az_rad, pointing_za_rad);
+                let pa = latitude_rad.map(|lat| local_parallactic_angle(&m, az, za, lat));
+                (az, za, paz, pza, pa)
+            }
+        };
+        let j = self.station_response(az, za, freq_hz, paz, pza)?;
+        Ok(everybeam_to_hyperbeam_with_pa(j, pa, iau_order))
     }
 
     /// Calculate the station-beam Jones matrix for a direction and pointing

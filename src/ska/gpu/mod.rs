@@ -44,10 +44,13 @@ pub enum SkaGpuTiles<'a> {
     /// (except for `ska-low-eep-sph`). `rotations_rad` (if given) has one
     /// rotation per station, as for
     /// [`SkaStation::with_rotation`](super::SkaStation::with_rotation).
+    /// `local_frames` (if given) has one local frame per station, as for
+    /// [`SkaStation::with_local_frame`](super::SkaStation::with_local_frame).
     Stations {
         positions_enu: ArrayView3<'a, f64>,
         weights: Option<ArrayView2<'a, f64>>,
         rotations_rad: Option<&'a [f64]>,
+        local_frames: Option<&'a [[[f64; 3]; 3]]>,
     },
 }
 
@@ -69,6 +72,7 @@ pub struct SkaLowBeamGpu {
     d_positions: Option<DevicePointer<GpuFloat>>,
     d_weights: Option<DevicePointer<GpuFloat>>,
     d_rotations: Option<DevicePointer<GpuFloat>>,
+    d_frames: Option<DevicePointer<GpuFloat>>,
 
     // Device memory referenced by `model`; kept here so it lives as long as
     // `model`.
@@ -221,84 +225,107 @@ impl SkaLowBeamGpu {
         }
 
         let num_beam_elements = beam.num_elements();
-        let (num_tiles, d_element_ids, num_station_elements, d_positions, d_weights, d_rotations) =
-            match tiles {
-                SkaGpuTiles::Elements(ids) => {
-                    if let Some(n) = num_beam_elements {
-                        if let Some(&bad) = ids.iter().find(|&&id| id >= n) {
-                            return Err(SkaBeamError::ElementOutOfRange {
-                                got: bad,
-                                num_elements: n,
+        let (
+            num_tiles,
+            d_element_ids,
+            num_station_elements,
+            d_positions,
+            d_weights,
+            d_rotations,
+            d_frames,
+        ) = match tiles {
+            SkaGpuTiles::Elements(ids) => {
+                if let Some(n) = num_beam_elements {
+                    if let Some(&bad) = ids.iter().find(|&&id| id >= n) {
+                        return Err(SkaBeamError::ElementOutOfRange {
+                            got: bad,
+                            num_elements: n,
+                        });
+                    }
+                }
+                let ids: Vec<i32> = ids.iter().map(|&i| i as i32).collect();
+                (
+                    ids.len(),
+                    Some(DevicePointer::copy_to_device(&ids)?),
+                    0,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            }
+            SkaGpuTiles::Stations {
+                positions_enu,
+                weights,
+                rotations_rad,
+                local_frames,
+            } => {
+                let (num_stations, num_elements, three) = positions_enu.dim();
+                assert_eq!(
+                    three, 3,
+                    "positions_enu must have shape (stations, elements, 3)"
+                );
+                if let Some(n) = num_beam_elements {
+                    if num_elements != n {
+                        return Err(SkaBeamError::PositionsLength {
+                            got: num_elements,
+                            expected: n,
+                        });
+                    }
+                }
+                let weights = match weights {
+                    Some(w) => {
+                        if w.dim() != (num_stations, num_elements) {
+                            return Err(SkaBeamError::WeightsLength {
+                                got: w.len(),
+                                expected: num_stations * num_elements,
                             });
                         }
+                        w.to_owned()
                     }
-                    let ids: Vec<i32> = ids.iter().map(|&i| i as i32).collect();
-                    (
-                        ids.len(),
-                        Some(DevicePointer::copy_to_device(&ids)?),
-                        0,
-                        None,
-                        None,
-                        None,
-                    )
+                    None => Array2::ones((num_stations, num_elements)),
+                };
+                if weights.outer_iter().any(|w| w.sum() == 0.0) {
+                    return Err(SkaBeamError::AllElementsFlagged);
                 }
-                SkaGpuTiles::Stations {
-                    positions_enu,
-                    weights,
-                    rotations_rad,
-                } => {
-                    let (num_stations, num_elements, three) = positions_enu.dim();
-                    assert_eq!(
-                        three, 3,
-                        "positions_enu must have shape (stations, elements, 3)"
-                    );
-                    if let Some(n) = num_beam_elements {
-                        if num_elements != n {
-                            return Err(SkaBeamError::PositionsLength {
-                                got: num_elements,
-                                expected: n,
+                let d_rotations = match rotations_rad {
+                    Some(r) => {
+                        if r.len() != num_stations {
+                            return Err(SkaBeamError::RotationsLength {
+                                got: r.len(),
+                                expected: num_stations,
                             });
                         }
+                        Some(DevicePointer::copy_to_device(&to_gpu_float(r))?)
                     }
-                    let weights = match weights {
-                        Some(w) => {
-                            if w.dim() != (num_stations, num_elements) {
-                                return Err(SkaBeamError::WeightsLength {
-                                    got: w.len(),
-                                    expected: num_stations * num_elements,
-                                });
-                            }
-                            w.to_owned()
+                    None => None,
+                };
+                let d_frames = match local_frames {
+                    Some(f) => {
+                        if f.len() != num_stations {
+                            return Err(SkaBeamError::LocalFramesLength {
+                                got: f.len(),
+                                expected: num_stations,
+                            });
                         }
-                        None => Array2::ones((num_stations, num_elements)),
-                    };
-                    if weights.outer_iter().any(|w| w.sum() == 0.0) {
-                        return Err(SkaBeamError::AllElementsFlagged);
+                        let flat: Vec<f64> = f.iter().flatten().flatten().copied().collect();
+                        Some(DevicePointer::copy_to_device(&to_gpu_float(&flat))?)
                     }
-                    let d_rotations = match rotations_rad {
-                        Some(r) => {
-                            if r.len() != num_stations {
-                                return Err(SkaBeamError::RotationsLength {
-                                    got: r.len(),
-                                    expected: num_stations,
-                                });
-                            }
-                            Some(DevicePointer::copy_to_device(&to_gpu_float(r))?)
-                        }
-                        None => None,
-                    };
-                    let positions: Vec<GpuFloat> = positions_enu.iter().map(|&x| x as _).collect();
-                    let weights: Vec<GpuFloat> = weights.iter().map(|&x| x as _).collect();
-                    (
-                        num_stations,
-                        None,
-                        num_elements,
-                        Some(DevicePointer::copy_to_device(&positions)?),
-                        Some(DevicePointer::copy_to_device(&weights)?),
-                        d_rotations,
-                    )
-                }
-            };
+                    None => None,
+                };
+                let positions: Vec<GpuFloat> = positions_enu.iter().map(|&x| x as _).collect();
+                let weights: Vec<GpuFloat> = weights.iter().map(|&x| x as _).collect();
+                (
+                    num_stations,
+                    None,
+                    num_elements,
+                    Some(DevicePointer::copy_to_device(&positions)?),
+                    Some(DevicePointer::copy_to_device(&weights)?),
+                    d_rotations,
+                    d_frames,
+                )
+            }
+        };
 
         Ok(SkaLowBeamGpu {
             model,
@@ -310,6 +337,7 @@ impl SkaLowBeamGpu {
             d_positions,
             d_weights,
             d_rotations,
+            d_frames,
             _d_phis: d_phis,
             _d_thetas: d_thetas,
             _d_planes: d_planes,
@@ -375,6 +403,10 @@ impl SkaLowBeamGpu {
                 .map(|d| d.get())
                 .unwrap_or(std::ptr::null()),
             self.d_rotations
+                .as_ref()
+                .map(|d| d.get())
+                .unwrap_or(std::ptr::null()),
+            self.d_frames
                 .as_ref()
                 .map(|d| d.get())
                 .unwrap_or(std::ptr::null()),

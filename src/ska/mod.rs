@@ -79,9 +79,23 @@ pub(crate) fn everybeam_to_hyperbeam(
     latitude_rad: Option<f64>,
     iau_order: bool,
 ) -> Jones<f64> {
+    everybeam_to_hyperbeam_with_pa(
+        j,
+        latitude_rad.map(|lat| parallactic_angle(az_rad, za_rad, lat)),
+        iau_order,
+    )
+}
+
+/// Like [`everybeam_to_hyperbeam`], but with the parallactic angle (if any)
+/// already computed.
+#[inline]
+pub(crate) fn everybeam_to_hyperbeam_with_pa(
+    j: Jones<f64>,
+    parallactic_angle_rad: Option<f64>,
+    iau_order: bool,
+) -> Jones<f64> {
     let mut jones = Jones::from([j[0], -j[1], j[2], -j[3]]);
-    if let Some(latitude_rad) = latitude_rad {
-        let pa = parallactic_angle(az_rad, za_rad, latitude_rad);
+    if let Some(pa) = parallactic_angle_rad {
         apply_parallactic_rotation(pa, iau_order, &mut jones);
     }
     jones

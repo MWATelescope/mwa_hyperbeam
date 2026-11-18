@@ -256,8 +256,13 @@ impl SkaLowEepSph {
                 .expect("the dataset's shape was checked when the file was opened");
             // EveryBeam's preparation script zeroes NaNs; do the same in case
             // files were made some other way.
-            all.slice(s![.., ..num_coeffs(l_max), ..])
-                .mapv(|c| if c.is_nan() { c64::default() } else { c })
+            all.slice(s![.., ..num_coeffs(l_max), ..]).mapv(|c| {
+                if c.is_nan() {
+                    c64::default()
+                } else {
+                    c
+                }
+            })
         };
         let coeffs = Arc::new(coeffs);
         self.cache.write().insert(file_index, Arc::clone(&coeffs));

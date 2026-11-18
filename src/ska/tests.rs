@@ -848,3 +848,143 @@ fn rotated_eep_grid_station() {
         epsilon = 1e-12
     );
 }
+
+// ---------------------------------------------------------------------------
+// Local frames.
+// ---------------------------------------------------------------------------
+
+/// The rows of a local frame whose East is `beta` from the array's East
+/// towards North (a rotation about the common vertical).
+fn vertical_rotation_frame(beta: f64) -> [[f64; 3]; 3] {
+    let (s, c) = beta.sin_cos();
+    [[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]]
+}
+
+/// The rows of the local frame of a station displaced from the array centre
+/// by small angles (east `de`, north `dn`, radians) on a sphere: its vertical
+/// is tilted.
+fn tilted_frame(de: f64, dn: f64) -> [[f64; 3]; 3] {
+    // Rotate the array's (E, N, U) about N by -de (tilting U towards E), then
+    // about the new E by dn (tilting U towards N).
+    let (se, ce) = de.sin_cos();
+    let (sn, cn) = dn.sin_cos();
+    let e = [ce, 0.0, -se];
+    let u0 = [se, 0.0, ce];
+    let n0 = [0.0, 1.0, 0.0];
+    let n = [
+        cn * n0[0] - sn * u0[0],
+        cn * n0[1] - sn * u0[1],
+        cn * n0[2] - sn * u0[2],
+    ];
+    let u = [
+        sn * n0[0] + cn * u0[0],
+        sn * n0[1] + cn * u0[1],
+        sn * n0[2] + cn * u0[2],
+    ];
+    [e, n, u]
+}
+
+#[test]
+fn identity_local_frame_changes_nothing() {
+    let lat = -0.4660608448386394;
+    let identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    let plain = SkaStation::new(SkaLowAnalytic::new(), test_positions(16), None)
+        .unwrap()
+        .with_rotation(0.4);
+    let framed = SkaStation::new(SkaLowAnalytic::new(), test_positions(16), None)
+        .unwrap()
+        .with_rotation(0.4)
+        .with_local_frame(identity);
+    for (az, za) in [(0.3, 0.2), (2.0, 1.1), (4.5, 0.0), (5.9, 1.5)] {
+        for lat in [None, Some(lat)] {
+            let a = plain
+                .calc_jones_pair(az, za, 1.2e8, 0.5, 0.3, lat, true)
+                .unwrap();
+            let b = framed
+                .calc_jones_pair(az, za, 1.2e8, 0.5, 0.3, lat, true)
+                .unwrap();
+            assert_abs_diff_eq!(a, b, epsilon = 1e-13);
+        }
+    }
+}
+
+#[test]
+fn vertical_rotation_frame_is_a_station_rotation() {
+    // A station whose local frame is rotated about the vertical by beta, with
+    // rotation alpha and positions p (in its frame), is physically the same as
+    // a station without a local frame, rotation alpha + beta and positions
+    // rotated by beta. On the sky (theta and azimuth components, and with the
+    // parallactic-angle correction), their responses are the same.
+    let lat = -0.4660608448386394;
+    let (alpha, beta): (f64, f64) = (0.4, 0.27);
+    let positions = test_positions(16);
+    let (s, c) = beta.sin_cos();
+    let rotated: Vec<[f64; 3]> = positions
+        .iter()
+        .map(|p| [c * p[0] - s * p[1], s * p[0] + c * p[1], p[2]])
+        .collect();
+    let framed = SkaStation::new(SkaLowAnalytic::new(), positions, None)
+        .unwrap()
+        .with_rotation(alpha)
+        .with_local_frame(vertical_rotation_frame(beta));
+    let plain = SkaStation::new(SkaLowAnalytic::new(), rotated, None)
+        .unwrap()
+        .with_rotation(alpha + beta);
+    for (az, za) in [(0.3, 0.2), (2.0, 1.1), (4.5, 0.6), (5.9, 1.5)] {
+        for lat in [None, Some(lat)] {
+            for iau in [false, true] {
+                let a = framed
+                    .calc_jones_pair(az, za, 1.2e8, 0.5, 0.3, lat, iau)
+                    .unwrap();
+                let b = plain
+                    .calc_jones_pair(az, za, 1.2e8, 0.5, 0.3, lat, iau)
+                    .unwrap();
+                assert_abs_diff_eq!(a, b, epsilon = 1e-12);
+            }
+        }
+    }
+}
+
+#[test]
+fn tilted_frame_moves_the_beam() {
+    // A station whose vertical is tilted (e.g. one far from the array centre)
+    // still has its peak in its pointing direction (given in the array frame),
+    // and its local frame matters away from the pointing direction.
+    let frame = tilted_frame(0.006, -0.004);
+    let framed = SkaStation::new(SkaLowAnalytic::new(), test_positions(64), None)
+        .unwrap()
+        .with_local_frame(frame);
+    let plain = SkaStation::new(SkaLowAnalytic::new(), test_positions(64), None).unwrap();
+    let (paz, pza) = (1.1, 0.5);
+    let (laz, lza) = station::to_local(&frame, paz, pza);
+    // At the pointing direction, the framed station's response is the element
+    // response in the local frame.
+    let at_pointing = framed
+        .calc_jones_pair(paz, pza, 1.5e8, paz, pza, None, false)
+        .unwrap();
+    let element = SkaLowAnalytic::new()
+        .calc_jones_pair(laz, lza, 1.5e8, 0, None, false)
+        .unwrap();
+    assert_abs_diff_eq!(at_pointing, element, epsilon = 1e-12);
+    // Elsewhere, the frames differ (by about the tilt).
+    let a = framed
+        .calc_jones_pair(1.3, 0.62, 1.5e8, paz, pza, None, false)
+        .unwrap();
+    let b = plain
+        .calc_jones_pair(1.3, 0.62, 1.5e8, paz, pza, None, false)
+        .unwrap();
+    let diff = (a - b).norm_sqr().iter().sum::<f64>().sqrt();
+    assert!(diff > 1e-4 && diff < 0.2, "{diff}");
+}
+
+#[test]
+fn local_parallactic_angle_matches_direct_with_identity() {
+    let identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    for (az, za, lat) in [(0.3, 0.2, -0.47), (2.0, 1.1, 0.3), (4.5, 0.01, -1.2)] {
+        assert_abs_diff_eq!(
+            station::local_parallactic_angle(&identity, az, za, lat),
+            parallactic_angle(az, za, lat),
+            epsilon = 1e-12
+        );
+    }
+}

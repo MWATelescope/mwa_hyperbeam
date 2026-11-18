@@ -83,8 +83,37 @@ fn check_elements(beam: &SkaLowBeam, freqs: &[f64], element_ids: &[usize]) {
 fn check_stations(beam: &SkaLowBeam, freqs: &[f64], num_elements: usize) {
     // Unrotated stations, and two stations with different rotations (one of
     // them zero, which takes a different code path in the kernel).
-    check_stations_inner(beam, freqs, num_elements, None);
-    check_stations_inner(beam, freqs, num_elements, Some(&[0.0, 1.234]));
+    check_stations_inner(beam, freqs, num_elements, None, None);
+    check_stations_inner(beam, freqs, num_elements, Some(&[0.0, 1.234]), None);
+    // Stations with their own local frames (one tilted, one rotated about the
+    // vertical), as for stations far from the array centre.
+    let frames = [tilted_frame(0.006, -0.004), vertical_rotation_frame(0.3)];
+    check_stations_inner(
+        beam,
+        freqs,
+        num_elements,
+        Some(&[0.0, 1.234]),
+        Some(&frames),
+    );
+}
+
+/// The rows of a local frame whose East is `beta` from the array's East
+/// towards North.
+fn vertical_rotation_frame(beta: f64) -> [[f64; 3]; 3] {
+    let (s, c) = beta.sin_cos();
+    [[c, s, 0.0], [-s, c, 0.0], [0.0, 0.0, 1.0]]
+}
+
+/// The rows of a tilted local frame (vertical tilted by small angles east
+/// `de` and north `dn`).
+fn tilted_frame(de: f64, dn: f64) -> [[f64; 3]; 3] {
+    let (se, ce) = de.sin_cos();
+    let (sn, cn) = dn.sin_cos();
+    let e = [ce, 0.0, -se];
+    let u0 = [se, 0.0, ce];
+    let n = [-sn * u0[0], cn, -sn * u0[2]];
+    let u = [cn * u0[0], sn, cn * u0[2]];
+    [e, n, u]
 }
 
 fn check_stations_inner(
@@ -92,6 +121,7 @@ fn check_stations_inner(
     freqs: &[f64],
     num_elements: usize,
     rotations: Option<&[f64]>,
+    frames: Option<&[[[f64; 3]; 3]]>,
 ) {
     let (az, za) = directions();
     let num_stations = 2;
@@ -115,6 +145,7 @@ fn check_stations_inner(
                 positions_enu: positions.view(),
                 weights: Some(weights.view()),
                 rotations_rad: rotations,
+                local_frames: frames,
             },
         )
     }
@@ -133,6 +164,10 @@ fn check_stations_inner(
         let station = SkaStation::new(beam, pos, Some(weights.slice(s![i_station, ..]).to_vec()))
             .unwrap()
             .with_rotation(rotations.map(|r| r[i_station]).unwrap_or(0.0));
+        let station = match frames {
+            Some(f) => station.with_local_frame(f[i_station]),
+            None => station,
+        };
         for (i_freq, &f) in freqs.iter().enumerate() {
             let cpu = station
                 .calc_jones_array_pair(

@@ -488,6 +488,7 @@ pub unsafe extern "C" fn new_gpu_ska_low_beam(
             } else {
                 Some(slice::from_raw_parts(rotations_rad, nt))
             },
+            local_frames: None,
         }
     };
     let gpu_beam = ffi_error!(beam.gpu_prepare(freqs, tiles));

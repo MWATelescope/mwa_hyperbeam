@@ -225,6 +225,7 @@ macro_rules! ska_py_class {
                             positions_enu: p,
                             weights,
                             rotations_rad: rotations_rad.as_deref(),
+                            local_frames: None,
                         }
                     }
                     None => SkaGpuTiles::Elements(&ids),

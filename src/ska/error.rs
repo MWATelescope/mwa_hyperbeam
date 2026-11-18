@@ -79,6 +79,12 @@ pub enum SkaBeamError {
     RotationsLength { got: usize, expected: usize },
 
     #[cfg(any(feature = "cuda", feature = "hip"))]
+    #[error(
+        "The number of station local frames ({got}) doesn't match the number of stations ({expected})"
+    )]
+    LocalFramesLength { got: usize, expected: usize },
+
+    #[cfg(any(feature = "cuda", feature = "hip"))]
     #[error("The GPU code supports spherical-wave degrees up to {max}, but {got} is needed; use a smaller l_max")]
     GpuLMax { got: usize, max: usize },
 
