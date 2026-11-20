@@ -14,7 +14,7 @@ use serial_test::serial;
 
 use super::*;
 use crate::ska::{
-    tests::{write_eep, write_feko_dir},
+    tests::{write_eep, write_feko_dir, write_feko_dir_with_l_maxes},
     SkaStation,
 };
 
@@ -83,8 +83,8 @@ fn check_elements(beam: &SkaLowBeam, freqs: &[f64], element_ids: &[usize]) {
 fn check_stations(beam: &SkaLowBeam, freqs: &[f64], num_elements: usize) {
     // Unrotated stations, and two stations with different rotations (one of
     // them zero, which takes a different code path in the kernel).
-    check_stations_inner(beam, freqs, num_elements, None, None);
-    check_stations_inner(beam, freqs, num_elements, Some(&[0.0, 1.234]), None);
+    check_stations_inner(beam, freqs, num_elements, None, None, false);
+    check_stations_inner(beam, freqs, num_elements, Some(&[0.0, 1.234]), None, false);
     // Stations with their own local frames (one tilted, one rotated about the
     // vertical), as for stations far from the array centre.
     let frames = [tilted_frame(0.006, -0.004), vertical_rotation_frame(0.3)];
@@ -94,6 +94,16 @@ fn check_stations(beam: &SkaLowBeam, freqs: &[f64], num_elements: usize) {
         num_elements,
         Some(&[0.0, 1.234]),
         Some(&frames),
+        false,
+    );
+    // The X and Y dipoles with different flags.
+    check_stations_inner(
+        beam,
+        freqs,
+        num_elements,
+        Some(&[0.0, 1.234]),
+        Some(&frames),
+        true,
     );
 }
 
@@ -122,6 +132,7 @@ fn check_stations_inner(
     num_elements: usize,
     rotations: Option<&[f64]>,
     frames: Option<&[[[f64; 3]; 3]]>,
+    separate_y_weights: bool,
 ) {
     let (az, za) = directions();
     let num_stations = 2;
@@ -137,6 +148,12 @@ fn check_stations_inner(
     let mut weights = Array2::ones((num_stations, num_elements));
     weights[(1, 0)] = 0.0;
     weights[(1, 1)] = 0.5;
+    let weights_y = separate_y_weights.then(|| {
+        let mut w = Array2::ones((num_stations, num_elements));
+        w[(0, num_elements - 1)] = 0.0;
+        w[(1, 1)] = 0.0;
+        w
+    });
     let pointing = AzEl::from_radians(0.6, FRAC_PI_2 - 0.3);
     let gpu = unsafe {
         beam.gpu_prepare(
@@ -145,6 +162,7 @@ fn check_stations_inner(
                 positions_enu: positions.view(),
                 weights: Some(weights.view()),
                 rotations_rad: rotations,
+                weights_y: weights_y.as_ref().map(|w| w.view()),
                 local_frames: frames,
             },
         )
@@ -161,16 +179,22 @@ fn check_stations_inner(
             .outer_iter()
             .map(|p| [p[0], p[1], p[2]])
             .collect();
-        let station = SkaStation::new(beam, pos, Some(weights.slice(s![i_station, ..]).to_vec()))
-            .unwrap()
-            .with_rotation(rotations.map(|r| r[i_station]).unwrap_or(0.0));
-        let station = match frames {
-            Some(f) => station.with_local_frame(f[i_station]),
-            None => station,
+        let make = |w: Vec<f64>| {
+            let station = SkaStation::new(beam, pos.clone(), Some(w))
+                .unwrap()
+                .with_rotation(rotations.map(|r| r[i_station]).unwrap_or(0.0));
+            match frames {
+                Some(f) => station.with_local_frame(f[i_station]),
+                None => station,
+            }
         };
+        let station = make(weights.slice(s![i_station, ..]).to_vec());
+        let station_y = weights_y
+            .as_ref()
+            .map(|w| make(w.slice(s![i_station, ..]).to_vec()));
         for (i_freq, &f) in freqs.iter().enumerate() {
-            let cpu = station
-                .calc_jones_array_pair(
+            let calc = |st: &SkaStation<&SkaLowBeam>| {
+                st.calc_jones_array_pair(
                     &az,
                     &za,
                     f,
@@ -179,7 +203,15 @@ fn check_stations_inner(
                     Some(MWA_LAT_RAD),
                     true,
                 )
-                .unwrap();
+                .unwrap()
+            };
+            let mut cpu = calc(&station);
+            if let Some(st_y) = &station_y {
+                // With the IAU order, the first row is the Y dipole's.
+                for (c, y) in cpu.iter_mut().zip(calc(st_y)) {
+                    *c = Jones::from([y[0], y[1], c[2], c[3]]);
+                }
+            }
             for (c, g) in cpu.iter().zip(results.slice(s![i_station, i_freq, ..])) {
                 let scale = c.iter().map(|x| x.norm()).fold(1.0, f64::max);
                 assert_abs_diff_eq!(*c, to_f64(*g), epsilon = EPSILON * scale);
@@ -220,6 +252,17 @@ fn gpu_eep_sph_matches_cpu() {
     let dir = write_feko_dir("gpu_eep_sph", &[100.0, 110.0], 4, 6);
     let beam = SkaLowBeam::new_eep_sph(Some(&dir.0), None).unwrap();
     check_elements(&beam, &[100e6, 104e6, 112e6], &[0, 3, 1]);
+    check_stations(&beam, &[100e6, 110e6], 4);
+}
+
+#[test]
+#[serial]
+fn gpu_eep_sph_large_degrees_match_cpu() {
+    // Real SKA-Low FEKO files have degrees from ~140 to ~390, differing from
+    // file to file.
+    let dir = write_feko_dir_with_l_maxes("gpu_eep_sph_large", &[100.0, 110.0], 4, &[7, 300]);
+    let beam = SkaLowBeam::new_eep_sph(Some(&dir.0), None).unwrap();
+    check_elements(&beam, &[100e6, 110e6], &[0, 3]);
     check_stations(&beam, &[100e6, 110e6], 4);
 }
 

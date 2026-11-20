@@ -26,6 +26,14 @@ Versioning](https://semver.org/spec/v2.0.0.html).
     that directions given in an array-centre frame are converted to each
     station's horizon, as EveryBeam does for stations far from the array
     centre.
+  - Real SKA-Low FEKO coefficient files (degrees from ~140 to ~390, varying
+    from file to file) on the GPU: each file's coefficients are stored at its
+    own degree (up to 510) and uploaded one file at a time, and stations of
+    per-element patterns are calculated by a kernel that shares each
+    station's elements between the threads of a block (so few directions,
+    e.g. calibrating on one source, still use the whole GPU). The CPU code
+    also evaluates a station's elements in parallel. GPU stations can have
+    separate weights (flags) for their Y dipoles (`weights_y`).
     Array factors use a vectorised sin/cos (`ska::fastmath`, ~1 ulp), about
     twice as fast as calling libm per element.
   - `SkaLowBeam`, a runtime-selected model, which is also exposed via the C

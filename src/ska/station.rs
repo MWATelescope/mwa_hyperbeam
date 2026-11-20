@@ -5,6 +5,7 @@
 //! SKA-Low station beams: element responses combined with an array factor.
 
 use marlu::{c64, constants::VEL_C, AzEl, Jones};
+use rayon::prelude::*;
 
 use super::{
     az_to_phi, everybeam_to_hyperbeam_with_pa, fastmath, par_map_jones, parallactic_angle,
@@ -298,14 +299,19 @@ impl<E: SkaElementResponse> SkaStation<E> {
             &mut re,
             &mut im,
         );
-        let mut result = Jones::default();
-        for (i, &w) in self.weights.iter().enumerate() {
-            if w == 0.0 {
-                continue;
-            }
-            let e = self.element.element_response(i, freq_hz, za_rad, phi)?;
-            result += e * c64::new(re[i], im[i]);
-        }
+        // Per-element responses can be expensive (e.g. spherical-wave
+        // expansions with degrees in the hundreds), so they're evaluated in
+        // parallel; this matters when there are few directions.
+        let result = (0..n)
+            .into_par_iter()
+            .with_min_len(4)
+            .filter(|&i| self.weights[i] != 0.0)
+            .map(|i| {
+                self.element
+                    .element_response(i, freq_hz, za_rad, phi)
+                    .map(|e| e * c64::new(re[i], im[i]))
+            })
+            .try_reduce(Jones::default, |a, b| Ok(a + b))?;
         Ok(result / self.sum_weights)
     }
 

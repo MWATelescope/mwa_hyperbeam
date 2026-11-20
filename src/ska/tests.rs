@@ -374,10 +374,21 @@ pub(crate) fn write_feko_dir(
     num_elements: usize,
     l_max: usize,
 ) -> TempPath {
+    write_feko_dir_with_l_maxes(name, freqs_mhz, num_elements, &vec![l_max; freqs_mhz.len()])
+}
+
+/// Like [`write_feko_dir`], but with a degree for each file (real SKA-Low
+/// files have very different degrees).
+pub(crate) fn write_feko_dir_with_l_maxes(
+    name: &str,
+    freqs_mhz: &[f64],
+    num_elements: usize,
+    l_maxes: &[usize],
+) -> TempPath {
     let dir = TempPath::new(name);
     std::fs::create_dir_all(&dir.0).unwrap();
-    let nc = l_max * (l_max + 2);
-    for (fi, f) in freqs_mhz.iter().enumerate() {
+    for (fi, (f, &l_max)) in freqs_mhz.iter().zip(l_maxes).enumerate() {
+        let nc = l_max * (l_max + 2);
         let path = dir.0.join(format!(
             "SKA-Low_Test_Vogel_{num_elements}_elem_FEKO_{f:.5}_MHz.h5"
         ));

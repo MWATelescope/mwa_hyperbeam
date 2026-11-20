@@ -8,17 +8,32 @@ extern "C" const char *gpu_ska_calc_jones(const SkaGpuModel *model, const FLOAT 
                                           const int num_directions, const FLOAT *d_freqs_hz, const int num_freqs,
                                           const int num_tiles, const int *d_element_ids,
                                           const int num_station_elements, const FLOAT *d_positions,
-                                          const FLOAT *d_weights, const FLOAT *d_rotations,
-                                          const FLOAT *d_frames, const FLOAT pointing_az, const FLOAT pointing_za,
-                                          const FLOAT *d_latitude_rad, const int iau_order, void *d_results) {
-    if (num_directions == 0)
+                                          const FLOAT *d_weights, const FLOAT *d_weights_y,
+                                          const FLOAT *d_rotations, const FLOAT *d_frames, const FLOAT pointing_az,
+                                          const FLOAT pointing_za, const FLOAT *d_latitude_rad, const int iau_order,
+                                          void *d_results) {
+    if (num_directions == 0 || num_freqs == 0 || num_tiles == 0)
         return NULL;
-    dim3 gridDim, blockDim;
-    blockDim.x = gpu_warp_size() * 4;
-    gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
-    ska_kernel<<<gridDim, blockDim>>>(*model, d_azs, d_zas, num_directions, d_freqs_hz, num_freqs, num_tiles,
-                                      d_element_ids, num_station_elements, d_positions, d_weights, d_rotations, d_frames, pointing_az,
-                                      pointing_za, d_latitude_rad, iau_order, (JONES *)d_results);
+    if (model->model == SKA_EEP_SPH && d_positions != NULL) {
+        // Stations of distinct elements: a block per (direction, tile,
+        // frequency); the kernel loops if there are more than fit in a grid.
+        const size_t num_blocks = (size_t)num_directions * num_tiles * num_freqs;
+        dim3 gridDim, blockDim;
+        blockDim.x = SKA_SPH_STATION_THREADS;
+        gridDim.x = (unsigned int)(num_blocks < (1u << 30) ? num_blocks : (1u << 30));
+        ska_sph_station_kernel<<<gridDim, blockDim>>>(*model, d_azs, d_zas, num_directions, d_freqs_hz, num_freqs,
+                                                      num_tiles, num_station_elements, d_positions, d_weights,
+                                                      d_weights_y, d_rotations, d_frames, pointing_az, pointing_za,
+                                                      d_latitude_rad, iau_order, (JONES *)d_results);
+    } else {
+        dim3 gridDim, blockDim;
+        blockDim.x = gpu_warp_size() * 4;
+        gridDim.x = (int)ceil((double)num_directions / (double)blockDim.x);
+        ska_kernel<<<gridDim, blockDim>>>(*model, d_azs, d_zas, num_directions, d_freqs_hz, num_freqs, num_tiles,
+                                          d_element_ids, num_station_elements, d_positions, d_weights, d_weights_y,
+                                          d_rotations, d_frames, pointing_az, pointing_za, d_latitude_rad,
+                                          iau_order, (JONES *)d_results);
+    }
 
     gpuError_t error_id;
 #ifdef DEBUG

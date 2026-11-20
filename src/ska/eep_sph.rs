@@ -238,33 +238,54 @@ impl SkaLowEepSph {
         self.files[self.closest_file(freq_hz)].freq_hz
     }
 
-    /// Get (reading if necessary) the coefficients of a file, truncated to
-    /// this object's `l_max`.
-    pub(crate) fn get_coeffs(&self, file_index: usize) -> Result<Arc<Array3<c64>>, SkaBeamError> {
-        if let Some(c) = self.cache.read().get(&file_index) {
-            return Ok(Arc::clone(c));
-        }
+    /// The spherical-wave degree used for a file: the smaller of this object's
+    /// `l_max` and the file's.
+    pub(crate) fn file_l_max(&self, file_index: usize) -> usize {
+        self.l_max.min(self.files[file_index].l_max)
+    }
+
+    /// The number of elements in a file.
+    #[cfg(any(feature = "cuda", feature = "hip"))]
+    pub(crate) fn file_num_elements(&self, file_index: usize) -> usize {
+        self.files[file_index].num_elements
+    }
+
+    /// The coefficients of a file if they're cached.
+    pub(crate) fn cached_coeffs(&self, file_index: usize) -> Option<Arc<Array3<c64>>> {
+        self.cache.read().get(&file_index).map(Arc::clone)
+    }
+
+    /// Read the coefficients of a file, truncated to this object's `l_max`,
+    /// without caching them. (Files can be gigabytes in size; this lets the
+    /// GPU code upload them one at a time.)
+    pub(crate) fn read_coeffs(&self, file_index: usize) -> Result<Array3<c64>, SkaBeamError> {
         let file = &self.files[file_index];
-        let l_max = self.l_max.min(file.l_max);
-        let coeffs = {
-            let _guard = self.hdf5_lock.lock().unwrap_or_else(|e| e.into_inner());
-            let h5 = hdf5_metno::File::open(&file.path)?;
-            let ds = h5.dataset("coefficients")?;
-            let shape = ds.shape();
-            let raw: Vec<c64> = ds.read_raw()?;
-            let all = ArrayView3::from_shape((shape[0], shape[1], shape[2]), &raw)
-                .expect("the dataset's shape was checked when the file was opened");
-            // EveryBeam's preparation script zeroes NaNs; do the same in case
-            // files were made some other way.
-            all.slice(s![.., ..num_coeffs(l_max), ..]).mapv(|c| {
-                if c.is_nan() {
-                    c64::default()
-                } else {
-                    c
-                }
-            })
-        };
-        let coeffs = Arc::new(coeffs);
+        let l_max = self.file_l_max(file_index);
+        let _guard = self.hdf5_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let h5 = hdf5_metno::File::open(&file.path)?;
+        let ds = h5.dataset("coefficients")?;
+        let shape = ds.shape();
+        let raw: Vec<c64> = ds.read_raw()?;
+        let all = ArrayView3::from_shape((shape[0], shape[1], shape[2]), &raw)
+            .expect("the dataset's shape was checked when the file was opened");
+        // EveryBeam's preparation script zeroes NaNs; do the same in case
+        // files were made some other way.
+        Ok(all.slice(s![.., ..num_coeffs(l_max), ..]).mapv(|c| {
+            if c.is_nan() {
+                c64::default()
+            } else {
+                c
+            }
+        }))
+    }
+
+    /// Get (reading if necessary) the coefficients of a file, truncated to
+    /// this object's `l_max`, and cache them.
+    pub(crate) fn get_coeffs(&self, file_index: usize) -> Result<Arc<Array3<c64>>, SkaBeamError> {
+        if let Some(c) = self.cached_coeffs(file_index) {
+            return Ok(c);
+        }
+        let coeffs = Arc::new(self.read_coeffs(file_index)?);
         self.cache.write().insert(file_index, Arc::clone(&coeffs));
         Ok(coeffs)
     }

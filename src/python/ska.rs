@@ -225,6 +225,7 @@ macro_rules! ska_py_class {
                             positions_enu: p,
                             weights,
                             rotations_rad: rotations_rad.as_deref(),
+                            weights_y: None,
                             local_frames: None,
                         }
                     }

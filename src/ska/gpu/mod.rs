@@ -49,6 +49,9 @@ pub enum SkaGpuTiles<'a> {
     Stations {
         positions_enu: ArrayView3<'a, f64>,
         weights: Option<ArrayView2<'a, f64>>,
+        /// If given, the weights of the Y dipoles (the same shape as
+        /// `weights`); otherwise both dipoles use `weights`.
+        weights_y: Option<ArrayView2<'a, f64>>,
         rotations_rad: Option<&'a [f64]>,
         local_frames: Option<&'a [[[f64; 3]; 3]]>,
     },
@@ -71,6 +74,7 @@ pub struct SkaLowBeamGpu {
     num_station_elements: i32,
     d_positions: Option<DevicePointer<GpuFloat>>,
     d_weights: Option<DevicePointer<GpuFloat>>,
+    d_weights_y: Option<DevicePointer<GpuFloat>>,
     d_rotations: Option<DevicePointer<GpuFloat>>,
     d_frames: Option<DevicePointer<GpuFloat>>,
 
@@ -80,6 +84,8 @@ pub struct SkaLowBeamGpu {
     _d_thetas: Option<DevicePointer<GpuFloat>>,
     _d_planes: Option<DevicePointer<Jones<GpuFloat>>>,
     _d_sph_coeffs: Option<DevicePointer<GpuComplex>>,
+    _d_coeff_set_offsets: Option<DevicePointer<i64>>,
+    _d_coeff_set_l_max: Option<DevicePointer<i32>>,
     _d_freq_to_coeff_set: Option<DevicePointer<i32>>,
 }
 
@@ -123,15 +129,18 @@ impl SkaLowBeamGpu {
             num_thetas: 0,
             planes: std::ptr::null(),
             l_max: 0,
-            num_coeffs: 0,
             num_sph_elements: 0,
             sph_coeffs: std::ptr::null(),
+            coeff_set_offsets: std::ptr::null(),
+            coeff_set_l_max: std::ptr::null(),
             freq_to_coeff_set: std::ptr::null(),
         };
         let mut d_phis = None;
         let mut d_thetas = None;
         let mut d_planes = None;
         let mut d_sph_coeffs = None;
+        let mut d_coeff_set_offsets = None;
+        let mut d_coeff_set_l_max = None;
         let mut d_freq_to_coeff_set = None;
 
         match &beam.inner {
@@ -186,40 +195,70 @@ impl SkaLowBeamGpu {
                     };
                     freq_to_set.push(set as i32);
                 }
-                let sets = file_indices
+                // Each coefficient set (file) is stored at its own degree;
+                // files can be gigabytes each, so they're uploaded one at a
+                // time (without caching them on the host, if they aren't
+                // already).
+                let num_elements = file_indices
+                    .first()
+                    .map(|&fi| b.file_num_elements(fi))
+                    .unwrap_or(0);
+                if file_indices
                     .iter()
-                    .map(|&fi| b.get_coeffs(fi))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let num_elements = sets.first().map(|c| c.len_of(Axis(0))).unwrap_or(0);
-                if sets.iter().any(|c| c.len_of(Axis(0)) != num_elements) {
+                    .any(|&fi| b.file_num_elements(fi) != num_elements)
+                {
                     return Err(SkaBeamError::GpuInconsistentElements);
                 }
-                // Files may have different numbers of coefficients; pad with
-                // zeros to the largest.
-                let num_coeffs = sets.iter().map(|c| c.len_of(Axis(1))).max().unwrap_or(0);
-                let l_max = ((num_coeffs as f64 + 1.0).sqrt() - 1.0).round() as usize;
+                let set_l_max: Vec<usize> =
+                    file_indices.iter().map(|&fi| b.file_l_max(fi)).collect();
+                let l_max = set_l_max.iter().copied().max().unwrap_or(0);
                 if l_max > SKA_GPU_MAX_L_MAX {
                     return Err(SkaBeamError::GpuLMax {
                         got: l_max,
                         max: SKA_GPU_MAX_L_MAX,
                     });
                 }
-                let mut coeffs =
-                    vec![GpuComplex::default(); sets.len() * num_elements * num_coeffs * 4];
-                for (i_set, c) in sets.iter().enumerate() {
-                    for ((e, k, p), v) in c.indexed_iter() {
-                        coeffs[((i_set * num_elements + e) * num_coeffs + k) * 4 + p] =
-                            GpuComplex::new(v.re as _, v.im as _);
-                    }
+                let set_sizes: Vec<usize> = set_l_max
+                    .iter()
+                    .map(|&l| num_elements * l * (l + 2) * 4)
+                    .collect();
+                let mut offsets = Vec::with_capacity(set_sizes.len());
+                let mut total = 0usize;
+                for &size in &set_sizes {
+                    offsets.push(total as i64);
+                    total += size;
                 }
-                let d_coeffs = DevicePointer::copy_to_device(&coeffs)?;
+                let mut d_coeffs =
+                    DevicePointer::<GpuComplex>::malloc(total * std::mem::size_of::<GpuComplex>())?;
+                for ((&fi, &offset), &size) in file_indices.iter().zip(&offsets).zip(&set_sizes) {
+                    let c = match b.cached_coeffs(fi) {
+                        Some(c) => c,
+                        None => std::sync::Arc::new(b.read_coeffs(fi)?),
+                    };
+                    let set: Vec<GpuComplex> = c
+                        .as_standard_layout()
+                        .iter()
+                        .map(|v| GpuComplex::new(v.re as _, v.im as _))
+                        .collect();
+                    debug_assert_eq!(set.len(), size);
+                    d_coeffs.overwrite_at(offset as usize, &set)?;
+                }
+                let d_offsets = DevicePointer::copy_to_device(&offsets)?;
+                let set_l_max_i32: Vec<i32> = set_l_max
+                    .iter()
+                    .map(|&l| l.try_into().expect("fits in i32"))
+                    .collect();
+                let d_set_l_max = DevicePointer::copy_to_device(&set_l_max_i32)?;
                 let d_map = DevicePointer::copy_to_device(&freq_to_set)?;
                 model.l_max = l_max as _;
-                model.num_coeffs = num_coeffs.try_into().expect("fits in i32");
                 model.num_sph_elements = num_elements.try_into().expect("fits in i32");
                 model.sph_coeffs = d_coeffs.get() as *const _;
+                model.coeff_set_offsets = d_offsets.get();
+                model.coeff_set_l_max = d_set_l_max.get();
                 model.freq_to_coeff_set = d_map.get();
                 d_sph_coeffs = Some(d_coeffs);
+                d_coeff_set_offsets = Some(d_offsets);
+                d_coeff_set_l_max = Some(d_set_l_max);
                 d_freq_to_coeff_set = Some(d_map);
             }
         }
@@ -231,6 +270,7 @@ impl SkaLowBeamGpu {
             num_station_elements,
             d_positions,
             d_weights,
+            d_weights_y,
             d_rotations,
             d_frames,
         ) = match tiles {
@@ -252,11 +292,13 @@ impl SkaLowBeamGpu {
                     None,
                     None,
                     None,
+                    None,
                 )
             }
             SkaGpuTiles::Stations {
                 positions_enu,
                 weights,
+                weights_y,
                 rotations_rad,
                 local_frames,
             } => {
@@ -273,21 +315,29 @@ impl SkaLowBeamGpu {
                         });
                     }
                 }
-                let weights = match weights {
-                    Some(w) => {
-                        if w.dim() != (num_stations, num_elements) {
-                            return Err(SkaBeamError::WeightsLength {
-                                got: w.len(),
-                                expected: num_stations * num_elements,
-                            });
-                        }
-                        w.to_owned()
+                let check_weights = |w: ArrayView2<f64>| -> Result<Array2<f64>, SkaBeamError> {
+                    if w.dim() != (num_stations, num_elements) {
+                        return Err(SkaBeamError::WeightsLength {
+                            got: w.len(),
+                            expected: num_stations * num_elements,
+                        });
                     }
+                    if w.outer_iter().any(|w| w.sum() == 0.0) {
+                        return Err(SkaBeamError::AllElementsFlagged);
+                    }
+                    Ok(w.to_owned())
+                };
+                let weights = match weights {
+                    Some(w) => check_weights(w)?,
                     None => Array2::ones((num_stations, num_elements)),
                 };
-                if weights.outer_iter().any(|w| w.sum() == 0.0) {
-                    return Err(SkaBeamError::AllElementsFlagged);
-                }
+                let d_weights_y = match weights_y {
+                    Some(w) => {
+                        let w: Vec<GpuFloat> = check_weights(w)?.iter().map(|&x| x as _).collect();
+                        Some(DevicePointer::copy_to_device(&w)?)
+                    }
+                    None => None,
+                };
                 let d_rotations = match rotations_rad {
                     Some(r) => {
                         if r.len() != num_stations {
@@ -321,6 +371,7 @@ impl SkaLowBeamGpu {
                     num_elements,
                     Some(DevicePointer::copy_to_device(&positions)?),
                     Some(DevicePointer::copy_to_device(&weights)?),
+                    d_weights_y,
                     d_rotations,
                     d_frames,
                 )
@@ -336,12 +387,15 @@ impl SkaLowBeamGpu {
             num_station_elements: num_station_elements.try_into().expect("fits in i32"),
             d_positions,
             d_weights,
+            d_weights_y,
             d_rotations,
             d_frames,
             _d_phis: d_phis,
             _d_thetas: d_thetas,
             _d_planes: d_planes,
             _d_sph_coeffs: d_sph_coeffs,
+            _d_coeff_set_offsets: d_coeff_set_offsets,
+            _d_coeff_set_l_max: d_coeff_set_l_max,
             _d_freq_to_coeff_set: d_freq_to_coeff_set,
         })
     }
@@ -399,6 +453,10 @@ impl SkaLowBeamGpu {
                 .map(|d| d.get())
                 .unwrap_or(std::ptr::null()),
             self.d_weights
+                .as_ref()
+                .map(|d| d.get())
+                .unwrap_or(std::ptr::null()),
+            self.d_weights_y
                 .as_ref()
                 .map(|d| d.get())
                 .unwrap_or(std::ptr::null()),

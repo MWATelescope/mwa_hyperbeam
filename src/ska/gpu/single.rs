@@ -16,9 +16,10 @@ pub struct SkaGpuModel {
     pub num_thetas: ::std::os::raw::c_int,
     pub planes: *const ::std::os::raw::c_void,
     pub l_max: ::std::os::raw::c_int,
-    pub num_coeffs: ::std::os::raw::c_int,
     pub num_sph_elements: ::std::os::raw::c_int,
     pub sph_coeffs: *const ::std::os::raw::c_void,
+    pub coeff_set_offsets: *const ::std::os::raw::c_longlong,
+    pub coeff_set_l_max: *const ::std::os::raw::c_int,
     pub freq_to_coeff_set: *const ::std::os::raw::c_int,
 }
 extern "C" {
@@ -34,6 +35,7 @@ extern "C" {
         num_station_elements: ::std::os::raw::c_int,
         d_positions: *const f32,
         d_weights: *const f32,
+        d_weights_y: *const f32,
         d_rotations: *const f32,
         d_frames: *const f32,
         pointing_az: f32,

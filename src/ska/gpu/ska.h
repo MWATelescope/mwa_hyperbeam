@@ -17,7 +17,10 @@
 
 /// The maximum spherical-wave degree supported on the GPU (the Legendre
 /// workspace lives in registers/local memory).
-#define SKA_MAX_L_MAX 64
+#define SKA_MAX_L_MAX 510
+
+/// The number of threads per block of the per-element-station kernel.
+#define SKA_SPH_STATION_THREADS 128
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,14 +46,18 @@ typedef struct SkaGpuModel {
     /// x num_thetas Jones matrices (JONES).
     const void *planes;
 
-    /// ska-low-eep-sph: the maximum degree, the number of coefficients per
-    /// element (l_max * (l_max + 2)) and the number of elements.
+    /// ska-low-eep-sph: the maximum degree of any coefficient set, and the
+    /// number of elements.
     int l_max;
-    int num_coeffs;
     int num_sph_elements;
-    /// ska-low-eep-sph: coefficients, num_coeff_sets x num_sph_elements x
-    /// num_coeffs x 4 complex values ([TE_X, TM_X, TE_Y, TM_Y]).
+    /// ska-low-eep-sph: coefficients, one set per coefficient file. Set `s`
+    /// starts `coeff_set_offsets[s]` complex values in, has degree
+    /// `coeff_set_l_max[s]` (so `l (l + 2)` coefficients per element), and is
+    /// num_sph_elements x num_coeffs x 4 complex values ([TE_X, TM_X, TE_Y,
+    /// TM_Y]).
     const void *sph_coeffs;
+    const long long *coeff_set_offsets;
+    const int *coeff_set_l_max;
     /// ska-low-eep-sph: for each frequency, the index of its coefficient set.
     const int *freq_to_coeff_set;
 } SkaGpuModel;
@@ -62,7 +69,8 @@ typedef struct SkaGpuModel {
 /// `d_positions` is NULL; `d_element_ids` then gives the element of each tile,
 /// or element 0 for all if NULL) or a station of `num_station_elements`
 /// elements (positions [tile][element][ENU] in metres and weights
-/// [tile][element]). Station tiles are pointed at (`pointing_az`,
+/// [tile][element]; if `d_weights_y` is not NULL, the Y dipoles use those
+/// weights instead). Station tiles are pointed at (`pointing_az`,
 /// `pointing_za`). If `d_rotations` is not NULL, it gives each tile's rotation
 /// about the local vertical [radians, the angle of its X dipoles from East
 /// towards North]; elements are then evaluated at phi - rotation. If
@@ -77,9 +85,10 @@ typedef struct SkaGpuModel {
 const char *gpu_ska_calc_jones(const SkaGpuModel *model, const FLOAT *d_azs, const FLOAT *d_zas,
                                const int num_directions, const FLOAT *d_freqs_hz, const int num_freqs,
                                const int num_tiles, const int *d_element_ids, const int num_station_elements,
-                               const FLOAT *d_positions, const FLOAT *d_weights, const FLOAT *d_rotations,
-                               const FLOAT *d_frames, const FLOAT pointing_az, const FLOAT pointing_za,
-                               const FLOAT *d_latitude_rad, const int iau_order, void *d_results);
+                               const FLOAT *d_positions, const FLOAT *d_weights, const FLOAT *d_weights_y,
+                               const FLOAT *d_rotations, const FLOAT *d_frames, const FLOAT pointing_az,
+                               const FLOAT pointing_za, const FLOAT *d_latitude_rad, const int iau_order,
+                               void *d_results);
 
 #ifdef __cplusplus
 } // extern "C"
@@ -294,8 +303,10 @@ inline __device__ JONES ska_sph_response(const SkaGpuModel *m, int i_freq, int e
                                          FLOAT phi) {
     const FLOAT sqrt_fac = SQRT(376.730313668 / M_2PI);
     const int coeff_set = m->freq_to_coeff_set[i_freq];
-    const COMPLEX *coeffs = (const COMPLEX *)m->sph_coeffs +
-                            ((size_t)coeff_set * m->num_sph_elements + element_id) * m->num_coeffs * 4;
+    const int l_max = m->coeff_set_l_max[coeff_set];
+    const size_t num_coeffs = (size_t)l_max * (l_max + 2);
+    const COMPLEX *coeffs = (const COMPLEX *)m->sph_coeffs + m->coeff_set_offsets[coeff_set] +
+                            (size_t)element_id * num_coeffs * 4;
 
     COMPLEX e_theta[2] = {MAKE_COMPLEX(0.0, 0.0), MAKE_COMPLEX(0.0, 0.0)};
     COMPLEX e_phi[2] = {MAKE_COMPLEX(0.0, 0.0), MAKE_COMPLEX(0.0, 0.0)};
@@ -307,7 +318,7 @@ inline __device__ JONES ska_sph_response(const SkaGpuModel *m, int i_freq, int e
     SINCOS(theta, &sin_theta, &cos_theta);
 
     FLOAT p[SKA_MAX_L_MAX + 2];
-    for (int n = 1; n <= m->l_max; ++n) {
+    for (int n = 1; n <= l_max; ++n) {
         ska_legendre_norm(n, cos_theta, sin_theta, p);
         p[n + 1] = 0.0;
         const FLOAT sqrt_n = SQRT((FLOAT)n * (n + 1));
@@ -326,7 +337,7 @@ inline __device__ JONES ska_sph_response(const SkaGpuModel *m, int i_freq, int e
                 const int mm = (repeat == 0) ? abs_m : -abs_m;
                 const FLOAT sign = (mm >= 0) ? 1.0 : ((mm & 1) ? -1.0 : 1.0);
                 const FLOAT np_ds_m = np_ds * mm;
-                const int row = n * (n + 1) + mm - 1;
+                const size_t row = (size_t)n * (n + 1) + mm - 1;
                 const FLOAT sin_m_phi_m = (mm >= 0) ? sin_m_phi : -sin_m_phi;
                 const COMPLEX phi_const = MAKE_COMPLEX(cos_m_phi, sin_m_phi_m) * (sign / sqrt_n);
                 for (int a = 0; a < 2; ++a) {
@@ -418,35 +429,95 @@ inline __device__ void ska_to_local(const FLOAT *m, FLOAT az, FLOAT za, FLOAT *l
     *local_za = ATAN2(horizontal, l[2]);
 }
 
-__global__ void ska_kernel(const SkaGpuModel model, const FLOAT *azs, const FLOAT *zas, const int num_directions,
-                           const FLOAT *freqs_hz, const int num_freqs, const int num_tiles, const int *element_ids,
-                           const int num_station_elements, const FLOAT *positions, const FLOAT *weights,
-                           const FLOAT *rotations, const FLOAT *frames, const FLOAT pointing_az,
-                           const FLOAT pointing_za, const FLOAT *latitude_rad, const int iau_order,
-                           JONES *results) {
-    for (int i_dir = blockIdx.x * blockDim.x + threadIdx.x; i_dir < num_directions;
-         i_dir += gridDim.x * blockDim.x) {
-        const FLOAT az = azs[i_dir];
-        const FLOAT za = zas[i_dir];
-        const FLOAT phi = M_PI_2 - az;
+// The direction, pointing and parallactic angle of a tile, in the tile's
+// local frame (if it has one).
+typedef struct SkaTileGeometry {
+    // The direction's zenith angle and phi (East through North, before the
+    // tile's rotation is applied).
+    FLOAT za;
+    FLOAT phi;
+    // The pointing minus the direction (unit vectors, East, North, Up).
+    FLOAT ds[3];
+    // The parallactic angle (if a latitude is given).
+    FLOAT pa;
+} SkaTileGeometry;
 
-        // Direction and pointing unit vectors (East, North, Up), for stations.
+inline __device__ SkaTileGeometry ska_tile_geometry(FLOAT az, FLOAT za, FLOAT pointing_az, FLOAT pointing_za,
+                                                    const FLOAT *latitude_rad, const FLOAT *frame) {
+    SkaTileGeometry g;
+    if (frame == NULL) {
         FLOAT s_az, c_az, s_za, c_za, s_paz, c_paz, s_pza, c_pza;
         SINCOS(az, &s_az, &c_az);
         SINCOS(za, &s_za, &c_za);
         SINCOS(pointing_az, &s_paz, &c_paz);
         SINCOS(pointing_za, &s_pza, &c_pza);
-        const FLOAT ds[3] = {s_pza * s_paz - s_za * s_az, s_pza * c_paz - s_za * c_az, c_pza - c_za};
-
+        g.za = za;
+        g.phi = M_PI_2 - az;
+        g.ds[0] = s_pza * s_paz - s_za * s_az;
+        g.ds[1] = s_pza * c_paz - s_za * c_az;
+        g.ds[2] = c_pza - c_za;
         // The parallactic angle, computed directly from (az, za) rather than
         // via (HA, Dec) so that it is well conditioned near the zenith in
         // single precision (see parallactic_angle in src/ska/mod.rs).
-        FLOAT pa = 0.0;
+        g.pa = 0.0;
         if (latitude_rad != NULL) {
             FLOAT s_lat, c_lat;
             SINCOS(*latitude_rad, &s_lat, &c_lat);
-            pa = ATAN2(-s_az * c_lat, s_lat * s_za - c_lat * c_za * c_az);
+            g.pa = ATAN2(-s_az * c_lat, s_lat * s_za - c_lat * c_za * c_az);
         }
+    } else {
+        FLOAT l_az, l_za, l[3], p_az, p_za, p[3];
+        ska_to_local(frame, az, za, &l_az, &l_za, l);
+        ska_to_local(frame, pointing_az, pointing_za, &p_az, &p_za, p);
+        g.za = l_za;
+        g.phi = M_PI_2 - l_az;
+        for (int r = 0; r < 3; r++)
+            g.ds[r] = p[r] - l[r];
+        g.pa = 0.0;
+        if (latitude_rad != NULL) {
+            // The celestial pole in the local frame.
+            FLOAT pole_az, pole_za, pole[3];
+            ska_to_local(frame, 0.0, M_PI_2 - *latitude_rad, &pole_az, &pole_za, pole);
+            FLOAT s_daz, c_daz, s_lza, c_lza, s_plat, c_plat;
+            SINCOS(l_az - pole_az, &s_daz, &c_daz);
+            SINCOS(l_za, &s_lza, &c_lza);
+            SINCOS(M_PI_2 - pole_za, &s_plat, &c_plat);
+            g.pa = ATAN2(-s_daz * c_plat, s_plat * s_lza - c_plat * c_lza * c_daz);
+        }
+    }
+    return g;
+}
+
+// Convert a response in EveryBeam's convention ([X_theta, X_phi, Y_theta,
+// Y_phi]) to hyperbeam's ([X_theta, X_az, Y_theta, Y_az]), applying the
+// parallactic-angle correction if there's a latitude.
+inline __device__ void ska_finish_response(JONES *j, FLOAT pa, const FLOAT *latitude_rad, int iau_order) {
+    j->j01 = ska_neg(j->j01);
+    j->j11 = ska_neg(j->j11);
+    if (latitude_rad != NULL)
+        ska_apply_pa_correction(j, pa, iau_order);
+}
+
+// Scale the X row of a Jones matrix by `x` and the Y row by `y`.
+inline __device__ void ska_scale_rows(JONES *j, COMPLEX x, COMPLEX y) {
+    j->j00 = j->j00 * x;
+    j->j01 = j->j01 * x;
+    j->j10 = j->j10 * y;
+    j->j11 = j->j11 * y;
+}
+
+__global__ void ska_kernel(const SkaGpuModel model, const FLOAT *azs, const FLOAT *zas, const int num_directions,
+                           const FLOAT *freqs_hz, const int num_freqs, const int num_tiles, const int *element_ids,
+                           const int num_station_elements, const FLOAT *positions, const FLOAT *weights,
+                           const FLOAT *weights_y, const FLOAT *rotations, const FLOAT *frames,
+                           const FLOAT pointing_az, const FLOAT pointing_za, const FLOAT *latitude_rad,
+                           const int iau_order, JONES *results) {
+    for (int i_dir = blockIdx.x * blockDim.x + threadIdx.x; i_dir < num_directions;
+         i_dir += gridDim.x * blockDim.x) {
+        const FLOAT az = azs[i_dir];
+        const FLOAT za = zas[i_dir];
+        // The geometry without a local frame is the same for all tiles.
+        const SkaTileGeometry shared_geometry = ska_tile_geometry(az, za, pointing_az, pointing_za, latitude_rad, NULL);
 
         for (int i_freq = 0; i_freq < num_freqs; i_freq++) {
             const FLOAT freq = freqs_hz[i_freq];
@@ -454,105 +525,165 @@ __global__ void ska_kernel(const SkaGpuModel model, const FLOAT *azs, const FLOA
 
             // For models whose elements are all identical, the element
             // response only needs to be evaluated once per direction (for
-            // unrotated tiles).
+            // unrotated tiles without a local frame).
             JONES unrotated_element;
             int unrotated_ok = 0;
             if (model.model != SKA_EEP_SPH) {
-                unrotated_ok = ska_element_response(&model, i_freq, freq, 0, za, phi, &unrotated_element);
+                unrotated_ok = ska_element_response(&model, i_freq, freq, 0, shared_geometry.za, shared_geometry.phi,
+                                                    &unrotated_element);
             }
 
             for (int i_tile = 0; i_tile < num_tiles; i_tile++) {
                 JONES j = ska_zero_jones();
                 int ok = 1;
-                // The direction, pointing and parallactic angle in the tile's
-                // local frame (if it has one).
-                FLOAT tile_za = za;
-                FLOAT tile_base_phi = phi;
-                FLOAT tile_ds[3] = {ds[0], ds[1], ds[2]};
-                FLOAT tile_pa = pa;
-                if (frames != NULL) {
-                    const FLOAT *m = frames + (size_t)9 * i_tile;
-                    FLOAT l_az, l_za, l[3], p_az, p_za, p[3];
-                    ska_to_local(m, az, za, &l_az, &l_za, l);
-                    ska_to_local(m, pointing_az, pointing_za, &p_az, &p_za, p);
-                    tile_za = l_za;
-                    tile_base_phi = M_PI_2 - l_az;
-                    for (int r = 0; r < 3; r++)
-                        tile_ds[r] = p[r] - l[r];
-                    if (latitude_rad != NULL) {
-                        // The celestial pole in the local frame.
-                        FLOAT pole_az, pole_za, pole[3];
-                        ska_to_local(m, 0.0, M_PI_2 - *latitude_rad, &pole_az, &pole_za, pole);
-                        FLOAT s_daz, c_daz, s_lza, c_lza, s_plat, c_plat;
-                        SINCOS(l_az - pole_az, &s_daz, &c_daz);
-                        SINCOS(l_za, &s_lza, &c_lza);
-                        SINCOS(M_PI_2 - pole_za, &s_plat, &c_plat);
-                        tile_pa = ATAN2(-s_daz * c_plat, s_plat * s_lza - c_plat * c_lza * c_daz);
-                    }
-                }
+                const SkaTileGeometry g =
+                    frames == NULL ? shared_geometry
+                                   : ska_tile_geometry(az, za, pointing_az, pointing_za, latitude_rad,
+                                                       frames + (size_t)9 * i_tile);
                 // The direction's phi in the tile's (rotated) frame.
                 const FLOAT rotation = rotations != NULL ? rotations[i_tile] : 0.0;
-                const FLOAT tile_phi = tile_base_phi - rotation;
+                const FLOAT tile_phi = g.phi - rotation;
                 JONES shared_element = unrotated_element;
                 int shared_ok = unrotated_ok;
                 if (model.model != SKA_EEP_SPH && (rotation != 0.0 || frames != NULL)) {
-                    shared_ok = ska_element_response(&model, i_freq, freq, 0, tile_za, tile_phi, &shared_element);
+                    shared_ok = ska_element_response(&model, i_freq, freq, 0, g.za, tile_phi, &shared_element);
                 }
                 if (positions == NULL) {
                     // Single element.
                     if (model.model == SKA_EEP_SPH) {
                         const int element_id = element_ids != NULL ? element_ids[i_tile] : 0;
-                        j = ska_sph_response(&model, i_freq, element_id, tile_za, tile_phi);
+                        j = ska_sph_response(&model, i_freq, element_id, g.za, tile_phi);
                     } else {
                         ok = shared_ok;
                         j = shared_element;
                     }
                 } else {
-                    // Station: sum of phased element responses.
+                    // Station of identical elements: the element response
+                    // times the array factor (one for each dipole, as their
+                    // weights may differ). Stations of distinct elements
+                    // (ska-low-eep-sph) are calculated by
+                    // ska_sph_station_kernel instead.
                     const FLOAT *pos = positions + (size_t)i_tile * num_station_elements * 3;
-                    const FLOAT *w = weights + (size_t)i_tile * num_station_elements;
-                    FLOAT sum_w = 0.0;
-                    COMPLEX af = MAKE_COMPLEX(0.0, 0.0);
+                    const FLOAT *w_x = weights + (size_t)i_tile * num_station_elements;
+                    const FLOAT *w_y =
+                        weights_y != NULL ? weights_y + (size_t)i_tile * num_station_elements : w_x;
+                    FLOAT sum_w_x = 0.0, sum_w_y = 0.0;
+                    COMPLEX af_x = MAKE_COMPLEX(0.0, 0.0), af_y = MAKE_COMPLEX(0.0, 0.0);
                     for (int e = 0; e < num_station_elements; e++) {
-                        sum_w += w[e];
-                        if (w[e] == 0.0)
+                        sum_w_x += w_x[e];
+                        sum_w_y += w_y[e];
+                        if (w_x[e] == 0.0 && w_y[e] == 0.0)
                             continue;
                         FLOAT s_ph, c_ph;
-                        SINCOS(k * (tile_ds[0] * pos[3 * e] + tile_ds[1] * pos[3 * e + 1] +
-                                    tile_ds[2] * pos[3 * e + 2]),
+                        SINCOS(k * (g.ds[0] * pos[3 * e] + g.ds[1] * pos[3 * e + 1] + g.ds[2] * pos[3 * e + 2]),
                                &s_ph, &c_ph);
-                        const COMPLEX phasor = MAKE_COMPLEX(c_ph * w[e], s_ph * w[e]);
-                        if (model.model == SKA_EEP_SPH) {
-                            const JONES el = ska_sph_response(&model, i_freq, e, tile_za, tile_phi);
-                            ska_add_scaled(&j, &el, phasor);
-                        } else {
-                            af += phasor;
-                        }
+                        af_x += MAKE_COMPLEX(c_ph * w_x[e], s_ph * w_x[e]);
+                        af_y += MAKE_COMPLEX(c_ph * w_y[e], s_ph * w_y[e]);
                     }
-                    if (model.model != SKA_EEP_SPH) {
-                        ok = shared_ok;
-                        ska_add_scaled(&j, &shared_element, af);
-                    }
-                    const FLOAT inv = sum_w != 0.0 ? 1.0 / sum_w : 0.0;
-                    j.j00 *= inv;
-                    j.j01 *= inv;
-                    j.j10 *= inv;
-                    j.j11 *= inv;
+                    ok = shared_ok;
+                    j = shared_element;
+                    const FLOAT inv_x = sum_w_x != 0.0 ? 1.0 / sum_w_x : 0.0;
+                    const FLOAT inv_y = sum_w_y != 0.0 ? 1.0 / sum_w_y : 0.0;
+                    ska_scale_rows(&j, af_x * inv_x, af_y * inv_y);
                 }
 
                 if (!ok) {
                     j = ska_zero_jones();
                 } else {
-                    // EveryBeam [X_theta, X_phi, Y_theta, Y_phi] -> hyperbeam
-                    // [X_theta, X_az, Y_theta, Y_az].
-                    j.j01 = ska_neg(j.j01);
-                    j.j11 = ska_neg(j.j11);
-                    if (latitude_rad != NULL)
-                        ska_apply_pa_correction(&j, tile_pa, iau_order);
+                    ska_finish_response(&j, g.pa, latitude_rad, iau_order);
                 }
                 results[((size_t)i_tile * num_freqs + i_freq) * num_directions + i_dir] = j;
             }
         }
+    }
+}
+
+// One thread's share of a station of distinct elements (ska-low-eep-sph):
+// the weighted, phased sum over elements `i_thread`, `i_thread + num_threads`,
+// ..., for the X and Y dipoles, and the sums of the weights.
+inline __device__ void ska_sph_station_partial(const SkaGpuModel *model, const SkaTileGeometry *g, FLOAT tile_phi,
+                                               FLOAT k, int i_freq, int num_station_elements, const FLOAT *pos,
+                                               const FLOAT *w_x, const FLOAT *w_y, int i_thread, int num_threads,
+                                               JONES *acc, FLOAT *sum_w_x, FLOAT *sum_w_y) {
+    *acc = ska_zero_jones();
+    *sum_w_x = 0.0;
+    *sum_w_y = 0.0;
+    for (int e = i_thread; e < num_station_elements; e += num_threads) {
+        *sum_w_x += w_x[e];
+        *sum_w_y += w_y[e];
+        if (w_x[e] == 0.0 && w_y[e] == 0.0)
+            continue;
+        FLOAT s_ph, c_ph;
+        SINCOS(k * (g->ds[0] * pos[3 * e] + g->ds[1] * pos[3 * e + 1] + g->ds[2] * pos[3 * e + 2]), &s_ph, &c_ph);
+        JONES el = ska_sph_response(model, i_freq, e, g->za, tile_phi);
+        ska_scale_rows(&el, MAKE_COMPLEX(c_ph * w_x[e], s_ph * w_x[e]), MAKE_COMPLEX(c_ph * w_y[e], s_ph * w_y[e]));
+        acc->j00 += el.j00;
+        acc->j01 += el.j01;
+        acc->j10 += el.j10;
+        acc->j11 += el.j11;
+    }
+}
+
+// Combine the partial sums of ska_sph_station_partial into a station
+// response, in hyperbeam's convention.
+inline __device__ JONES ska_sph_station_finish(const JONES *partials, const FLOAT *sums_w_x, const FLOAT *sums_w_y,
+                                               int num_partials, FLOAT pa, const FLOAT *latitude_rad,
+                                               int iau_order) {
+    JONES j = ska_zero_jones();
+    FLOAT sum_w_x = 0.0, sum_w_y = 0.0;
+    for (int t = 0; t < num_partials; t++) {
+        j.j00 += partials[t].j00;
+        j.j01 += partials[t].j01;
+        j.j10 += partials[t].j10;
+        j.j11 += partials[t].j11;
+        sum_w_x += sums_w_x[t];
+        sum_w_y += sums_w_y[t];
+    }
+    const FLOAT inv_x = sum_w_x != 0.0 ? 1.0 / sum_w_x : 0.0;
+    const FLOAT inv_y = sum_w_y != 0.0 ? 1.0 / sum_w_y : 0.0;
+    ska_scale_rows(&j, MAKE_COMPLEX(inv_x, 0.0), MAKE_COMPLEX(inv_y, 0.0));
+    ska_finish_response(&j, pa, latitude_rad, iau_order);
+    return j;
+}
+
+// Stations of distinct elements (ska-low-eep-sph). Each element's response is
+// expensive (the coefficient files can have degrees in the hundreds), so each
+// block handles one (direction, tile, frequency), with its threads sharing
+// the elements.
+__global__ void ska_sph_station_kernel(const SkaGpuModel model, const FLOAT *azs, const FLOAT *zas,
+                                       const int num_directions, const FLOAT *freqs_hz, const int num_freqs,
+                                       const int num_tiles, const int num_station_elements, const FLOAT *positions,
+                                       const FLOAT *weights, const FLOAT *weights_y, const FLOAT *rotations,
+                                       const FLOAT *frames, const FLOAT pointing_az, const FLOAT pointing_za,
+                                       const FLOAT *latitude_rad, const int iau_order, JONES *results) {
+    __shared__ JONES partials[SKA_SPH_STATION_THREADS];
+    __shared__ FLOAT sums_w_x[SKA_SPH_STATION_THREADS];
+    __shared__ FLOAT sums_w_y[SKA_SPH_STATION_THREADS];
+    const size_t num_blocks = (size_t)num_directions * num_tiles * num_freqs;
+    for (size_t i_block = blockIdx.x; i_block < num_blocks; i_block += gridDim.x) {
+        const int i_dir = (int)(i_block % num_directions);
+        const int i_freq = (int)((i_block / num_directions) % num_freqs);
+        const int i_tile = (int)(i_block / ((size_t)num_directions * num_freqs));
+
+        const SkaTileGeometry g =
+            ska_tile_geometry(azs[i_dir], zas[i_dir], pointing_az, pointing_za, latitude_rad,
+                              frames != NULL ? frames + (size_t)9 * i_tile : NULL);
+        const FLOAT tile_phi = g.phi - (rotations != NULL ? rotations[i_tile] : 0.0);
+        const FLOAT k = -M_2PI * freqs_hz[i_freq] / VEL_C;
+        const FLOAT *pos = positions + (size_t)i_tile * num_station_elements * 3;
+        const FLOAT *w_x = weights + (size_t)i_tile * num_station_elements;
+        const FLOAT *w_y = weights_y != NULL ? weights_y + (size_t)i_tile * num_station_elements : w_x;
+        ska_sph_station_partial(&model, &g, tile_phi, k, i_freq, num_station_elements, pos, w_x, w_y, threadIdx.x,
+                                blockDim.x, &partials[threadIdx.x], &sums_w_x[threadIdx.x],
+                                &sums_w_y[threadIdx.x]);
+        __syncthreads();
+        if (threadIdx.x == 0) {
+            results[((size_t)i_tile * num_freqs + i_freq) * num_directions + i_dir] =
+                ska_sph_station_finish(partials, sums_w_x, sums_w_y, blockDim.x, g.pa, latitude_rad, iau_order);
+        }
+        // Don't let the next iteration overwrite the partials before they're
+        // summed.
+        __syncthreads();
     }
 }
 
