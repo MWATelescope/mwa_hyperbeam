@@ -11,6 +11,7 @@ use ndarray::prelude::*;
 use rayon::prelude::*;
 
 use mwa_hyperbeam::fee::*;
+use mwa_hyperbeam::ska::*;
 
 fn fee(c: &mut Criterion) {
     c.bench_function("new", |b| {
@@ -333,5 +334,69 @@ fn fee(c: &mut Criterion) {
     // });
 }
 
-criterion_group!(benches, fee);
+/// SKA-Low benchmarks. The analytic model needs no data; the EEP models are
+/// only benchmarked if `SKA_LOW_EEP_GRID_FILE` and/or `SKA_LOW_EEP_SPH_PATH`
+/// are set.
+fn ska(c: &mut Criterion) {
+    let n = 100_000;
+    let az: Vec<f64> = (0..n)
+        .map(|i| (i as f64 * 0.7731) % std::f64::consts::TAU)
+        .collect();
+    let za: Vec<f64> = (0..n)
+        .map(|i| (i as f64 * 0.3117) % 89.0_f64.to_radians())
+        .collect();
+
+    let beam = SkaLowAnalytic::new();
+    c.bench_function("ska-low-analytic calc_jones_array_pair 100k", |b| {
+        b.iter(|| {
+            beam.calc_jones_array_pair(&az, &za, 150e6, 0, Some(MWA_LAT_RAD), true)
+                .unwrap()
+        })
+    });
+
+    c.bench_function("ska-low-analytic calc_jones_array_pair 100k (no PA)", |b| {
+        b.iter(|| {
+            beam.calc_jones_array_pair(&az, &za, 150e6, 0, None, false)
+                .unwrap()
+        })
+    });
+
+    if let Ok(beam) = SkaLowEepGrid::new_from_env() {
+        let freq = beam.get_freqs()[0] + 0.37 * (beam.get_freqs()[1] - beam.get_freqs()[0]);
+        c.bench_function("ska-low-eep-grid calc_jones_array_pair 100k (no PA)", |b| {
+            b.iter(|| {
+                beam.calc_jones_array_pair(&az, &za, freq, 0, None, false)
+                    .unwrap()
+            })
+        });
+        c.bench_function("ska-low-eep-grid calc_jones_array_pair 100k", |b| {
+            b.iter(|| {
+                beam.calc_jones_array_pair(&az, &za, freq, 0, Some(MWA_LAT_RAD), true)
+                    .unwrap()
+            })
+        });
+    }
+
+    if let Ok(beam) = SkaLowEepSph::new_from_env() {
+        let freq = beam.get_freqs()[0];
+        // Warm the coefficient cache.
+        beam.calc_jones_pair(0.1, 0.1, freq, 0, None, false)
+            .unwrap();
+        c.bench_function("ska-low-eep-sph calc_jones_array_pair 10k", |b| {
+            b.iter(|| {
+                beam.calc_jones_array_pair(
+                    &az[..10_000],
+                    &za[..10_000],
+                    freq,
+                    0,
+                    Some(MWA_LAT_RAD),
+                    true,
+                )
+                .unwrap()
+            })
+        });
+    }
+}
+
+criterion_group!(benches, fee, ska);
 criterion_main!(benches);

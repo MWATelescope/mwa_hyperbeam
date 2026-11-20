@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- SKA-Low element beam models (`ska` module, also in Python), matching the
+  SKA-Low models in [EveryBeam](https://git.astron.nl/RD/EveryBeam) master
+  (after 0.9.1):
+  - `SkaLowAnalytic` ("ska-low-analytic"): EveryBeam's `oskar_dipole_cos`
+    (and `oskar_dipole` via `SkaLowAnalytic::new_without_taper`).
+  - `SkaLowEepGrid` ("ska-low-eep-grid"): EveryBeam's `gridded_eep`.
+  - `SkaLowEepSph` ("ska-low-eep-sph"): EveryBeam's `skalow_feko`.
+  - `SkaStation`, to combine any of these with an array factor (station
+    beams), as EveryBeam does for OSKAR telescopes, including each station's
+    rigid rotation about the local vertical (`SkaStation::with_rotation`;
+    `rotation_from_p_axis` converts a station's `COORDINATE_AXES` p axis).
+    Stations can also have their own local frame
+    (`SkaStation::with_local_frame`, and `local_frames` for GPU stations), so
+    that directions given in an array-centre frame are converted to each
+    station's horizon, as EveryBeam does for stations far from the array
+    centre.
+  - Real SKA-Low FEKO coefficient files (degrees from ~140 to ~390, varying
+    from file to file) on the GPU: each file's coefficients are stored at its
+    own degree (up to 510) and uploaded one file at a time, and stations of
+    per-element patterns are calculated by a kernel that shares each
+    station's elements between the threads of a block (so few directions,
+    e.g. calibrating on one source, still use the whole GPU). The CPU code
+    also evaluates a station's elements in parallel. GPU stations can have
+    separate weights (flags) for their Y dipoles (`weights_y`).
+    Array factors use a vectorised sin/cos (`ska::fastmath`, ~1 ulp), about
+    twice as fast as calling libm per element.
+  - `SkaLowBeam`, a runtime-selected model, which is also exposed via the C
+    FFI (`new_ska_low_*_beam`, `ska_low_calc_jones*`,
+    `ska_low_calc_station_jones_array`, `free_ska_low_beam`); see
+    `examples/ska_low.c`.
+  - CUDA/HIP support for all SKA-Low models, for single elements or whole
+    stations (`SkaLowBeam::gpu_prepare` -> `SkaLowBeamGpu`, and
+    `new_gpu_ska_low_beam`/`ska_low_calc_jones_gpu*` in the C FFI). Results
+    use the same `(tile, freq, direction)` layout as `FEEBeamGpu`. Also in
+    Python (`gpu_prepare` on the SKA-Low classes, returning `SkaLowGpu`).
+  - `benches/ska_benchmark.py`, a `uv run`-able benchmark of the SKA-Low beams
+    (CPU and GPU) against EveryBeam.
+
 ## [0.14.0] - 2026-11-17
 
 ### Changes
