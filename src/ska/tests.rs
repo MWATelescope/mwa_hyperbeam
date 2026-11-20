@@ -999,3 +999,20 @@ fn local_parallactic_angle_matches_direct_with_identity() {
         );
     }
 }
+
+#[test]
+fn feko_coefficients_are_read_once_by_many_threads() {
+    // Many threads wanting the same (uncached) file at once must get the same
+    // coefficients, read once.
+    let dir = write_feko_dir("feko_read_once", &[100.0], 4, 6);
+    let beam = SkaLowEepSph::new(&dir.0).unwrap();
+    let coeffs: Vec<_> = std::thread::scope(|s| {
+        let handles: Vec<_> = (0..8)
+            .map(|_| s.spawn(|| beam.get_coeffs(0).unwrap()))
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    for c in &coeffs[1..] {
+        assert!(std::sync::Arc::ptr_eq(c, &coeffs[0]));
+    }
+}

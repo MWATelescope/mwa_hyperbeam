@@ -258,10 +258,16 @@ impl SkaLowEepSph {
     /// Read the coefficients of a file, truncated to this object's `l_max`,
     /// without caching them. (Files can be gigabytes in size; this lets the
     /// GPU code upload them one at a time.)
+    #[cfg(any(feature = "cuda", feature = "hip"))]
     pub(crate) fn read_coeffs(&self, file_index: usize) -> Result<Array3<c64>, SkaBeamError> {
+        let _guard = self.hdf5_lock.lock().unwrap_or_else(|e| e.into_inner());
+        self.read_coeffs_locked(file_index)
+    }
+
+    /// [`read_coeffs`](Self::read_coeffs), with `hdf5_lock` already held.
+    fn read_coeffs_locked(&self, file_index: usize) -> Result<Array3<c64>, SkaBeamError> {
         let file = &self.files[file_index];
         let l_max = self.file_l_max(file_index);
-        let _guard = self.hdf5_lock.lock().unwrap_or_else(|e| e.into_inner());
         let h5 = hdf5_metno::File::open(&file.path)?;
         let ds = h5.dataset("coefficients")?;
         let shape = ds.shape();
@@ -280,12 +286,19 @@ impl SkaLowEepSph {
     }
 
     /// Get (reading if necessary) the coefficients of a file, truncated to
-    /// this object's `l_max`, and cache them.
+    /// this object's `l_max`, and cache them. Each file is read at most once,
+    /// even when many threads want it at the same time.
     pub(crate) fn get_coeffs(&self, file_index: usize) -> Result<Arc<Array3<c64>>, SkaBeamError> {
         if let Some(c) = self.cached_coeffs(file_index) {
             return Ok(c);
         }
-        let coeffs = Arc::new(self.read_coeffs(file_index)?);
+        let _guard = self.hdf5_lock.lock().unwrap_or_else(|e| e.into_inner());
+        // Another thread may have read the file while this one waited for the
+        // lock.
+        if let Some(c) = self.cached_coeffs(file_index) {
+            return Ok(c);
+        }
+        let coeffs = Arc::new(self.read_coeffs_locked(file_index)?);
         self.cache.write().insert(file_index, Arc::clone(&coeffs));
         Ok(coeffs)
     }
