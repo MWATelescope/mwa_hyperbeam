@@ -26,7 +26,7 @@ use crate::gpu::{DevicePointer, GpuComplex, GpuError, GpuFloat};
 
 /// The maximum spherical-wave degree supported by the GPU code (must match
 /// `SKA_MAX_L_MAX` in ska.h).
-pub const SKA_GPU_MAX_L_MAX: usize = 64;
+pub const SKA_GPU_MAX_L_MAX: usize = 510;
 
 /// What each "tile" of a [`SkaLowBeamGpu`] is.
 #[derive(Clone, Copy, Debug)]

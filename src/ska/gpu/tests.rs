@@ -289,3 +289,15 @@ fn gpu_out_of_grid_is_zero() {
     // Out-of-range frequencies are an error when preparing.
     assert!(unsafe { beam.gpu_prepare(&[400e6], SkaGpuTiles::Elements(&[0])) }.is_err());
 }
+
+#[test]
+fn max_l_max_matches_header() {
+    // SKA_GPU_MAX_L_MAX must match SKA_MAX_L_MAX in ska.h, which sizes the
+    // kernels' per-thread Legendre arrays.
+    let header = include_str!("ska.h");
+    let define = header
+        .lines()
+        .find_map(|l| l.strip_prefix("#define SKA_MAX_L_MAX "))
+        .expect("ska.h defines SKA_MAX_L_MAX");
+    assert_eq!(define.trim().parse::<usize>().unwrap(), SKA_GPU_MAX_L_MAX);
+}
