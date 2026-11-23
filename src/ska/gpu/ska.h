@@ -506,95 +506,78 @@ inline __device__ void ska_scale_rows(JONES *j, COMPLEX x, COMPLEX y) {
     j->j11 = j->j11 * y;
 }
 
+// One thread per response: results are laid out as [tile][frequency][direction],
+// and thread `i` calculates element `i` of that array (looping if there are
+// more responses than threads in the grid). Parallelising over all three axes,
+// rather than only over directions, keeps the GPU busy when there are few
+// directions but many tiles and frequencies (e.g. a few hundred sky-model
+// components for 68 stations and hundreds of fine channels), and the work per
+// thread doesn't grow with the number of tiles or frequencies.
 __global__ void ska_kernel(const SkaGpuModel model, const FLOAT *azs, const FLOAT *zas, const int num_directions,
                            const FLOAT *freqs_hz, const int num_freqs, const int num_tiles, const int *element_ids,
                            const int num_station_elements, const FLOAT *positions, const FLOAT *weights,
                            const FLOAT *weights_y, const FLOAT *rotations, const FLOAT *frames,
                            const FLOAT pointing_az, const FLOAT pointing_za, const FLOAT *latitude_rad,
                            const int iau_order, JONES *results) {
-    for (int i_dir = blockIdx.x * blockDim.x + threadIdx.x; i_dir < num_directions;
-         i_dir += gridDim.x * blockDim.x) {
-        const FLOAT az = azs[i_dir];
-        const FLOAT za = zas[i_dir];
-        // The geometry without a local frame is the same for all tiles.
-        const SkaTileGeometry shared_geometry = ska_tile_geometry(az, za, pointing_az, pointing_za, latitude_rad, NULL);
+    const size_t num_responses = (size_t)num_tiles * num_freqs * num_directions;
+    const size_t stride = (size_t)gridDim.x * blockDim.x;
+    for (size_t i = (size_t)blockIdx.x * blockDim.x + threadIdx.x; i < num_responses; i += stride) {
+        const int i_dir = (int)(i % num_directions);
+        const int i_freq = (int)((i / num_directions) % num_freqs);
+        const int i_tile = (int)(i / ((size_t)num_directions * num_freqs));
 
-        for (int i_freq = 0; i_freq < num_freqs; i_freq++) {
-            const FLOAT freq = freqs_hz[i_freq];
-            const FLOAT k = -M_2PI * freq / VEL_C;
+        const FLOAT freq = freqs_hz[i_freq];
+        const FLOAT k = -M_2PI * freq / VEL_C;
+        const SkaTileGeometry g =
+            ska_tile_geometry(azs[i_dir], zas[i_dir], pointing_az, pointing_za, latitude_rad,
+                              frames == NULL ? NULL : frames + (size_t)9 * i_tile);
+        // The direction's phi in the tile's (rotated) frame.
+        const FLOAT rotation = rotations != NULL ? rotations[i_tile] : 0.0;
+        const FLOAT tile_phi = g.phi - rotation;
 
-            // For models whose elements are all identical, the element
-            // response only needs to be evaluated once per direction (for
-            // unrotated tiles without a local frame).
-            JONES unrotated_element;
-            int unrotated_ok = 0;
-            if (model.model != SKA_EEP_SPH) {
-                unrotated_ok = ska_element_response(&model, i_freq, freq, 0, shared_geometry.za, shared_geometry.phi,
-                                                    &unrotated_element);
-            }
-
-            for (int i_tile = 0; i_tile < num_tiles; i_tile++) {
-                JONES j = ska_zero_jones();
-                int ok = 1;
-                const SkaTileGeometry g =
-                    frames == NULL ? shared_geometry
-                                   : ska_tile_geometry(az, za, pointing_az, pointing_za, latitude_rad,
-                                                       frames + (size_t)9 * i_tile);
-                // The direction's phi in the tile's (rotated) frame.
-                const FLOAT rotation = rotations != NULL ? rotations[i_tile] : 0.0;
-                const FLOAT tile_phi = g.phi - rotation;
-                JONES shared_element = unrotated_element;
-                int shared_ok = unrotated_ok;
-                if (model.model != SKA_EEP_SPH && (rotation != 0.0 || frames != NULL)) {
-                    shared_ok = ska_element_response(&model, i_freq, freq, 0, g.za, tile_phi, &shared_element);
+        JONES j = ska_zero_jones();
+        int ok = 1;
+        if (model.model == SKA_EEP_SPH) {
+            // Single element (stations of distinct elements are calculated by
+            // ska_sph_station_kernel instead).
+            const int element_id = element_ids != NULL ? element_ids[i_tile] : 0;
+            j = ska_sph_response(&model, i_freq, element_id, g.za, tile_phi);
+        } else {
+            // The elements of these models are all identical, so there's one
+            // element response for the tile.
+            ok = ska_element_response(&model, i_freq, freq, 0, g.za, tile_phi, &j);
+            if (positions != NULL) {
+                // Station of identical elements: the element response times
+                // the array factor (one for each dipole, as their weights may
+                // differ).
+                const FLOAT *pos = positions + (size_t)i_tile * num_station_elements * 3;
+                const FLOAT *w_x = weights + (size_t)i_tile * num_station_elements;
+                const FLOAT *w_y = weights_y != NULL ? weights_y + (size_t)i_tile * num_station_elements : w_x;
+                FLOAT sum_w_x = 0.0, sum_w_y = 0.0;
+                COMPLEX af_x = MAKE_COMPLEX(0.0, 0.0), af_y = MAKE_COMPLEX(0.0, 0.0);
+                for (int e = 0; e < num_station_elements; e++) {
+                    sum_w_x += w_x[e];
+                    sum_w_y += w_y[e];
+                    if (w_x[e] == 0.0 && w_y[e] == 0.0)
+                        continue;
+                    FLOAT s_ph, c_ph;
+                    SINCOS(k * (g.ds[0] * pos[3 * e] + g.ds[1] * pos[3 * e + 1] + g.ds[2] * pos[3 * e + 2]), &s_ph,
+                           &c_ph);
+                    af_x += MAKE_COMPLEX(c_ph * w_x[e], s_ph * w_x[e]);
+                    af_y += MAKE_COMPLEX(c_ph * w_y[e], s_ph * w_y[e]);
                 }
-                if (positions == NULL) {
-                    // Single element.
-                    if (model.model == SKA_EEP_SPH) {
-                        const int element_id = element_ids != NULL ? element_ids[i_tile] : 0;
-                        j = ska_sph_response(&model, i_freq, element_id, g.za, tile_phi);
-                    } else {
-                        ok = shared_ok;
-                        j = shared_element;
-                    }
-                } else {
-                    // Station of identical elements: the element response
-                    // times the array factor (one for each dipole, as their
-                    // weights may differ). Stations of distinct elements
-                    // (ska-low-eep-sph) are calculated by
-                    // ska_sph_station_kernel instead.
-                    const FLOAT *pos = positions + (size_t)i_tile * num_station_elements * 3;
-                    const FLOAT *w_x = weights + (size_t)i_tile * num_station_elements;
-                    const FLOAT *w_y =
-                        weights_y != NULL ? weights_y + (size_t)i_tile * num_station_elements : w_x;
-                    FLOAT sum_w_x = 0.0, sum_w_y = 0.0;
-                    COMPLEX af_x = MAKE_COMPLEX(0.0, 0.0), af_y = MAKE_COMPLEX(0.0, 0.0);
-                    for (int e = 0; e < num_station_elements; e++) {
-                        sum_w_x += w_x[e];
-                        sum_w_y += w_y[e];
-                        if (w_x[e] == 0.0 && w_y[e] == 0.0)
-                            continue;
-                        FLOAT s_ph, c_ph;
-                        SINCOS(k * (g.ds[0] * pos[3 * e] + g.ds[1] * pos[3 * e + 1] + g.ds[2] * pos[3 * e + 2]),
-                               &s_ph, &c_ph);
-                        af_x += MAKE_COMPLEX(c_ph * w_x[e], s_ph * w_x[e]);
-                        af_y += MAKE_COMPLEX(c_ph * w_y[e], s_ph * w_y[e]);
-                    }
-                    ok = shared_ok;
-                    j = shared_element;
-                    const FLOAT inv_x = sum_w_x != 0.0 ? 1.0 / sum_w_x : 0.0;
-                    const FLOAT inv_y = sum_w_y != 0.0 ? 1.0 / sum_w_y : 0.0;
-                    ska_scale_rows(&j, af_x * inv_x, af_y * inv_y);
-                }
-
-                if (!ok) {
-                    j = ska_zero_jones();
-                } else {
-                    ska_finish_response(&j, g.pa, latitude_rad, iau_order);
-                }
-                results[((size_t)i_tile * num_freqs + i_freq) * num_directions + i_dir] = j;
+                const FLOAT inv_x = sum_w_x != 0.0 ? 1.0 / sum_w_x : 0.0;
+                const FLOAT inv_y = sum_w_y != 0.0 ? 1.0 / sum_w_y : 0.0;
+                ska_scale_rows(&j, af_x * inv_x, af_y * inv_y);
             }
         }
+
+        if (!ok) {
+            j = ska_zero_jones();
+        } else {
+            ska_finish_response(&j, g.pa, latitude_rad, iau_order);
+        }
+        results[i] = j;
     }
 }
 
