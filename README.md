@@ -21,6 +21,11 @@ Full Embedded Element (FEE) primary beam model of the MWA, a.k.a. "the 2016
 beam". This code should be used over all others. If there are soundness issues,
 please raise them here so everyone can benefit.
 
+`hyperbeam` also provides the analytic MWA beam, in the flavours used by
+[mwa_pb](https://github.com/MWATelescope/mwa_pb) and the RTS. The analytic beam
+needs no HDF5 file. Both beams can be used from Rust, C (or anything that can
+call C) and Python, on CPUs and on NVIDIA (CUDA) and AMD (HIP) GPUs.
+
 See the
 [changelog](https://github.com/MWATelescope/mwa_hyperbeam/blob/main/CHANGELOG.md)
 for the latest changes to the code.
@@ -35,7 +40,7 @@ re-order the Jones matrices.
 
 ## Usage
 
-`hyperbeam` requires the MWA FEE HDF5 file. This can be obtained with:
+The FEE beam requires the MWA FEE HDF5 file. This can be obtained with:
 
 ```bash
 wget http://ws.mwatelescope.org/static/mwa_full_embedded_element_pattern.h5
@@ -51,11 +56,16 @@ MWA_BEAM_FILE=/pawsey/mwa/mwa_full_embedded_element_pattern.h5`)
 
 `hyperbeam` can be used by any programming language providing FFI via C. In
 other words, most languages. See Rust, C and Python examples of usage in the
-`examples` directory. A simple Python example is:
+[`examples`
+directory](https://github.com/MWATelescope/mwa_hyperbeam/tree/main/examples);
+files starting with `fee` use the FEE beam and those starting with `analytic`
+use the analytic beam. The Rust API is documented on
+[docs.rs](https://docs.rs/mwa_hyperbeam). A simple Python example is:
 
 ```python
 >>> import mwa_hyperbeam
->>> beam = mwa_hyperbeam.FEEBeam()
+>>> # Give the path to the HDF5 file, or None to use MWA_BEAM_FILE.
+>>> beam = mwa_hyperbeam.FEEBeam(None)
 >>> help(beam.calc_jones)
 Help on built-in function calc_jones:
 
@@ -84,10 +94,18 @@ calc_jones(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad, 
   1.73003520e-05-1.53580286e-05j -2.23184781e-01-4.51051073e-02j]
 ```
 
+The analytic beam is used in the same way, but it always needs a latitude and
+has no `iau_order` argument:
+
+```python
+>>> beam = mwa_hyperbeam.AnalyticBeam()  # or AnalyticBeam(rts_behaviour=True)
+>>> jones = beam.calc_jones(0, 0.7, 167e6, [0]*16, [1]*16, -0.4660608448386394, True)
+```
+
 ### CUDA / HIP
 
-`hyperbeam` can also be run on NVIDIA GPUs, or AMD GPUs. To see an example
-of usage, see any of the examples with "cuda" or "hip" in the name. GPU
+`hyperbeam` can also be run on NVIDIA GPUs or AMD GPUs. To see an example of
+usage, see any of the examples with "cuda", "hip" or "gpu" in the name. GPU
 functionality is provided with Cargo features; see installing from source
 instructions below.
 
@@ -158,14 +176,12 @@ with single-precision floats:
 
 ```bash
 cargo build --release --features=cuda,gpu-single
-cargo build --release --features=hip,gpu-single
 ```
 
 Otherwise, go ahead with double-precision floats:
 
 ```bash
 cargo build --release --features=cuda
-cargo build --release --features=hip
 ```
 
 Desktop GPUs (e.g. NVIDIA GeForce RTX 2070) have significantly less
@@ -173,26 +189,37 @@ double-precision compute capability than "data center" GPUs (e.g. NVIDIA V100).
 Allowing `hyperbeam` to switch on the float type allows the user to decide
 between the performance and precision compromise.
 
-By default, the CUDA code is compiled for every GPU architecture the installed
-`nvcc` supports. To compile for specific architectures only, set
-`HYPERBEAM_CUDA_COMPUTE` to a comma-separated list of compute capabilities
-(e.g. `HYPERBEAM_CUDA_COMPUTE=86` for an RTX 3080, `HYPERBEAM_CUDA_COMPUTE=80,90`
-for A100 and H100).
-
 `CUDA` can also be linked statically:
 
 ```bash
 cargo build --release --features=cuda,cuda-static
 ```
 
+By default, the GPU code is compiled for every compute capability that the
+installed `nvcc` supports. To compile for particular ones only (which is
+quicker), set `HYPERBEAM_CUDA_COMPUTE` to a comma-separated list without
+periods, e.g. `export HYPERBEAM_CUDA_COMPUTE=75` for a GeForce RTX 2070
+(compute capability 7.5).
+
+CUDA releases only work with certain versions of `gcc`. If the CUDA code fails
+to compile, a compatible C++ compiler can be chosen with the `CXX` environment
+variable. If `CXX` isn't set and `$CUDA_PATH/bin/g++` exists, it is used.
+
 #### HIP
 
 The situation with `HIP` is similar to that of `CUDA`; use the `hip` feature and
-use `gpu-single` if you want the code to use single-precision floats. Set
-`HYPERBEAM_HIP_ARCH` to the GPU architecture to compile for (e.g.
-`HYPERBEAM_HIP_ARCH=gfx90a` for an MI250X); `HIP_PATH` can be used to point at
-the ROCm installation if it isn't found automatically. `HIP` does not appear to
-offer static libraries, so no static feature is provided.
+use `gpu-single` if you want the code to use single-precision floats. `HIP` does
+not appear to offer static libraries, so no static feature is provided.
+
+```bash
+cargo build --release --features=hip,gpu-single
+cargo build --release --features=hip
+```
+
+If `hipcc` isn't found, set `HIP_PATH` to the HIP (or ROCm) installation
+directory, i.e. the one containing `bin/hipcc`. To compile for a particular GPU
+architecture, set `HYPERBEAM_HIP_ARCH`; its value is passed to `hipcc` as
+`--offload-arch`, e.g. `export HYPERBEAM_HIP_ARCH=gfx90a`.
 
 #### Static dependencies
 

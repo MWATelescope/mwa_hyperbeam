@@ -86,7 +86,7 @@ impl AnalyticBeam {
     }
 
     /// Create a new [`AnalyticBeam`] struct using RTS analytic beam code and
-    /// the MWA dipole height from the RTS (see
+    /// the MWA dipole height used by the RTS (see
     /// [`AnalyticType::get_default_dipole_height`]).
     pub fn new_rts() -> AnalyticBeam {
         let beam_type = AnalyticType::Rts;

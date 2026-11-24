@@ -11,11 +11,12 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changes
 
 - CI: the GPU jobs' Rust cache is keyed on the runner's CPU features.
-- Docs: C API, rustdoc, Python docstrings and example comments now match the
+- Docs: the README describes the analytic beam and the GPU build variables
+  (`HYPERBEAM_CUDA_COMPUTE`, `HYPERBEAM_HIP_ARCH`, `HIP_PATH`), the crate has a
+  front page on docs.rs, and the C API docs and example comments match the
   current function names and argument lists (e.g. the GPU functions'
   `num_azza` argument, the analytic beam's `bowties_per_row * bowties_per_row`
-  delays, `iau_order`); the `HYPERBEAM_CUDA_COMPUTE` and `HYPERBEAM_HIP_ARCH`
-  build variables are described in the README.
+  delays).
 
 ## [0.14.0] - 2026-11-17
 

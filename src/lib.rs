@@ -3,6 +3,48 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 //! Primary beam code for the Murchison Widefield Array.
+//!
+//! Two kinds of beam are provided:
+//!
+//! - [`fee::FEEBeam`], the Full Embedded Element beam. It needs the MWA FEE
+//!   HDF5 file, given either as a path ([`fee::FEEBeam::new`]) or with the
+//!   `MWA_BEAM_FILE` environment variable ([`fee::FEEBeam::new_from_env`]).
+//! - [`analytic::AnalyticBeam`], the analytic beam, in the flavours used by
+//!   `mwa_pb` and the RTS. It needs no file.
+//!
+//! Both give beam-response Jones matrices for one direction (`calc_jones`) or
+//! many (`calc_jones_array`), given a frequency and a tile's 16 dipole delays
+//! and 16 or 32 dipole gains. With the `cuda` or `hip` cargo features, each has
+//! a GPU equivalent (`FEEBeam::gpu_prepare` and `AnalyticBeam::gpu_prepare`)
+//! for many tiles, frequencies and directions at once.
+//!
+//! ```no_run
+//! use mwa_hyperbeam::{fee::FEEBeam, AzEl};
+//!
+//! let beam = FEEBeam::new_from_env().unwrap();
+//! let delays = [0; 16];
+//! let gains = [1.0; 16];
+//! let jones = beam
+//!     .calc_jones(
+//!         AzEl::from_degrees(45.0, 60.0),
+//!         167_000_000,
+//!         &delays,
+//!         &gains,
+//!         // Normalise to the zenith.
+//!         true,
+//!         // Apply the parallactic-angle correction for this latitude...
+//!         Some(-0.4660608448386394),
+//!         // ... and give the Jones matrix in the IAU order.
+//!         true,
+//!     )
+//!     .unwrap();
+//! println!("{jones:?}");
+//! ```
+//!
+//! The C and Python interfaces are described in the
+//! [README](https://github.com/MWATelescope/mwa_hyperbeam#readme) and shown in
+//! the [examples
+//! directory](https://github.com/MWATelescope/mwa_hyperbeam/tree/main/examples).
 
 pub mod analytic;
 mod constants;
