@@ -219,3 +219,18 @@ extern "C" {
         d_results: *mut ::std::os::raw::c_void,
     ) -> *const ::std::os::raw::c_char;
 }
+extern "C" {
+    #[doc = " The same as gpu_fee_calc_jones, but the caller sets how many sets of\n dipole coefficients a single kernel launch may handle. gpu_fee_calc_jones\n uses the most that a device allows; this function exists so that tests\n can exercise more than one launch without a huge number of coefficients."]
+    pub fn gpu_fee_calc_jones_max_coeffs_per_launch(
+        d_azs: *const f32,
+        d_zas: *const f32,
+        num_directions: ::std::os::raw::c_int,
+        d_coeffs: *const FEECoeffs,
+        num_coeffs: ::std::os::raw::c_int,
+        d_norm_jones: *const ::std::os::raw::c_void,
+        d_latitude_rad: *const f32,
+        iau_reorder: ::std::os::raw::c_int,
+        max_coeffs_per_launch: ::std::os::raw::c_int,
+        d_results: *mut ::std::os::raw::c_void,
+    ) -> *const ::std::os::raw::c_char;
+}
