@@ -6,8 +6,8 @@
 // these frequencies for beam responses.
 
 // Build and run with something like:
-// gcc -O3 -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./get_freqs.c -o get_freqs
-// LD_LIBRARY_PATH=../target/release ./get_freqs ../mwa_full_embedded_element_pattern.h5
+// gcc -O3 -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./fee_get_freqs.c -o fee_get_freqs
+// LD_LIBRARY_PATH=../target/release ./fee_get_freqs ../mwa_full_embedded_element_pattern.h5
 
 #include <math.h>
 #include <stdio.h>
