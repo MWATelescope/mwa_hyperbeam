@@ -28,11 +28,12 @@ impl FEEBeam {
     /// calculations. If the path to the beam HDF5 file is not given, then the
     /// `MWA_BEAM_FILE` environment variable is used.
     #[new]
-    #[pyo3(signature = (hdf5_file))]
+    #[pyo3(signature = (hdf5_file=None))]
     fn new(hdf5_file: Option<Bound<'_, PyAny>>) -> PyResult<Self> {
         let strct = match hdf5_file {
             Some(f) => {
-                let f: PathBuf = f.extract().expect("can convert python string to rust path");
+                // Anything that isn't path-like is a TypeError.
+                let f: PathBuf = f.extract()?;
                 FEEBeamRust::new(f)?
             }
             None => FEEBeamRust::new_from_env()?,
