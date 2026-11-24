@@ -254,8 +254,8 @@ pub unsafe extern "C" fn fee_calc_jones(
 ///
 /// As there are 8 elements per Jones matrix, there must be at least `8 *
 /// num_azza * sizeof(double)` allocated in the array. Rust will calculate the
-/// Jones matrices in parallel. See the documentation for `calc_jones` for more
-/// info.
+/// Jones matrices in parallel. See the documentation for `fee_calc_jones` for
+/// more info.
 ///
 /// # Arguments
 ///
@@ -378,6 +378,7 @@ pub unsafe extern "C" fn get_fee_beam_freqs(
 /// # Arguments
 ///
 /// * `fee_beam` - the pointer to the `FEEBeam` struct.
+/// * `freq` - the desired frequency in Hz.
 ///
 /// # Returns
 ///
@@ -416,8 +417,8 @@ pub unsafe extern "C" fn free_fee_beam(fee_beam: *mut FEEBeam) {
 /// * `num_freqs` - the number of frequencies in the array pointed to by
 ///   `freqs_hz`.
 /// * `num_tiles` - the number of tiles in both `delays` and `amps`.
-/// * `num_amps` - either 16 or 32. See the documentation for `calc_jones` for
-///   more explanation.
+/// * `num_amps` - either 16 or 32. See the documentation for `fee_calc_jones`
+///   for more explanation.
 /// * `norm_to_zenith` - A boolean indicating whether the beam responses should
 ///   be normalised with respect to zenith.
 /// * `gpu_fee_beam` - a double pointer to the `FEEBeamGpu` struct which is set
@@ -481,6 +482,7 @@ pub unsafe extern "C" fn new_gpu_fee_beam(
 ///
 /// * `gpu_fee_beam` - A pointer to a `FEEBeamGpu` struct created with the
 ///   `new_gpu_fee_beam` function
+/// * `num_azza` - The number of directions within `az_rad` and `za_rad`
 /// * `az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
@@ -494,8 +496,8 @@ pub unsafe extern "C" fn new_gpu_fee_beam(
 ///   num_unique_fee_freqs * num_azza * 8 * sizeof(FLOAT)` bytes allocated.
 ///   `FLOAT` is either `float` or `double`, depending on how `hyperbeam` was
 ///   compiled. The Jones matrix beam responses are written here. This should be
-///   set up with the `get_num_unique_tiles` and `get_num_unique_fee_freqs`
-///   functions; see the examples for more help.
+///   set up with the `get_num_unique_fee_tiles` and
+///   `get_num_unique_fee_freqs` functions; see the examples for more help.
 ///
 /// # Returns
 ///
@@ -551,6 +553,7 @@ pub unsafe extern "C" fn fee_calc_jones_gpu(
 ///
 /// * `gpu_fee_beam` - A pointer to a `FEEBeamGpu` struct created with the
 ///   `new_gpu_fee_beam` function
+/// * `num_azza` - The number of directions within `az_rad` and `za_rad`
 /// * `az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
@@ -564,7 +567,7 @@ pub unsafe extern "C" fn fee_calc_jones_gpu(
 ///   num_unique_tiles * num_unique_fee_freqs * num_azza * sizeof(FLOAT)` bytes
 ///   allocated. `FLOAT` is either `float` or `double`, depending on how
 ///   `hyperbeam` was compiled. The Jones matrix beam responses are written
-///   here. This should be set up with the `get_num_unique_tiles` and
+///   here. This should be set up with the `get_num_unique_fee_tiles` and
 ///   `get_num_unique_fee_freqs` functions; see the examples for more help.
 ///
 /// # Returns
@@ -616,7 +619,7 @@ pub unsafe extern "C" fn fee_calc_jones_gpu_device(
     0
 }
 
-/// The same as `calc_jones_gpu_device`, but with the directions already
+/// The same as `fee_calc_jones_gpu_device`, but with the directions already
 /// allocated on the device. As with `d_jones`, the precision of the floats
 /// depends on how `hyperbeam` was compiled.
 ///
@@ -624,20 +627,21 @@ pub unsafe extern "C" fn fee_calc_jones_gpu_device(
 ///
 /// * `gpu_fee_beam` - A pointer to a `FEEBeamGpu` struct created with the
 ///   `new_gpu_fee_beam` function
+/// * `num_azza` - The number of directions within `d_az_rad` and `d_za_rad`
 /// * `d_az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `d_za_rad` - The zenith angle directions to get the beam response (units
 ///   of radians)
-/// * `latitude_rad` - A pointer to a telescope latitude to use for the
-///   parallactic-angle correction. If the pointer is null, no correction is
-///   done.
+/// * `d_latitude_rad` - A device pointer to a telescope latitude (of type
+///   `FLOAT`) to use for the parallactic-angle correction. If the pointer is
+///   null, no correction is done.
 /// * `iau_order` - A boolean indicating whether the Jones matrix should be
 ///   arranged [NS-NS NS-EW EW-NS EW-EW] (true) or not (false).
 /// * `d_jones` - A pointer to a device buffer with at least `8 *
 ///   num_unique_tiles * num_unique_fee_freqs * num_azza * sizeof(FLOAT)` bytes
 ///   allocated. `FLOAT` is either `float` or `double`, depending on how
 ///   `hyperbeam` was compiled. The Jones matrix beam responses are written
-///   here. This should be set up with the `get_num_unique_tiles` and
+///   here. This should be set up with the `get_num_unique_fee_tiles` and
 ///   `get_num_unique_fee_freqs` functions; see the examples for more help.
 ///
 /// # Returns

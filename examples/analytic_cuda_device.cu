@@ -111,7 +111,7 @@ __global__ void use_hyperbeam_values(JONES *d_jones, const int *d_tile_map, int 
 int main(int argc, char *argv[]) {
     // Get a new beam object from hyperbeam.
     AnalyticBeam *beam;
-    char rts_style = 1;                  // 1 or RTS style, 0 for mwa_pb
+    char rts_style = 1;                  // 1 for RTS style, 0 for mwa_pb
     double *dipole_height_metres = NULL; // Point to a valid float if you want a custom height
     // Point to a valid int if you want a custom number of bowties per row. You
     // almost certainly want this to be 4, unless you're simulating the CRAM

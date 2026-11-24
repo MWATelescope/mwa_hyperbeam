@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Changes
+
+- CI: the GPU jobs' Rust cache is keyed on the runner's CPU features.
+- Docs: the README describes the analytic beam and the GPU build variables
+  (`HYPERBEAM_CUDA_COMPUTE`, `HYPERBEAM_HIP_ARCH`, `HIP_PATH`), the crate has a
+  front page on docs.rs, and the C API docs and example comments match the
+  current function names and argument lists (e.g. the GPU functions'
+  `num_azza` argument, the analytic beam's `bowties_per_row * bowties_per_row`
+  delays).
+
 ## [0.14.0] - 2026-11-17
 
 ### Changes
