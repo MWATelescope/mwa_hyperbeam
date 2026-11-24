@@ -103,7 +103,8 @@ __global__ void analytic_kernel(const ANALYTIC_TYPE at, const FLOAT dipole_heigh
 
                         if (at == MWA_PB) {
                             dip_e = ((FLOAT)col - 1.5) * MWA_DPL_SEP;
-                            dip_n = ((FLOAT)row - 1.5) * MWA_DPL_SEP;
+                            // The first row of bowties is the northernmost.
+                            dip_n = ((FLOAT)(bowties_per_row - 1 - row) - 1.5) * MWA_DPL_SEP;
                             phase = -multiplier * (dip_e * proj_e + dip_n * proj_n - delay);
                         } else if (at == RTS) {
                             dip_e = ((FLOAT)row - 1.5) * MWA_DPL_SEP;
