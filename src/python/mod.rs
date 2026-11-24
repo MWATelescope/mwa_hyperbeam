@@ -6,12 +6,14 @@
 
 mod analytic;
 mod fee;
+mod ska;
 
 use pyo3::create_exception;
 use pyo3::prelude::*;
 
 use crate::analytic::AnalyticBeamError;
 use crate::fee::{FEEBeamError, InitFEEBeamError};
+use crate::ska::{InitSkaBeamError, SkaBeamError};
 
 /// A Python module interfacing with the hyperbeam code written in Rust. This
 /// module depends on and will import numpy.
@@ -21,6 +23,11 @@ fn mwa_hyperbeam(m: &Bound<'_, PyModule>) -> PyResult<()> {
     py.import("numpy")?;
     m.add_class::<fee::FEEBeam>()?;
     m.add_class::<analytic::AnalyticBeam>()?;
+    m.add_class::<ska::SkaLowAnalytic>()?;
+    m.add_class::<ska::SkaLowEepGrid>()?;
+    m.add_class::<ska::SkaLowEepSph>()?;
+    #[cfg(any(feature = "cuda", feature = "hip"))]
+    m.add_class::<ska::SkaLowGpu>()?;
     m.add("HyperbeamError", py.get_type::<HyperbeamError>())?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
 
@@ -41,6 +48,16 @@ impl std::convert::From<InitFEEBeamError> for PyErr {
 }
 impl std::convert::From<AnalyticBeamError> for PyErr {
     fn from(err: AnalyticBeamError) -> PyErr {
+        HyperbeamError::new_err(err.to_string())
+    }
+}
+impl std::convert::From<SkaBeamError> for PyErr {
+    fn from(err: SkaBeamError) -> PyErr {
+        HyperbeamError::new_err(err.to_string())
+    }
+}
+impl std::convert::From<InitSkaBeamError> for PyErr {
+    fn from(err: InitSkaBeamError) -> PyErr {
         HyperbeamError::new_err(err.to_string())
     }
 }

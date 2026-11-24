@@ -874,17 +874,23 @@ fn fix_amps(amps: &[f64], delays: &[u32; 16]) -> [f64; 32] {
 ///
 /// See for how/why this is done:
 /// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
-fn apply_parallactic_correction(
+pub(crate) fn apply_parallactic_correction(
     az_rad: f64,
     za_rad: f64,
     latitude_rad: f64,
     iau_order: bool,
     jones: &mut Jones<f64>,
 ) {
-    // Get the parallactic-angle and find its sine and cosine.
+    // Get the parallactic-angle.
     let para_angle = AzEl::from_radians(az_rad, FRAC_PI_2 - za_rad)
         .to_hadec(latitude_rad)
         .get_parallactic_angle(latitude_rad);
+    apply_parallactic_rotation(para_angle, iau_order, jones);
+}
+
+/// Rotate a beam-response Jones matrix by a parallactic angle, and re-arrange
+/// it if `iau_order` is `true` (see [`apply_parallactic_correction`]).
+pub(crate) fn apply_parallactic_rotation(para_angle: f64, iau_order: bool, jones: &mut Jones<f64>) {
     let (s_rot, c_rot) = para_angle.sin_cos();
     *jones = if iau_order {
         Jones::from([

@@ -26,4 +26,12 @@ for PRECISION in SINGLE DOUBLE; do
         -- -D BINDGEN -D "${PRECISION}" \
         -I "${SCRIPTPATH}"/gpu_common/ \
         > "${SCRIPTPATH}/analytic/gpu/${LOWER_CASE}.rs"
+
+    bindgen "${SCRIPTPATH}"/ska/gpu/ska.h \
+        --allowlist-function "gpu_ska_calc_jones.*" \
+        --allowlist-type "SkaGpuModel" \
+        --no-layout-tests \
+        -- -D BINDGEN -D "${PRECISION}" \
+        -I "${SCRIPTPATH}"/gpu_common/ \
+        > "${SCRIPTPATH}/ska/gpu/${LOWER_CASE}.rs"
 done
