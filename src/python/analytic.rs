@@ -26,7 +26,7 @@ impl AnalyticBeam {
     /// calculations. Here, one can opt into RTS behaviour, control the dipole
     /// height (which also differs between mwa_pb and the RTS), and control the
     /// number of bowties per row (e.g. 4 for normal MWA tiles for a total of 16
-    /// bowties per tile, 8 for CRAM for a total of 64 per tile). The defaults
+    /// bowties per tile, 8 for CRAM for a total of 64 per tile). The default
     /// is mwa_pb behaviour with 4 bowties per row.
     #[new]
     #[pyo3(signature = (rts_behaviour=None, dipole_height=None, bowties_per_row=None))]

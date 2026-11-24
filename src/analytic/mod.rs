@@ -79,13 +79,15 @@ impl Default for AnalyticBeam {
 
 impl AnalyticBeam {
     /// Create a new [`AnalyticBeam`] struct using mwa_pb analytic beam code and
-    /// the [default](MWA_DPL_HGT) MWA dipole height.
+    /// the default MWA dipole height (see
+    /// [`AnalyticType::get_default_dipole_height`]).
     pub fn new() -> AnalyticBeam {
         AnalyticBeam::default()
     }
 
     /// Create a new [`AnalyticBeam`] struct using RTS analytic beam code and
-    /// the MWA dipole height from the [RTS](MWA_DPL_HGT_RTS).
+    /// the MWA dipole height used by the RTS (see
+    /// [`AnalyticType::get_default_dipole_height`]).
     pub fn new_rts() -> AnalyticBeam {
         let beam_type = AnalyticType::Rts;
         AnalyticBeam {

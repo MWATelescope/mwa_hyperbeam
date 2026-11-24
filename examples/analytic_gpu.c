@@ -22,8 +22,8 @@
 // below. Otherwise, no flag is needed.
 //
 // Compile and run this file with something like:
-// gcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./analytic_hip.c -o analytic_hip
-// LD_LIBRARY_PATH=../target/release ./analytic_hip
+// gcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./analytic_gpu.c -o analytic_gpu
+// LD_LIBRARY_PATH=../target/release ./analytic_gpu
 
 #include <complex.h>
 #include <math.h>

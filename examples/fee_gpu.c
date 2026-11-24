@@ -22,8 +22,8 @@
 // below. Otherwise, no flag is needed.
 //
 // Compile and run this file with something like:
-// gcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./fee_hip.c -o fee_hip
-// LD_LIBRARY_PATH=../target/release ./fee_hip ../mwa_full_embedded_element_pattern.h5
+// gcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./fee_gpu.c -o fee_gpu
+// LD_LIBRARY_PATH=../target/release ./fee_gpu ../mwa_full_embedded_element_pattern.h5
 
 #include <complex.h>
 #include <math.h>
