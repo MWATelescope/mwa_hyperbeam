@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Python: `FEEBeam()` works without an argument again, and uses the file named
+  by `MWA_BEAM_FILE`. Since 0.10.0 it needed an explicit
+  `FEEBeam(None)`. Fixes #26.
+- Python: `FEEBeam(x)` with an `x` that isn't path-like raises a `TypeError`
+  instead of panicking.
+
 ## [0.14.0] - 2026-11-17
 
 ### Changes
