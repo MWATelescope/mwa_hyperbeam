@@ -613,3 +613,91 @@ fn test_no_directions_doesnt_fail() {
         .unwrap();
     assert!(result.is_empty());
 }
+
+/// A device only allows so many blocks in a kernel launch, and each set of
+/// dipole coefficients (unique tile at a unique frequency) gets its own block
+/// in y. More sets than that (65,535 for CUDA and HIP) need more than one
+/// launch. Check that the results don't depend on how the sets are split over
+/// launches, without needing tens of thousands of sets.
+/// <https://github.com/MWATelescope/mwa_hyperbeam/issues/17>
+#[test]
+#[serial]
+fn test_gpu_calc_jones_over_multiple_launches() {
+    let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
+    let freqs = [150e6 as u32, 200e6 as _, 250e6 as _];
+    // 3 unique tiles.
+    let delays = array![
+        [3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
+        [32, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
+        [3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
+    ];
+    let amps = array![
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        [0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+    ];
+    let (az, za): (Vec<_>, Vec<_>) = (0..1025)
+        .map(|i| {
+            (
+                0.45 + i as GpuFloat / 10000.0,
+                0.45 + i as GpuFloat / 10000.0,
+            )
+        })
+        .unzip();
+    let num_directions = az.len();
+
+    for norm_to_zenith in [false, true] {
+        let gpu_beam = unsafe {
+            beam.gpu_prepare(&freqs, delays.view(), amps.view(), norm_to_zenith)
+                .unwrap()
+        };
+        assert_eq!(gpu_beam.num_coeffs, 9);
+
+        let calc = |max_coeffs_per_launch: Option<i32>| unsafe {
+            let d_az = DevicePointer::copy_to_device(&az).unwrap();
+            let d_za = DevicePointer::copy_to_device(&za).unwrap();
+            let d_latitude_rad = DevicePointer::copy_to_device(&[MWA_LAT_RAD as GpuFloat]).unwrap();
+            let mut results: Vec<Jones<GpuFloat>> = vec![Jones::default(); 9 * num_directions];
+            let d_results: DevicePointer<Jones<GpuFloat>> =
+                DevicePointer::copy_to_device(&results).unwrap();
+            gpu_beam
+                .calc_jones_device_pair_inner_max_coeffs_per_launch(
+                    d_az.get(),
+                    d_za.get(),
+                    num_directions as i32,
+                    d_latitude_rad.get(),
+                    true,
+                    max_coeffs_per_launch,
+                    d_results.get_mut().cast(),
+                )
+                .map(|()| {
+                    d_results.copy_from_device(&mut results).unwrap();
+                    results
+                })
+        };
+
+        let expected = calc(None).unwrap();
+        // Every set of coefficients has had its results written.
+        assert!(expected.iter().all(|j| *j != Jones::default()));
+        // The sets give different results, so writing one set's results in
+        // another's place would be noticed.
+        for (i, set1) in expected.chunks_exact(num_directions).enumerate() {
+            for set2 in expected.chunks_exact(num_directions).skip(i + 1) {
+                assert_ne!(set1, set2);
+            }
+        }
+
+        // 9 launches, 5 (the last with 1 set), 3 (the last with 1 set), 1
+        // launch that's exactly big enough, and 1 that's bigger than needed.
+        for max_coeffs_per_launch in [1, 2, 4, 9, 10] {
+            let results = calc(Some(max_coeffs_per_launch)).unwrap();
+            assert!(
+                results == expected,
+                "results differ with {max_coeffs_per_launch} sets of coefficients per launch"
+            );
+        }
+
+        // A launch has to handle at least one set.
+        assert!(calc(Some(0)).is_err());
+    }
+}

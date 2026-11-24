@@ -34,6 +34,18 @@ extern "C"
                                    int num_coeffs, const void *d_norm_jones, const FLOAT *d_latitude_rad,
                                    const int iau_reorder, void *d_results);
 
+    /**
+     * The same as gpu_fee_calc_jones, but the caller sets how many sets of
+     * dipole coefficients a single kernel launch may handle. gpu_fee_calc_jones
+     * uses the most that a device allows; this function exists so that tests
+     * can exercise more than one launch without a huge number of coefficients.
+     */
+    const char *gpu_fee_calc_jones_max_coeffs_per_launch(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions,
+                                                         const FEECoeffs *d_coeffs, int num_coeffs,
+                                                         const void *d_norm_jones, const FLOAT *d_latitude_rad,
+                                                         const int iau_reorder, int max_coeffs_per_launch,
+                                                         void *d_results);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif // __cplusplus
@@ -48,6 +60,9 @@ extern "C"
 #endif // __cplusplus
 
     const int NMAX = 31;
+
+    // The most blocks that a CUDA or HIP grid can have in y.
+    const int FEE_MAX_GRID_Y = 65535;
 
     /* The following C++ program gives the factorial values:
 
@@ -377,11 +392,15 @@ extern "C"
 
     /**
      * Allocate beam Jones matrices for each unique set of dipole coefficients and
-     * each direction. blockIdx.y should correspond to d_coeffs elements and
-     * blockIdx.x * blockDim.x + threadIdx.x corresponds to direction.
+     * each direction. coeff_offset + blockIdx.y should correspond to d_coeffs
+     * elements and blockIdx.x * blockDim.x + threadIdx.x corresponds to
+     * direction. coeff_offset is there because a grid can only have so many
+     * blocks in y; more sets of coefficients than that need more than one
+     * launch.
      */
-    __global__ void fee_kernel(const FEECoeffs coeffs, const FLOAT *azs, const FLOAT *zas, const int num_directions,
-                               const JONES *norm_jones, const FLOAT *latitude_rad, const int iau_order, JONES *fee_jones
+    __global__ void fee_kernel(const FEECoeffs coeffs, const int coeff_offset, const FLOAT *azs, const FLOAT *zas,
+                               const int num_directions, const JONES *norm_jones, const FLOAT *latitude_rad,
+                               const int iau_order, JONES *fee_jones
                                //    , FLOAT *legendret, FLOAT *P1sin_arr, FLOAT *P1_arr
     )
     {
@@ -389,6 +408,8 @@ extern "C"
 
         if (i_direction >= num_directions)
             return;
+
+        const int i_coeff = coeff_offset + blockIdx.y;
 
         const FLOAT az = azs[i_direction];
         const FLOAT za = zas[i_direction]; // theta
@@ -409,21 +430,21 @@ extern "C"
         // on the zenith angle and "n_max".
         jones_p1sin_device(za, P1sin_arr, P1_arr, legendret, coeffs.n_max);
 
-        const int x_offset = coeffs.x_offsets[blockIdx.y];
-        const int y_offset = coeffs.y_offsets[blockIdx.y];
+        const int x_offset = coeffs.x_offsets[i_coeff];
+        const int y_offset = coeffs.y_offsets[i_coeff];
         JONES jm;
         jones_calc_sigmas_device(phi, u, (const COMPLEX *)coeffs.x_q1_accum + x_offset,
                                  (const COMPLEX *)coeffs.x_q2_accum + x_offset, coeffs.x_m_accum + x_offset,
                                  coeffs.x_n_accum + x_offset, coeffs.x_m_signs + x_offset, coeffs.x_m_abs_m + x_offset,
-                                 coeffs.x_lengths[blockIdx.y], P1sin_arr, P1_arr, 'x', &jm);
+                                 coeffs.x_lengths[i_coeff], P1sin_arr, P1_arr, 'x', &jm);
         jones_calc_sigmas_device(phi, u, (const COMPLEX *)coeffs.y_q1_accum + y_offset,
                                  (const COMPLEX *)coeffs.y_q2_accum + y_offset, coeffs.y_m_accum + y_offset,
                                  coeffs.y_n_accum + y_offset, coeffs.y_m_signs + y_offset, coeffs.y_m_abs_m + y_offset,
-                                 coeffs.y_lengths[blockIdx.y], P1sin_arr, P1_arr, 'y', &jm);
+                                 coeffs.y_lengths[i_coeff], P1sin_arr, P1_arr, 'y', &jm);
 
         if (norm_jones != NULL)
         {
-            JONES norm = norm_jones[blockIdx.y];
+            JONES norm = norm_jones[i_coeff];
             jm.j00 = CDIV(jm.j00, norm.j00);
             jm.j01 = CDIV(jm.j01, norm.j01);
             jm.j10 = CDIV(jm.j10, norm.j10);
@@ -438,12 +459,14 @@ extern "C"
         }
 
         // Copy the Jones matrix to global memory.
-        fee_jones[blockIdx.y * num_directions + i_direction] = jm;
+        fee_jones[(size_t)i_coeff * num_directions + i_direction] = jm;
     }
 
-    extern "C" const char *gpu_fee_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions,
-                                              const FEECoeffs *d_coeffs, int num_coeffs, const void *d_norm_jones,
-                                              const FLOAT *d_latitude_rad, const int iau_order, void *d_results)
+    extern "C" const char *gpu_fee_calc_jones_max_coeffs_per_launch(const FLOAT *d_azs, const FLOAT *d_zas,
+                                                                    int num_directions, const FEECoeffs *d_coeffs,
+                                                                    int num_coeffs, const void *d_norm_jones,
+                                                                    const FLOAT *d_latitude_rad, const int iau_order,
+                                                                    int max_coeffs_per_launch, void *d_results)
     {
         if (d_coeffs->n_max > NMAX)
         {
@@ -451,21 +474,48 @@ extern "C"
             sprintf(error, "n_max exceeds maximum value %d", NMAX);
             return error;
         }
+        if (max_coeffs_per_launch < 1)
+        {
+            char *error = (char *)malloc(100);
+            sprintf(error, "max_coeffs_per_launch (%d) must be at least 1", max_coeffs_per_launch);
+            return error;
+        }
+        // Nothing to do, and a grid or block with a dimension of 0 is an
+        // "invalid configuration argument".
+        if (num_directions < 1 || num_coeffs < 1)
+            return NULL;
 
         const int warp_size = gpu_warp_size();
         dim3 gridDim, blockDim;
         blockDim.x = num_directions < warp_size ? num_directions : warp_size;
         gridDim.x = num_directions < warp_size ? 1 : (num_directions - 1) / blockDim.x + 1;
-        gridDim.y = num_coeffs;
-        fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, d_azs, d_zas, num_directions, (JONES *)d_norm_jones, d_latitude_rad,
-                                          iau_order, (JONES *)d_results);
+        // Each block in y handles one set of dipole coefficients (one unique
+        // tile at one unique frequency). A device only allows so many blocks
+        // in y, so handle the sets over as many launches as it takes.
+        for (int coeff_offset = 0; coeff_offset < num_coeffs; coeff_offset += max_coeffs_per_launch)
+        {
+            const int num_remaining = num_coeffs - coeff_offset;
+            gridDim.y = num_remaining < max_coeffs_per_launch ? num_remaining : max_coeffs_per_launch;
+            fee_kernel<<<gridDim, blockDim>>>(*d_coeffs, coeff_offset, d_azs, d_zas, num_directions,
+                                              (JONES *)d_norm_jones, d_latitude_rad, iau_order, (JONES *)d_results);
+            GPUCHECK(gpuGetLastError());
+        }
 
 #ifdef DEBUG
         GPUCHECK(gpuDeviceSynchronize());
-#endif
         GPUCHECK(gpuGetLastError());
+#endif
 
         return NULL;
+    }
+
+    extern "C" const char *gpu_fee_calc_jones(const FLOAT *d_azs, const FLOAT *d_zas, int num_directions,
+                                              const FEECoeffs *d_coeffs, int num_coeffs, const void *d_norm_jones,
+                                              const FLOAT *d_latitude_rad, const int iau_order, void *d_results)
+    {
+        return gpu_fee_calc_jones_max_coeffs_per_launch(d_azs, d_zas, num_directions, d_coeffs, num_coeffs,
+                                                        d_norm_jones, d_latitude_rad, iau_order, FEE_MAX_GRID_Y,
+                                                        d_results);
     }
 
 #endif // BINDGEN

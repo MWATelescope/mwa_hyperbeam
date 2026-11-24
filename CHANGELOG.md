@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- GPU FEE beam: more than 65,535 sets of dipole coefficients (unique tiles
+  multiplied by unique beam frequencies) no longer fail with "CUDA kernel
+  error: fee.h:gpu_fee_calc_jones failed with: invalid configuration argument".
+  Each set had its own block along the y axis of a single kernel launch, and a
+  device allows at most 65,535 blocks there. The sets are now handled over as
+  many launches as it takes. Fixes #17.
+
 ## [0.14.0] - 2026-11-17
 
 ### Changes

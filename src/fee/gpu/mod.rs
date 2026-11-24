@@ -479,27 +479,73 @@ impl FEEBeamGpu {
         iau_reorder: bool,
         d_results: *mut std::ffi::c_void,
     ) -> Result<(), FEEBeamError> {
+        self.calc_jones_device_pair_inner_max_coeffs_per_launch(
+            d_az_rad,
+            d_za_rad,
+            num_directions,
+            d_latitude_rad,
+            iau_reorder,
+            None,
+            d_results,
+        )
+    }
+
+    /// The same as [`FEEBeamGpu::calc_jones_device_pair_inner`], but with a
+    /// limit on how many sets of dipole coefficients (unique tile and
+    /// frequency combinations) a single kernel launch handles. `None` uses the
+    /// most that a device allows. This only exists so that tests can exercise
+    /// more than one launch without tens of thousands of sets of coefficients.
+    ///
+    /// # Safety
+    ///
+    /// The same as [`FEEBeamGpu::calc_jones_device_pair_inner`].
+    #[allow(clippy::too_many_arguments)]
+    unsafe fn calc_jones_device_pair_inner_max_coeffs_per_launch(
+        &self,
+        d_az_rad: *const GpuFloat,
+        d_za_rad: *const GpuFloat,
+        num_directions: i32,
+        d_latitude_rad: *const GpuFloat,
+        iau_reorder: bool,
+        max_coeffs_per_launch: Option<i32>,
+        d_results: *mut std::ffi::c_void,
+    ) -> Result<(), FEEBeamError> {
         // Don't do anything if there aren't any directions.
         if num_directions == 0 {
             return Ok(());
         }
 
+        let d_norm_jones = match self.d_norm_jones.as_ref() {
+            Some(n) => (*n).get().cast(),
+            None => std::ptr::null(),
+        };
         // The return value is a pointer to a CUDA/HIP error string. If it's null
         // then everything is fine.
-        let error_message_ptr = gpu_fee_calc_jones(
-            d_az_rad,
-            d_za_rad,
-            num_directions,
-            &self.get_fee_coeffs(),
-            self.num_coeffs,
-            match self.d_norm_jones.as_ref() {
-                Some(n) => (*n).get().cast(),
-                None => std::ptr::null(),
-            },
-            d_latitude_rad,
-            iau_reorder.into(),
-            d_results,
-        );
+        let error_message_ptr = match max_coeffs_per_launch {
+            None => gpu_fee_calc_jones(
+                d_az_rad,
+                d_za_rad,
+                num_directions,
+                &self.get_fee_coeffs(),
+                self.num_coeffs,
+                d_norm_jones,
+                d_latitude_rad,
+                iau_reorder.into(),
+                d_results,
+            ),
+            Some(max_coeffs_per_launch) => gpu_fee_calc_jones_max_coeffs_per_launch(
+                d_az_rad,
+                d_za_rad,
+                num_directions,
+                &self.get_fee_coeffs(),
+                self.num_coeffs,
+                d_norm_jones,
+                d_latitude_rad,
+                iau_reorder.into(),
+                max_coeffs_per_launch,
+                d_results,
+            ),
+        };
         if error_message_ptr.is_null() {
             Ok(())
         } else {
