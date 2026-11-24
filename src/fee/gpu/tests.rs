@@ -625,10 +625,12 @@ fn test_no_directions_doesnt_fail() {
 fn test_gpu_calc_jones_over_multiple_launches() {
     let beam = FEEBeam::new("mwa_full_embedded_element_pattern.h5").unwrap();
     let freqs = [150e6 as u32, 200e6 as _, 250e6 as _];
-    // 3 unique tiles.
+    // 3 unique tiles: the first dipole's delay differs in the second, and
+    // it's turned off in the third. (A delay of 32 would also turn it off,
+    // which would make two of the tiles give the same results.)
     let delays = array![
         [3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
-        [32, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
+        [0, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
         [3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0, 3, 2, 1, 0],
     ];
     let amps = array![
