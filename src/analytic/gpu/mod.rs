@@ -222,10 +222,8 @@ impl AnalyticBeamGpu {
     /// into the supplied pre-allocated device pointer. This buffer
     /// should have a shape of (`num_unique_tiles`, `num_freqs`,
     /// `az_rad_length`). The number of unique tiles can be accessed with
-    /// [`AnalyticBeamGpu::get_num_unique_tiles`]. `d_latitude_rad` is
-    /// populated with the array latitude, if the caller wants the parallactic-
-    /// angle correction to be applied. If the pointer is null, then no
-    /// correction is applied.
+    /// [`AnalyticBeamGpu::get_num_unique_tiles`]. `d_freqs_hz` must point to
+    /// `num_freqs` frequencies already on the device.
     ///
     /// # Safety
     ///

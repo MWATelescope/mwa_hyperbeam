@@ -32,7 +32,7 @@ void handle_hyperbeam_error(char file[], int line_num, const char function_name[
 int main(int argc, char *argv[]) {
     // Get a new beam object from hyperbeam.
     AnalyticBeam *beam;
-    // 1 or RTS style, 0 for mwa_pb
+    // 1 for RTS style, 0 for mwa_pb
     char rts_style = 0;
     // Point to a valid float if you want a custom height
     double dipole_height_metres = 0.5;

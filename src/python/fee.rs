@@ -48,7 +48,7 @@ impl FEEBeam {
     /// Astronomers are more likely to want to specify `latitude_rad` (which
     /// will apply the parallactic-angle correction using the Earth latitude
     /// provided for the telescope) and `iau_order`. If `latitude_rad` is not
-    /// given, then `iau_reorder` does nothing. See this document for more
+    /// given, then `iau_order` does nothing. See this document for more
     /// information:
     /// <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
     ///

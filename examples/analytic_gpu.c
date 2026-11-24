@@ -22,8 +22,8 @@
 // below. Otherwise, no flag is needed.
 //
 // Compile and run this file with something like:
-// gcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./analytic_hip.c -o analytic_hip
-// LD_LIBRARY_PATH=../target/release ./analytic_hip
+// gcc -O3 -D SINGLE -I ../include/ -L ../target/release/ -l mwa_hyperbeam ./analytic_gpu.c -o analytic_gpu
+// LD_LIBRARY_PATH=../target/release ./analytic_gpu
 
 #include <complex.h>
 #include <math.h>
@@ -58,7 +58,7 @@ void handle_hyperbeam_error(char file[], int line_num, const char function_name[
 int main(int argc, char *argv[]) {
     // Get a new beam object from hyperbeam.
     AnalyticBeam *beam;
-    char rts_style = 0;                  // 1 or RTS style, 0 for mwa_pb
+    char rts_style = 0;                  // 1 for RTS style, 0 for mwa_pb
     double *dipole_height_metres = NULL; // Point to a valid float if you want a custom height
     // Point to a valid int if you want a custom number of bowties per row. You
     // almost certainly want this to be 4, unless you're simulating the CRAM

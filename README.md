@@ -68,7 +68,7 @@ calc_jones(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad, 
     Astronomers are more likely to want to specify `latitude_rad` (which
     will apply the parallactic-angle correction using the Earth latitude
     provided for the telescope) and `iau_order`. If `latitude_rad` is not
-    given, then `iau_reorder` does nothing. See this document for more
+    given, then `iau_order` does nothing. See this document for more
     information:
     <https://github.com/MWATelescope/mwa_hyperbeam/blob/main/fee_pols.pdf>
 
@@ -86,7 +86,7 @@ calc_jones(az_rad, za_rad, freq_hz, delays, amps, norm_to_zenith, latitude_rad, 
 
 ### CUDA / HIP
 
-`hyperbeam` also can also be run on NVIDIA GPUs, or AMD GPUs. To see an example
+`hyperbeam` can also be run on NVIDIA GPUs, or AMD GPUs. To see an example
 of usage, see any of the examples with "cuda" or "hip" in the name. GPU
 functionality is provided with Cargo features; see installing from source
 instructions below.
@@ -173,6 +173,12 @@ double-precision compute capability than "data center" GPUs (e.g. NVIDIA V100).
 Allowing `hyperbeam` to switch on the float type allows the user to decide
 between the performance and precision compromise.
 
+By default, the CUDA code is compiled for every GPU architecture the installed
+`nvcc` supports. To compile for specific architectures only, set
+`HYPERBEAM_CUDA_COMPUTE` to a comma-separated list of compute capabilities
+(e.g. `HYPERBEAM_CUDA_COMPUTE=86` for an RTX 3080, `HYPERBEAM_CUDA_COMPUTE=80,90`
+for A100 and H100).
+
 `CUDA` can also be linked statically:
 
 ```bash
@@ -182,8 +188,11 @@ cargo build --release --features=cuda,cuda-static
 #### HIP
 
 The situation with `HIP` is similar to that of `CUDA`; use the `hip` feature and
-use `gpu-single` if you want the code to use single-precision floats. `HIP` does
-not appear to offer static libraries, so no static feature is provided.
+use `gpu-single` if you want the code to use single-precision floats. Set
+`HYPERBEAM_HIP_ARCH` to the GPU architecture to compile for (e.g.
+`HYPERBEAM_HIP_ARCH=gfx90a` for an MI250X); `HIP_PATH` can be used to point at
+the ROCm installation if it isn't found automatically. `HIP` does not appear to
+offer static libraries, so no static feature is provided.
 
 #### Static dependencies
 

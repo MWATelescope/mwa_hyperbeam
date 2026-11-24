@@ -78,14 +78,16 @@ pub unsafe extern "C" fn new_analytic_beam(
 /// Get the beam response Jones matrix for the given direction and pointing.
 ///
 /// `delays` and `amps` apply to each bowtie in a given MWA tile, and *must*
-/// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
-/// order; see
-/// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>).
+/// have `bowties_per_row * bowties_per_row` elements (16 for a normal MWA tile;
+/// `bowties_per_row` was set when the `AnalyticBeam` was created). Each
+/// corresponds to an MWA dipole in a tile, in the M&C order; see
+/// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
 /// `amps` being dipole gains (usually 1 or 0), not digital gains.
 ///
-/// 16 or 32 elements can be supplied for `amps`. If there are 16, then the
-/// dipole gains apply to both X and Y elements of dipoles. If there are 32, the
-/// first 16 amps are for the X elements, the next 16 the Y elements.
+/// 16 or 32 elements can be supplied for `amps` (for a normal MWA tile). If
+/// there are 16, then the dipole gains apply to both X and Y elements of
+/// dipoles. If there are 32, the first 16 amps are for the X elements, the next
+/// 16 the Y elements.
 ///
 /// Note the type of `jones` (`*double`); we can't pass complex numbers across
 /// the FFI boundary, so the real and imaginary components are unpacked into
@@ -173,16 +175,17 @@ pub unsafe extern "C" fn analytic_calc_jones(
 /// given pointing. The Jones matrix elements for each direction are put into a
 /// single array (made available with the output pointer `jones`).
 ///
-/// `delays` and `amps` apply to each dipole in a given MWA tile, and *must*
-/// have 16 elements (each corresponds to an MWA dipole in a tile, in the M&C
-/// order; see
-/// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>).
+/// `delays` and `amps` apply to each bowtie in a given MWA tile, and *must*
+/// have `bowties_per_row * bowties_per_row` elements (16 for a normal MWA tile;
+/// `bowties_per_row` was set when the `AnalyticBeam` was created). Each
+/// corresponds to an MWA dipole in a tile, in the M&C order; see
+/// <https://wiki.mwatelescope.org/pages/viewpage.action?pageId=48005139>.
 /// `amps` being dipole gains (usually 1 or 0), not digital gains.
 ///
 /// As there are 8 elements per Jones matrix, there must be at least `8 *
 /// num_azza * sizeof(double)` allocated in the array. Rust will calculate the
-/// Jones matrices in parallel. See the documentation for `calc_jones` for more
-/// info.
+/// Jones matrices in parallel. See the documentation for `analytic_calc_jones`
+/// for more info.
 ///
 /// # Arguments
 ///
@@ -274,17 +277,15 @@ pub unsafe extern "C" fn free_analytic_beam(analytic_beam: *mut AnalyticBeam) {
 ///
 /// * `analytic_beam` - a pointer to a previously set `AnalyticBeam` struct.
 /// * `delays` - a pointer to two-dimensional array of dipole delays. There must
-///   be 16 delays per row; each row corresponds to a tile.
+///   be `bowties_per_row * bowties_per_row` delays per row (16 for normal MWA
+///   tiles); each row corresponds to a tile.
 /// * `amps` - a pointer to two-dimensional array of dipole amplitudes. There
-///   must be 16 or 32 amps per row; each row corresponds to a tile. The number
-///   of amps per row is specified by `num_amps`.
-/// * `num_freqs` - the number of frequencies in the array pointed to by
-///   `freqs_hz`.
+///   must be 16 or 32 amps per row (for normal MWA tiles); each row corresponds
+///   to a tile. The number of amps per row is specified by `num_amps`.
 /// * `num_tiles` - the number of tiles in both `delays` and `amps`.
-/// * `num_amps` - either 16 or 32. See the documentation for `calc_jones` for
-///   more explanation.
-/// * `norm_to_zenith` - A boolean indicating whether the beam responses should
-///   be normalised with respect to zenith.
+/// * `num_amps` - the number of amps per row (either 16 or 32 for normal MWA
+///   tiles). See the documentation for `analytic_calc_jones` for more
+///   explanation.
 /// * `gpu_analytic_beam` - a double pointer to the `AnalyticBeamGpu` struct
 ///   which is set by this function. This struct must be freed by calling
 ///   `free_gpu_analytic_beam`.
@@ -325,18 +326,24 @@ pub unsafe extern "C" fn new_gpu_analytic_beam(
 ///
 /// # Arguments
 ///
-/// * `gpu_beam` - A pointer to a `AnalyticBeamGpu` struct created with the
-///   `new_gpu_analytic_beam` function
+/// * `gpu_analytic_beam` - A pointer to a `AnalyticBeamGpu` struct created with
+///   the `new_gpu_analytic_beam` function
+/// * `num_azza` - The number of directions within `az_rad` and `za_rad`
 /// * `az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
 ///   radians)
+/// * `num_freqs` - The number of frequencies within `freqs_hz`
+/// * `freqs_hz` - The frequencies used for the beam responses in Hertz
+/// * `latitude_rad` - The telescope latitude to use in beam calculations.
+/// * `norm_to_zenith` - A boolean indicating whether the beam responses should
+///   be normalised with respect to zenith.
 /// * `jones` - A pointer to a buffer with at least `num_unique_tiles *
 ///   num_freqs * num_azza * 8 * sizeof(FLOAT)` bytes allocated.
 ///   `FLOAT` is either `float` or `double`, depending on how `hyperbeam` was
 ///   compiled. The Jones matrix beam responses are written here. This should be
-///   set up with the `get_num_unique_tiles` function; see the examples for
-///   more help.
+///   set up with the `get_num_unique_analytic_tiles` function; see the examples
+///   for more help.
 ///
 /// # Returns
 ///
@@ -406,16 +413,22 @@ pub unsafe extern "C" fn analytic_calc_jones_gpu(
 ///
 /// * `gpu_analytic_beam` - A pointer to a `AnalyticBeamGpu` struct created with
 ///   the `new_gpu_analytic_beam` function
+/// * `num_azza` - The number of directions within `az_rad` and `za_rad`
 /// * `az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `za_rad` - The zenith angle directions to get the beam response (units of
 ///   radians)
+/// * `num_freqs` - The number of frequencies within `freqs_hz`
+/// * `freqs_hz` - The frequencies used for the beam responses in Hertz
+/// * `latitude_rad` - The telescope latitude to use in beam calculations.
+/// * `norm_to_zenith` - A boolean indicating whether the beam responses should
+///   be normalised with respect to zenith.
 /// * `d_jones` - A pointer to a device buffer with at least `8 *
 ///   num_unique_tiles * num_freqs * num_azza * sizeof(FLOAT)` bytes
 ///   allocated. `FLOAT` is either `float` or `double`, depending on how
 ///   `hyperbeam` was compiled. The Jones matrix beam responses are written
-///   here. This should be set up with the `get_num_unique_tiles` function; see
-///   the examples for more help.
+///   here. This should be set up with the `get_num_unique_analytic_tiles`
+///   function; see the examples for more help.
 ///
 /// # Returns
 ///
@@ -490,24 +503,31 @@ pub unsafe extern "C" fn analytic_calc_jones_gpu_device(
     0
 }
 
-/// The same as `calc_jones_gpu_device`, but with the directions already
-/// allocated on the device. As with `d_jones`, the precision of the floats
-/// depends on how `hyperbeam` was compiled.
+/// The same as `analytic_calc_jones_gpu_device`, but with the directions and
+/// frequencies already allocated on the device. As with `d_jones`, the
+/// precision of the floats depends on how `hyperbeam` was compiled.
 ///
 /// # Arguments
 ///
 /// * `gpu_analytic_beam` - A pointer to a `AnalyticBeamGpu` struct created with
 ///   the `new_gpu_analytic_beam` function
+/// * `num_azza` - The number of directions within `d_az_rad` and `d_za_rad`
 /// * `d_az_rad` - The azimuth directions to get the beam response (units of
 ///   radians)
 /// * `d_za_rad` - The zenith angle directions to get the beam response (units
 ///   of radians)
+/// * `num_freqs` - The number of frequencies within `d_freqs_hz`
+/// * `d_freqs_hz` - A device pointer to the frequencies used for the beam
+///   responses in Hertz
+/// * `latitude_rad` - The telescope latitude to use in beam calculations.
+/// * `norm_to_zenith` - A boolean indicating whether the beam responses should
+///   be normalised with respect to zenith.
 /// * `d_jones` - A pointer to a device buffer with at least `8 *
 ///   num_unique_tiles * num_freqs * num_azza * sizeof(FLOAT)` bytes
 ///   allocated. `FLOAT` is either `float` or `double`, depending on how
 ///   `hyperbeam` was compiled. The Jones matrix beam responses are written
-///   here. This should be set up with the `get_num_unique_tiles` function; see
-///   the examples for more help.
+///   here. This should be set up with the `get_num_unique_analytic_tiles`
+///   function; see the examples for more help.
 ///
 /// # Returns
 ///
