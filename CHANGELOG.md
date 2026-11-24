@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic
 Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The mwa_pb-style analytic beam (`AnalyticBeam::new()`, `rts_behaviour=False`
+  in Python) had its rows of bowties in the wrong north-south order, so a tile
+  with delays pointing it south pointed north instead (the same as passing
+  `pi - az`). In the M&C order the first row is the northernmost, as in mwa_pb
+  and the RTS-style beam. Responses only change for delays or amps that differ
+  between rows of bowties. Fixes #23.
+
 ## [0.14.0] - 2026-11-17
 
 ### Changes

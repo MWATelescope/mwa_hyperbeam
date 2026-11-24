@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
+use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI, TAU};
 
 use approx::*;
-use marlu::constants::MWA_LAT_RAD;
+use marlu::constants::{MWA_LAT_RAD, VEL_C};
 
 use super::*;
 
@@ -440,4 +440,100 @@ fn test_cram() {
         norm_to_zenith,
     );
     result.unwrap();
+}
+
+/// The power of a beam response.
+fn power(j: Jones<f64>) -> f64 {
+    j.iter().map(|c| c.norm_sqr()).sum()
+}
+
+/// The zenith angle a tile points at when the delays of neighbouring bowties
+/// differ by `delay_steps`.
+fn steered_za(delay_steps: u32) -> f64 {
+    (f64::from(delay_steps) * DELAY_STEP * VEL_C / MWA_DPL_SEP).asin()
+}
+
+// In the M&C order, the first row of bowties is the northernmost. Delays that
+// grow from the first row to the last therefore point the tile south. This is
+// the 1430233584 gridpoint, which is south of zenith.
+// https://github.com/MWATelescope/mwa_hyperbeam/issues/23
+#[test]
+fn delays_growing_with_row_point_south() {
+    let delays = [0, 0, 0, 0, 2, 2, 2, 2, 4, 4, 4, 4, 6, 6, 6, 6];
+    let amps = [1.0; 16];
+    let freq_hz = 150e6 as u32;
+    let za = steered_za(2);
+
+    for beam in [AnalyticBeam::new(), AnalyticBeam::new_rts()] {
+        let calc = |az: f64| {
+            beam.calc_jones_pair(az, za, freq_hz, &delays, &amps, MWA_LAT_RAD, false)
+                .unwrap()
+        };
+        let (north, east, south, west) = (calc(0.0), calc(FRAC_PI_2), calc(PI), calc(-FRAC_PI_2));
+        assert!(
+            power(south) > 2.0 * power(north),
+            "south: {}, north: {}",
+            power(south),
+            power(north)
+        );
+        assert!(power(south) > power(east));
+        assert!(power(south) > power(west));
+    }
+
+    // For the mwa_pb beam, all bowties are in phase in the direction the tile
+    // points at, so the response there is that of a single bowtie over its
+    // ground screen.
+    let beam = AnalyticBeam::new();
+    let south = beam
+        .calc_jones_pair(PI, za, freq_hz, &delays, &amps, MWA_LAT_RAD, false)
+        .unwrap();
+    let lambda_m = VEL_C / f64::from(freq_hz);
+    let ground_plane = 2.0 * (TAU * 0.278 / lambda_m * za.cos()).sin();
+    // Due south, the X (east-west) bowties only see the phi polarisation.
+    assert_abs_diff_eq!(south[0].norm(), 0.0, epsilon = 1e-10);
+    assert_abs_diff_eq!(south[1].norm(), ground_plane, epsilon = 1e-10);
+    assert_abs_diff_eq!(south[2].norm(), ground_plane * za.cos(), epsilon = 1e-10);
+    assert_abs_diff_eq!(south[3].norm(), 0.0, epsilon = 1e-10);
+}
+
+// The first bowtie in a row is the westernmost, so delays that grow along a
+// row point the tile east.
+#[test]
+fn delays_growing_along_rows_point_east() {
+    let delays = [0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6, 0, 2, 4, 6];
+    let amps = [1.0; 16];
+    let freq_hz = 150e6 as u32;
+    let za = steered_za(2);
+
+    for beam in [AnalyticBeam::new(), AnalyticBeam::new_rts()] {
+        let calc = |az: f64| {
+            beam.calc_jones_pair(az, za, freq_hz, &delays, &amps, MWA_LAT_RAD, false)
+                .unwrap()
+        };
+        let (north, east, south, west) = (calc(0.0), calc(FRAC_PI_2), calc(PI), calc(-FRAC_PI_2));
+        assert!(power(east) > 2.0 * power(west));
+        assert!(power(east) > power(north));
+        assert!(power(east) > power(south));
+    }
+}
+
+// The same as `delays_growing_with_row_point_south`, but for a CRAM tile.
+#[test]
+fn cram_delays_growing_with_row_point_south() {
+    let mut delays = [0; 64];
+    for (i, delay) in delays.iter_mut().enumerate() {
+        *delay = (i / 8) as u32;
+    }
+    let amps = [1.0; 64];
+    let freq_hz = 150e6 as u32;
+    let za = steered_za(1);
+
+    for beam_type in [AnalyticType::MwaPb, AnalyticType::Rts] {
+        let beam = AnalyticBeam::new_custom(beam_type, 0.3, 8);
+        let calc = |az: f64| {
+            beam.calc_jones_pair(az, za, freq_hz, &delays, &amps, MWA_LAT_RAD, false)
+                .unwrap()
+        };
+        assert!(power(calc(PI)) > 2.0 * power(calc(0.0)));
+    }
 }

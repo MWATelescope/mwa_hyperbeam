@@ -564,9 +564,13 @@ impl AnalyticBeam {
             let col = k % usize::from(self.bowties_per_row);
             let row = k / usize::from(self.bowties_per_row);
             let (dip_e, dip_n) = match self.beam_type {
+                // In the M&C order, the first row of bowties is the
+                // northernmost and the first bowtie in a row is the
+                // westernmost (as in mwa_pb's `dipole_north` and
+                // `dipole_east`).
                 AnalyticType::MwaPb => (
                     (col as f64 - 1.5) * MWA_DPL_SEP,
-                    (row as f64 - 1.5) * MWA_DPL_SEP,
+                    ((usize::from(self.bowties_per_row) - 1 - row) as f64 - 1.5) * MWA_DPL_SEP,
                 ),
                 AnalyticType::Rts => (
                     (row as f64 - 1.5) * MWA_DPL_SEP,
