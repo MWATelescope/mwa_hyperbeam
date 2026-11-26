@@ -1016,3 +1016,175 @@ fn feko_coefficients_are_read_once_by_many_threads() {
         assert!(std::sync::Arc::ptr_eq(c, &coeffs[0]));
     }
 }
+
+// ---------------------------------------------------------------------------
+// EveryBeam's responses for the small, fake EEP files in test_files/ska_low
+// (made by test_files/ska_low/make_test_files.py).
+// ---------------------------------------------------------------------------
+
+pub(crate) fn test_files_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("test_files/ska_low")
+}
+
+struct EveryBeamReference(hdf5_metno::File);
+
+impl EveryBeamReference {
+    fn open() -> EveryBeamReference {
+        EveryBeamReference(
+            hdf5_metno::File::open(test_files_dir().join("everybeam_reference.h5")).unwrap(),
+        )
+    }
+
+    fn f64s(&self, name: &str) -> Vec<f64> {
+        self.0.dataset(name).unwrap().read_raw().unwrap()
+    }
+
+    fn usizes(&self, name: &str) -> Vec<usize> {
+        let v: Vec<i64> = self.0.dataset(name).unwrap().read_raw().unwrap();
+        v.into_iter().map(|x| x as usize).collect()
+    }
+
+    /// A `[..., 4, 2]` (re, im) dataset as Jones matrices, with its leading
+    /// dimensions.
+    fn jones(&self, name: &str) -> (Vec<usize>, Vec<Jones<f64>>) {
+        let ds = self.0.dataset(name).unwrap();
+        let shape = ds.shape();
+        let v: Vec<f64> = ds.read_raw().unwrap();
+        let j = v
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|c| {
+                Jones::from([
+                    c64::new(c[0], c[1]),
+                    c64::new(c[2], c[3]),
+                    c64::new(c[4], c[5]),
+                    c64::new(c[6], c[7]),
+                ])
+            })
+            .collect();
+        (shape[..shape.len() - 2].to_vec(), j)
+    }
+
+    fn grid_station_ska_low_convention(&self) -> bool {
+        self.0
+            .attr("grid_station_ska_low_convention")
+            .unwrap()
+            .read_scalar::<i64>()
+            .unwrap()
+            != 0
+    }
+}
+
+fn assert_jones_close(got: Jones<f64>, expected: Jones<f64>, what: &str) {
+    let scale = expected.iter().map(|x| x.norm()).fold(1.0, f64::max);
+    let diff = (got - expected)
+        .iter()
+        .map(|x| x.norm())
+        .fold(0.0, f64::max);
+    assert!(
+        diff <= 1e-10 * scale,
+        "{what}: hyperbeam {got:?} != EveryBeam {expected:?}"
+    );
+}
+
+/// Check element responses against EveryBeam's, one at a time and in arrays.
+fn check_element_reference<E: SkaElementResponse>(
+    element: &E,
+    model: &str,
+    batch: impl Fn(usize, f64, &[f64], &[f64]) -> Vec<Jones<f64>>,
+) {
+    let r = EveryBeamReference::open();
+    let (az, za) = (r.f64s("az"), r.f64s("za"));
+    let freqs = r.f64s(&format!("{model}/freqs"));
+    let ids = r.usizes(&format!("{model}/element_ids"));
+    let (dims, expected) = r.jones(&format!("{model}/element_response"));
+    assert_eq!(dims, [freqs.len(), ids.len(), az.len()]);
+    let phis: Vec<f64> = az.iter().map(|&a| az_to_phi(a)).collect();
+    let mut expected = expected.into_iter();
+    for &f in &freqs {
+        for &id in &ids {
+            let arr = batch(id, f, &za, &phis);
+            for (i, (&theta, &phi)) in za.iter().zip(&phis).enumerate() {
+                let e = expected.next().unwrap();
+                let what = format!("{model} element {id}, {f} Hz, direction {i}");
+                let got = element.element_response(id, f, theta, phi).unwrap();
+                assert_jones_close(got, e, &what);
+                assert_jones_close(arr[i], e, &what);
+            }
+        }
+    }
+}
+
+/// Check station responses for the reference's rotated stations against
+/// EveryBeam's (from its SKA-Low Measurement Set code).
+fn check_station_reference<E: SkaElementResponse>(make_element: impl Fn() -> E, model: &str) {
+    let r = EveryBeamReference::open();
+    let (az, za) = (r.f64s("az"), r.f64s("za"));
+    let freqs = r.f64s(&format!("{model}/freqs"));
+    let rotations = r.f64s("rotations");
+    let pointing = r.f64s("pointing_az_za");
+    let positions: Vec<[f64; 3]> = r.f64s("positions_enu").as_chunks::<3>().0.to_vec();
+    let (dims, expected) = r.jones(&format!("{model}/station_response"));
+    assert_eq!(dims, [freqs.len(), rotations.len(), az.len()]);
+    let mut expected = expected.into_iter();
+    for &f in &freqs {
+        for (i_station, &rotation) in rotations.iter().enumerate() {
+            let station = SkaStation::new(make_element(), positions.clone(), None)
+                .unwrap()
+                .with_rotation(rotation);
+            for (i, (&a, &z)) in az.iter().zip(&za).enumerate() {
+                let got = station
+                    .station_response(a, z, f, pointing[0], pointing[1])
+                    .unwrap();
+                assert_jones_close(
+                    got,
+                    expected.next().unwrap(),
+                    &format!("{model} station {i_station}, {f} Hz, direction {i}"),
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_files_eep_grid_elements_match_everybeam() {
+    let file = test_files_dir().join("eep_grid.h5");
+    let eep = SkaLowEepGrid::new_with_convention(&file, false).unwrap();
+    assert_eq!(eep.get_freqs(), [100e6, 150e6, 200e6]);
+    check_element_reference(&eep, "grid", |_, f, thetas, phis| {
+        eep.element_responses(f, thetas, phis).unwrap()
+    });
+}
+
+#[test]
+fn test_files_eep_sph_elements_match_everybeam() {
+    let feko = SkaLowEepSph::new(test_files_dir().join("feko")).unwrap();
+    assert_eq!(feko.get_freqs(), [100e6, 150e6, 200e6]);
+    assert_eq!(feko.get_l_max(), 5);
+    assert_eq!(feko.num_elements(), Some(5));
+    check_element_reference(&feko, "sph", |id, f, thetas, phis| {
+        feko.element_responses(id, f, thetas, phis, phis).unwrap()
+    });
+}
+
+#[test]
+fn test_files_analytic_stations_match_everybeam() {
+    check_station_reference(SkaLowAnalytic::new, "analytic");
+}
+
+#[test]
+fn test_files_eep_grid_stations_match_everybeam() {
+    let convention = EveryBeamReference::open().grid_station_ska_low_convention();
+    let file = test_files_dir().join("eep_grid.h5");
+    check_station_reference(
+        || SkaLowEepGrid::new_with_convention(&file, convention).unwrap(),
+        "grid",
+    );
+}
+
+#[test]
+fn test_files_eep_sph_stations_match_everybeam() {
+    let dir = test_files_dir().join("feko");
+    check_station_reference(|| SkaLowEepSph::new(&dir).unwrap(), "sph");
+}

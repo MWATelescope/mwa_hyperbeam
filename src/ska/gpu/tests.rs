@@ -14,7 +14,7 @@ use serial_test::serial;
 
 use super::*;
 use crate::ska::{
-    tests::{write_eep, write_feko_dir, write_feko_dir_with_l_maxes},
+    tests::{test_files_dir, write_eep, write_feko_dir, write_feko_dir_with_l_maxes},
     SkaStation,
 };
 
@@ -253,6 +253,20 @@ fn gpu_eep_sph_matches_cpu() {
     let beam = SkaLowBeam::new_eep_sph(Some(&dir.0), None).unwrap();
     check_elements(&beam, &[100e6, 104e6, 112e6], &[0, 3, 1]);
     check_stations(&beam, &[100e6, 110e6], 4);
+}
+
+#[test]
+#[serial]
+fn gpu_test_files_match_cpu() {
+    // The small, fake EEP files in test_files/ska_low, whose CPU responses are
+    // checked against EveryBeam's (the FEKO files have different degrees).
+    let dir = test_files_dir();
+    let beam = SkaLowBeam::new_eep_grid(Some(dir.join("eep_grid.h5")), true).unwrap();
+    check_elements(&beam, &[100e6, 130e6, 200e6], &[0]);
+    check_stations(&beam, &[130e6], 5);
+    let beam = SkaLowBeam::new_eep_sph(Some(dir.join("feko")), None).unwrap();
+    check_elements(&beam, &[100e6, 140e6, 180e6], &[0, 4]);
+    check_stations(&beam, &[100e6, 140e6, 180e6], 5);
 }
 
 #[test]
