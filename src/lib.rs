@@ -10,6 +10,7 @@ mod factorial;
 pub mod fee;
 mod ffi;
 mod legendre;
+pub mod ska;
 mod types;
 
 #[cfg(feature = "python")]

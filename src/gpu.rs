@@ -102,6 +102,27 @@ impl<T> DevicePointer<T> {
         Ok(d_ptr)
     }
 
+    /// Copy a slice of data into the device memory allocated against this
+    /// [`DevicePointer`], starting `offset` elements in.
+    ///
+    /// # Safety
+    ///
+    /// This function interfaces directly with the CUDA/HIP API. Rust errors
+    /// attempt to catch problems but there are no guarantees.
+    #[track_caller]
+    pub unsafe fn overwrite_at(&mut self, offset: usize, v: &[T]) -> Result<(), GpuError> {
+        if offset + v.len() > self.num_elements {
+            return Err(GpuError::SizeMismatch);
+        }
+        gpuMemcpy(
+            self.ptr.add(offset) as *mut c_void,
+            v.as_ptr().cast(),
+            std::mem::size_of_val(v),
+            gpuMemcpyHostToDevice,
+        );
+        check_for_errors(GpuCall::CopyToDevice)
+    }
+
     /// Copy a slice of data from the device. The amount of data copied depends
     /// on the length of `v`, so if in doubt, the size of the device allocation
     /// should be checked with `DevicePointer::get_num_elements`.
